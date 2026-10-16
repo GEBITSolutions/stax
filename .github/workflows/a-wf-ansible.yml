@@ -1,0 +1,194 @@
+---
+# yamllint disable rule:line-length
+name: ".Ansible Workflow (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      inventory-path:
+        description: YAML inventory path relative to caller repository root
+        type: string
+        required: true
+      playbook-path:
+        description: Playbook path relative to caller repository root
+        type: string
+        required: true
+      environment:
+        description: Caller repository GitHub Environment containing the SSH secret
+        type: string
+        required: true
+      runs-on:
+        description: Single Linux runner label with target network access
+        type: string
+        required: true
+      mode:
+        description: plan or apply; validated at runtime
+        type: string
+        required: false
+        default: plan
+    secrets:
+      ANSIBLE_SSH_PRIVATE_KEY:
+        # Environment-only secrets cannot satisfy a required caller-passed secret.
+        # Validate presence inside the job after binding its Environment.
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  ansible:
+    runs-on: ${{ inputs.runs-on }}
+    environment: ${{ inputs.environment }}
+    steps:
+    - name: Checkout caller repository
+      uses: actions/checkout@v4
+      with:
+        persist-credentials: false
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Set up uv
+      uses: astral-sh/setup-uv@v10.1.0
+
+    - name: Install Ansible
+      shell: bash
+      run: |
+        set -euo pipefail
+        uv tool install --python 3.12 ansible-core==2.20.9
+        printf 'ANSIBLE_BIN_DIR=%s\n' "$(uv tool dir --bin)" >> "$GITHUB_ENV"
+
+    - name: Validate inputs and Ansible files
+      shell: bash
+      env:
+        MODE: ${{ inputs.mode }}
+        INVENTORY_PATH: ${{ inputs.inventory-path }}
+        PLAYBOOK_PATH: ${{ inputs.playbook-path }}
+        ANSIBLE_BIN_DIR: ${{ env.ANSIBLE_BIN_DIR }}
+      run: |
+        set -euo pipefail
+
+        case "$MODE" in
+          plan|apply) ;;
+          *)
+            echo "mode must be exactly plan or apply" >&2
+            exit 1
+            ;;
+        esac
+
+        workspace="$(realpath -e -- "$GITHUB_WORKSPACE")"
+        resolve_file() {
+          local label="$1" raw="$2" candidate resolved
+          [[ -n "$raw" ]] || {
+            echo "$label path is required" >&2
+            return 1
+          }
+          [[ "$raw" != *$'\r'* && "$raw" != *$'\n'* ]] || {
+            echo "$label path must not contain carriage returns or line feeds" >&2
+            return 1
+          }
+          [[ "$raw" != /* ]] || {
+            echo "$label path must be relative" >&2
+            return 1
+          }
+          candidate="$workspace/$raw"
+          resolved="$(realpath -e -- "$candidate")" || {
+            echo "$label path does not exist" >&2
+            return 1
+          }
+          [[ -f "$resolved" ]] || {
+            echo "$label path is not a regular file" >&2
+            return 1
+          }
+          [[ "$resolved" == "$workspace/"* ]] || {
+            echo "$label path escapes the caller workspace" >&2
+            return 1
+          }
+          [[ "$resolved" != *$'\r'* && "$resolved" != *$'\n'* ]] || {
+            echo "$label path must not contain carriage returns or line feeds" >&2
+            return 1
+          }
+          printf '%s\n' "$resolved"
+        }
+
+        inventory="$(resolve_file inventory "$INVENTORY_PATH")"
+        playbook="$(resolve_file playbook "$PLAYBOOK_PATH")"
+        {
+          printf 'ANSIBLE_MODE=%s\n' "$MODE"
+          printf 'ANSIBLE_INVENTORY=%s\n' "$inventory"
+          printf 'ANSIBLE_PLAYBOOK=%s\n' "$playbook"
+        } >> "$GITHUB_ENV"
+
+        "$ANSIBLE_BIN_DIR/ansible-inventory" -i "$inventory" --list | python -c '
+        import json, sys
+        inventory = json.load(sys.stdin)
+        if not inventory.get("_meta", {}).get("hostvars", {}):
+            raise SystemExit("Inventory contains zero real hosts")
+        '
+        "$ANSIBLE_BIN_DIR/ansible-playbook" -i "$inventory" "$playbook" --syntax-check
+
+    - name: Execute Ansible playbook
+      shell: bash
+      env:
+        ANSIBLE_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
+        MODE: ${{ env.ANSIBLE_MODE }}
+        INVENTORY: ${{ env.ANSIBLE_INVENTORY }}
+        PLAYBOOK: ${{ env.ANSIBLE_PLAYBOOK }}
+        ANSIBLE_BIN_DIR: ${{ env.ANSIBLE_BIN_DIR }}
+      run: |
+        set -euo pipefail
+        [[ -n "$ANSIBLE_SSH_PRIVATE_KEY" ]] || {
+          echo "ANSIBLE_SSH_PRIVATE_KEY Environment secret is required" >&2
+          exit 1
+        }
+
+        temp_dir="$(mktemp -d "${RUNNER_TEMP}/ansible.XXXXXX")"
+        chmod 0700 "$temp_dir"
+        printf 'ANSIBLE_TEMP_DIR=%s\n' "$temp_dir" >> "$GITHUB_ENV"
+
+        cleanup() {
+          rm -rf -- "$temp_dir"
+        }
+        trap cleanup EXIT INT TERM
+
+        key_file="$temp_dir/id_ansible"
+        known_hosts="$temp_dir/known_hosts"
+        umask 077
+        printf '%s\n' "$ANSIBLE_SSH_PRIVATE_KEY" > "$key_file"
+        chmod 0600 "$key_file"
+        : > "$known_hosts"
+        ssh-keygen -y -P '' -f "$key_file" > /dev/null
+
+        export ANSIBLE_PRIVATE_KEY_FILE="$key_file"
+        export ANSIBLE_HOST_KEY_CHECKING=True
+        export ANSIBLE_SSH_ARGS="-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$known_hosts -o GlobalKnownHostsFile=/dev/null -o ControlMaster=no"
+        export ANSIBLE_HOST_PATTERN_MISMATCH=error
+        export ANSIBLE_INVENTORY_UNPARSED_FAILED=True
+
+        argv=("$ANSIBLE_BIN_DIR/ansible-playbook" -i "$INVENTORY" "$PLAYBOOK")
+        if [[ "$MODE" == plan ]]; then
+          argv+=(--check --diff)
+        fi
+        "${argv[@]}"
+
+    - name: Remove temporary SSH credentials
+      if: always()
+      shell: bash
+      env:
+        ANSIBLE_TEMP_DIR: ${{ env.ANSIBLE_TEMP_DIR }}
+        RUNNER_TEMP_DIR: ${{ runner.temp }}
+      run: |
+        set -euo pipefail
+        if [[ -z "$ANSIBLE_TEMP_DIR" ]]; then
+          exit 0
+        fi
+        case "$ANSIBLE_TEMP_DIR" in
+          "$RUNNER_TEMP_DIR"/ansible.*)
+            rm -rf -- "$ANSIBLE_TEMP_DIR"
+            ;;
+          *)
+            echo "Refusing to remove a path outside this job's temporary Ansible directory" >&2
+            exit 1
+            ;;
+        esac

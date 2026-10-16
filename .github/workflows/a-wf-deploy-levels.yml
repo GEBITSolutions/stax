@@ -1,0 +1,261 @@
+---
+name: ".Deploy Levels (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      ci_config:
+        required: true
+        type: string
+      env:
+        required: true
+        type: string
+      default_location:
+        required: false
+        default: "northeurope"
+        type: string
+      external_repos:
+        required: false
+        default: "[]"
+        type: string
+      actions-version:
+        required: false
+        default: "main"
+        description: "Github Repo branch for shared actions."
+        type: string
+
+jobs:
+  l0:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    name: ${{ join(fromJson(inputs.ci_config)[0].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[0] }}
+    with:
+      default-location: ${{ inputs.default_location }}
+      env: ${{ inputs.env }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l1:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[1][0] != null
+    needs: [l0]
+    name: ${{ join(fromJson(inputs.ci_config)[1].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[1] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l2:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[2][0] != null
+    needs: [l0, l1]
+    name: ${{ join(fromJson(inputs.ci_config)[2].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[2] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l3:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[3][0] != null
+    needs: [l0, l1, l2]
+    name: ${{ join(fromJson(inputs.ci_config)[3].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[3] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l4:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[4][0] != null
+    needs: [l0, l1, l2, l3]
+    name: ${{ join(fromJson(inputs.ci_config)[4].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[4] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l5:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[5][0] != null
+    needs: [l0, l1, l2, l3, l4]
+    name: ${{ join(fromJson(inputs.ci_config)[5].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[5] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l6:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[6][0] != null
+    needs: [l0, l1, l2, l3, l4, l5]
+    name: ${{ join(fromJson(inputs.ci_config)[6].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[6] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l7:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[7][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6]
+    name: ${{ join(fromJson(inputs.ci_config)[7].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[7] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l8:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[8][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6, l7]
+    name: ${{ join(fromJson(inputs.ci_config)[8].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[8] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l9:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[9][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6, l7, l8]
+    name: ${{ join(fromJson(inputs.ci_config)[9].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[9] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l10:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[10][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6, l7, l8, l9]
+    name: ${{ join(fromJson(inputs.ci_config)[10].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[10] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l11:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[11][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10]
+    name: ${{ join(fromJson(inputs.ci_config)[11].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[11] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l12:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[12][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11]
+    name: ${{ join(fromJson(inputs.ci_config)[12].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[12] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  l13:
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
+    if: fromJson(inputs.ci_config)[13][0] != null
+    needs: [l0, l1, l2, l3, l4, l5, l6, l7, l8, l9, l10, l11, l12]
+    name: ${{ join(fromJson(inputs.ci_config)[13].*.name,',') || 'No Jobs' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        data: ${{ fromJson(inputs.ci_config)[13] }}
+    with:
+      env: ${{ inputs.env }}
+      default-location: ${{ inputs.default_location }}
+      data: "${{ toJson(matrix.data) }}"
+      external-repos: "${{ inputs.external_repos }}"
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit

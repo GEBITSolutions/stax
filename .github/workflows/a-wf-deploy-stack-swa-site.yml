@@ -1,0 +1,345 @@
+---
+# yamllint disable rule:line-length
+name: ".Deploy SWA Docs Workflow (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      data:
+        type: string
+        required: true
+      env:
+        type: string
+        required: true
+      external-repos:
+        type: string
+        required: false
+        default: "[]"
+      stack-repository:
+        type: string
+        required: false
+        default: ""
+      stack-repository-version:
+        type: string
+        required: false
+        default: ""
+      actions-repository:
+        type: string
+        required: false
+        default: "GEBITSolutions/stax"
+      actions-version:
+        type: string
+        required: false
+        default: "main"
+      destroy:
+        type: string
+        required: false
+        default: "false"
+    secrets:
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_CLIENT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      REPO_KEYSTORE_SP_CLIENT_SECRET:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+      CI_ENV_TRANSFER_GH_TOKEN:
+        required: false
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN:
+        required: false
+
+jobs:
+  swa-deploy:
+    name: "Deploy SWA ${{ fromJson(inputs.data)['id'] }}"
+    runs-on: ${{ fromJson(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+    environment: ${{ fromJson(inputs.env)['environment'] }}
+    env:
+      DOCS_RELATIVE_PATH: "${{ fromJson(inputs.data)['docs_path'] || fromJson(inputs.data)['site_source'] || 'docs' }}"
+      ENVIRONMENT: "${{ fromJson(inputs.env)['environment'] || 'default' }}"
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+    steps:
+    - name: Resolve App Token Scope
+      id: token-scope
+      shell: bash
+      run: |
+        repositories="${GITHUB_REPOSITORY#*/}"
+        stack_repository="${{ inputs.stack-repository }}"
+        if [[ "$stack_repository" == "${GITHUB_REPOSITORY_OWNER}/"* ]]; then
+          stack_repo="${stack_repository#*/}"
+          if [[ -n "$stack_repo" && "$stack_repo" != "$repositories" ]]; then
+            repositories="${repositories},${stack_repo}"
+          fi
+        fi
+        while read -r repo_url; do
+          repo_ref=$(echo "$repo_url" | sed -E 's#.*github\.com[:/]([^/]+)/([^/.]+)(\.git)?$#\1/\2#')
+          repo_owner="${repo_ref%%/*}"
+          repo_name="${repo_ref#*/}"
+          if [[ "$repo_owner" == "$GITHUB_REPOSITORY_OWNER" && "$repo_name" != "$repo_ref" && ",${repositories}," != *",${repo_name},"* ]]; then
+            repositories="${repositories},${repo_name}"
+          fi
+        done < <(echo '${{ inputs.external-repos || '[]' }}' | jq -r '. | to_entries[]? | .value[0]?.repoURL // empty')
+        echo "repositories=${repositories}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ steps.token-scope.outputs.repositories }}
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+
+    - id: source-repo
+      name: Determine source repository and token
+      shell: bash
+      run: |
+        stack_repository="${{ inputs.stack-repository }}"
+        if [[ "$stack_repository" == */* ]]; then
+          echo "Using direct source repository: $stack_repository"
+          echo "stack-repository=$stack_repository" >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        source_repo_resolved=false
+        if [[ $(echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | wc -l) -gt 0 ]]; then
+          while read -r repo; do
+            repo_key=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            repoName=$(basename "$repoURL" .git)
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+            echo "Checking Repo ID: $repo_key against source repo: $stack_repository"
+
+            if [[ "$repo_key" == "$stack_repository" ]]; then
+              echo "Found matching repo: $repoOrg/$repoName, getting token..."
+              use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+              token=$(echo "$repo" | jq -r '.value[0].token // empty')
+              token_value=""
+              if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+                token_value="${{ steps.app-token.outputs.token }}"
+              fi
+              if [[ -z "$token_value" && -n "$token" ]]; then
+                token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token] // empty')
+              fi
+              echo "Repo Org/Name: $repoOrg/$repoName"
+              echo "stack-repository=$repoOrg/$repoName" >> "$GITHUB_OUTPUT"
+              if [[ -n "$token_value" ]]; then
+                echo "stack-repository-token=$token_value" >> "$GITHUB_OUTPUT"
+              fi
+              source_repo_resolved=true
+              break
+            fi
+          done < <(echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]')
+        fi
+
+        if [[ -n "$stack_repository" && "$source_repo_resolved" != "true" ]]; then
+          echo "::error::source_repo alias '$stack_repository' was not found in inputs.external-repos"
+          exit 1
+        fi
+
+    - name: "Checkout Source Repo"
+      uses: actions/checkout@v4
+      with:
+        path: source_repo
+        repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}
+        ref: ${{ inputs.stack-repository-version || github.sha }}
+        token: ${{ steps.source-repo.outputs.stack-repository-token || (steps.source-repo.outputs.stack-repository == github.repository && github.token) || (startsWith(steps.source-repo.outputs.stack-repository, format('{0}/', github.repository_owner)) && steps.app-token.outputs.token) || github.token }}
+        clean: false
+
+    - name: Merge stack to global-vars
+      id: merge-global-vars
+      uses: actions/github-script@v8
+      with:
+        result-encoding: json
+        script: |
+          const GLOBALS = ${{ toJson(fromJson(inputs.data)['globals']) || '{}' }};
+          return {
+              ...GLOBALS,
+              "stack_id": "${{ fromJson(inputs.data)['id'] }}",
+              "deployment_id": "${{ fromJson(inputs.data)['id'] }}-${{ env.STAGE }}-${{ env.CUSTOMER_ID }}"
+          }
+
+    - name: Build static site
+      id: build
+      uses: ./.github/actions/static-site-build
+      with:
+        source-type: ${{ fromJson(inputs.data)['swa_source_type'] || 'mkdocs' }}
+        docs-path: ${{ env.DOCS_RELATIVE_PATH }}
+        app-location: ${{ fromJson(inputs.data)['app_location'] || '' }}
+
+    - name: Resolve Static Web Apps config file
+      id: swa-config
+      shell: bash
+      run: |
+        config_file_relative="${{ fromJson(inputs.data)['config_file'] || '' }}"
+
+        if [[ -n "$config_file_relative" ]]; then
+          if [[ "$config_file_relative" = /* || "$config_file_relative" == *..* ]]; then
+            echo "::error::config_file must be a relative path without '..': ${config_file_relative}"
+            exit 1
+          fi
+
+          config_file="source_repo/${config_file_relative}"
+          if [[ ! -f "$config_file" ]]; then
+            echo "::error::Configured Static Web Apps config file not found: ${config_file}"
+            exit 1
+          fi
+        else
+          docs_relative_path="${{ env.DOCS_RELATIVE_PATH }}"
+          config_file_location="${{ fromJson(inputs.data)['config_file_location'] || '' }}"
+          app_location="${{ fromJson(inputs.data)['app_location'] || '' }}"
+
+          if [[ -n "$config_file_location" && -f "source_repo/${config_file_location}/staticwebapp.config.json" ]]; then
+            config_file="source_repo/${config_file_location}/staticwebapp.config.json"
+          elif [[ -n "$app_location" && -f "source_repo/${app_location}/staticwebapp.config.json" ]]; then
+            config_file="source_repo/${app_location}/staticwebapp.config.json"
+          elif [[ -f "source_repo/${docs_relative_path}/staticwebapp.config.json" ]]; then
+            config_file="source_repo/${docs_relative_path}/staticwebapp.config.json"
+          elif [[ -f "source_repo/staticwebapp.config.json" ]]; then
+            config_file="source_repo/staticwebapp.config.json"
+          else
+            echo "[INFO] No staticwebapp.config.json found, skipping"
+            exit 0
+          fi
+
+          echo "[INFO] Auto-discovered Static Web Apps config: ${config_file}"
+        fi
+
+        {
+          echo "file=${config_file}"
+          echo "directory=$(dirname "${config_file}")"
+        } >> "$GITHUB_OUTPUT"
+
+    - id: convert-inputs
+      name: Convert Inputs
+      if: (vars.REPO_KEYSTORE_KEY_VAULT_URL == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        allowNull: ${{ inputs.destroy }}
+
+    - id: convert-inputs-key-vault
+      name: Convert Inputs Key Vault (ARM SP)
+      if: (vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+
+    - id: convert-inputs-key-vault-keystore
+      name: Convert Inputs Key Vault (Keystore SP)
+      if: (vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
+    - name: Add Whitelist IPs
+      if: ${{ (fromJson(inputs.data)['swa_source_type'] || 'mkdocs') == 'mkdocs' }}
+      shell: bash
+      run: |
+        whitelist_ips=$(echo '${{ steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map }}' |
+          jq -r '.[] | select(.key == "whitelist_ips") | .value')
+
+        if [ -n "$whitelist_ips" ] && [ "$whitelist_ips" != "null" ]; then
+          config_file="${{ steps.swa-config.outputs.file }}"
+
+          if [ -n "$config_file" ]; then
+            jq --arg ips "$whitelist_ips" \
+              '.networking.allowedIpRanges += ($ips | split(","))' \
+              "$config_file" > tmp && mv tmp "$config_file"
+            echo "[DEBUG] Updated config with whitelist IPs"
+            cat "$config_file"
+          else
+            echo "[WARN] staticwebapp.config.json not found, skipping IP whitelist"
+          fi
+        else
+          echo "[INFO] No whitelist IPs provided, skipping IP configuration"
+        fi
+
+    - name: Get and Validate Token
+      id: token
+      run: |
+        api_token_secret="${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}"
+        api_token_input=$(echo '${{ steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map }}' |
+          jq -r '.[] | select(.key == "azure_static_web_apps_api_token") | .value')
+
+        api_token_input_size=${#api_token_input}
+        echo "[DEBUG] api_token_input_size=${api_token_input_size}"
+
+        api_token_secret_size=${#api_token_secret}
+        echo "[DEBUG] api_token_secret_size=${api_token_secret_size}"
+
+        if [ -z "$api_token_input" ]; then
+          echo "WARN: Azure Static Web Apps API token from input not found," \
+            "fallback to CI_AZURE_STATIC_WEB_APPS_API_TOKEN secret"
+          if [ -z "$api_token_secret" ]; then
+            echo "Error: Azure Static Web Apps API token not found"
+            exit 1
+          fi
+          echo "deployment_token=$api_token_secret" >> "$GITHUB_OUTPUT"
+        else
+          echo "deployment_token=$api_token_input" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Build And Deploy
+      id: builddeploy
+      uses: Azure/static-web-apps-deploy@v1
+      if: ${{ (fromJson(inputs.env)['dry_run'] || 'true') == 'false' }}
+      with:
+        azure_static_web_apps_api_token: ${{ steps.token.outputs.deployment_token }}
+        repo_token: ${{ secrets.GITHUB_TOKEN }}   # Used for Github integrations (i.e. PR comments)
+        action: "upload"
+            # App source code path
+        app_location: "${{ steps.build.outputs.site-dir }}"
+        api_location: ""   # Api source code path - optional
+        skip_app_build: true
+        skip_api_build: true
+            # Config file location - optional
+        config_file_location: "${{ steps.swa-config.outputs.directory }}"
+            # output_location: "site/" # Built app content directory - optional
+
+    - name: Add pipeline job backlink
+      if: ${{ !cancelled() }}
+      uses: ./.github/actions/pipeline-job-backlink
+      with:
+        job-name: ${{ format('Deploy SWA {0}', fromJson(inputs.data)['id']) }}

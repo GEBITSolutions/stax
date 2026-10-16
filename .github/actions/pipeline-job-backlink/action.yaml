@@ -1,0 +1,45 @@
+---
+name: "Pipeline Job Backlink"
+description: "Adds a link to the invoking GitHub Actions job to the job summary"
+inputs:
+  job-name:
+    required: true
+    description: "Display name of the invoking GitHub Actions job"
+runs:
+  using: "composite"
+  steps:
+  - name: Add pipeline job backlink
+    uses: actions/github-script@v8
+    with:
+      script: |
+        const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+        const jobName = ${{ toJson(inputs.job-name) }};
+        let jobUrl = runUrl;
+
+        try {
+          const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            run_id: context.runId,
+            filter: 'latest',
+            per_page: 100
+          });
+          const runnerName = process.env.RUNNER_NAME;
+          const job = jobs.find(({ runner_name, status }) =>
+            runner_name === runnerName && status === 'in_progress'
+          ) || jobs.find(({ name }) =>
+            name === jobName ||
+            name.endsWith(` / ${jobName}`) ||
+            name.endsWith(jobName)
+          );
+          jobUrl = job?.html_url || runUrl;
+        } catch (error) {
+          core.warning(`Unable to resolve pipeline job URL: ${error.message}`);
+        }
+
+        core.info(`Pipeline job backlink: ${jobUrl}`);
+
+        await core.summary
+          .addLink('View pipeline job', jobUrl)
+          .addEOL()
+          .write();

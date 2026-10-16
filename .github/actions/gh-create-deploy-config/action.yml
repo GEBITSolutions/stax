@@ -1,0 +1,42 @@
+---
+name: Stack Deployment Config Converter
+description: >
+  Evaluates Stack dependencies, Stack-Groups and Filters.
+author: Fractiunate.me
+branding:
+  icon: settings
+  color: blue
+
+inputs:
+  deploy-depth:
+    description: 'Count of max layers to generate.'
+    required: false
+    default: '14'
+  stack-filter:
+    description: 'Filter for stack names. Commas separate multiple values.'
+    required: false
+    default: '{}'
+  deploy-config:
+    description: 'JSON list of stacks.'
+    required: false
+    default: '[]'
+  deploy-configs:
+    description: 'JSON array of deploy-config documents ({stacks, externalRepos, sourceFile}).'
+    required: false
+    default: '[]'
+  global-vars:
+    description: 'JSON object of additional key-value pairs to evaluate stack conditions.'
+    required: false
+    default: '{}'
+  external-repos:
+    description: 'JSON object of external repository configurations (from deploy-config externalRepos).'
+    required: false
+    default: '{}'
+
+outputs:
+  layer-deployments:
+    description: 'JSON list of stack deployments.'
+
+runs:
+  using: node20
+  main: dist/index.js

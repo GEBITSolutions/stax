@@ -1,0 +1,617 @@
+---
+name: ".Setup CI/CD (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      project:
+        required: true
+        type: string
+      stack_filter:
+        required: true
+        type: string
+      environment:
+        required: true
+        type: string
+      dry-run:
+        required: false
+        type: boolean
+        default: true
+      destroy:
+        required: false
+        type: boolean
+        default: false
+      debug:
+        required: false
+        type: boolean
+        default: false
+        description: "Enable debug output in stack workflows (sets TF_LOG for terraform stacks). May log secrets."
+      tf-log-level:
+        required: false
+        type: string
+        default: ""
+        description: "TF_LOG level if debug: TRACE|DEBUG|INFO|WARN|ERROR|JSON. Empty: vars.TF_LOG_LEVEL, then DEBUG."
+      runs-on:
+        required: false
+        type: string
+        default: "ubuntu-22.04"
+      release_config_filepath:
+        required: false
+        type: string
+        default: "deploy-config-default.yaml"
+      is-ghe:
+        required: false
+        type: string
+        default: "false"
+      skip-azure-credentials-validation:
+        required: false
+        type: boolean
+        default: false
+      artifact_prefix:
+        required: false
+        type: string
+        default: ""
+        description: "Optional prefix for artifact names to avoid collisions when calling this workflow multiple times"
+      actions-repository:
+        required: false
+        type: string
+        default: "GEBITSolutions/stax"
+        description: "Github Repo for shared actions."
+      actions-version:
+        required: false
+        type: string
+        default: "main"
+        description: "Github ref (branch/tag/sha) for shared actions."
+    outputs:
+      default-location:
+        value: ${{ jobs.setup.outputs.default-location }}
+        description: "The default location for the resources"
+      ci-config:
+        value: ${{ jobs.setup.outputs.ci-config }}
+      external-repos:
+        value: ${{ jobs.setup.outputs.external-repos }}
+      env:
+        value: ${{ jobs.setup.outputs.env }}
+    secrets:
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_CLIENT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+      CONFIG_GITHUB_TOKEN:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+
+jobs:
+  setup:
+    name: "Get Config"
+    environment: ${{ inputs.environment }}
+    runs-on: ${{ inputs.runs-on || 'ubuntu-22.04' }}
+    outputs:
+      default-location: ${{ env.DEFAULT_LOCATION }}
+      ci-config: ${{ steps.build-layers.outputs.ci-config || '[]' }}
+      external-repos: ${{ steps.read-deploy-config.outputs.external-repos || '[]' }}
+      env: ${{ steps.global-env-vars.outputs.global-vars || '{}' }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ENVIRONMENT: ${{ inputs.environment }}
+      RESOURCE_GROUP_NAME: ${{ vars.RESOURCE_GROUP_NAME }}
+      DNS_ZONE_NAME: ${{ vars.DNS_ZONE_NAME || inputs.environment }}
+      DNS_ZONE_RESOURCE_GROUP_NAME: ${{ vars.DNS_ZONE_RESOURCE_GROUP_NAME || vars.RESOURCE_GROUP_NAME }}
+      # Derived name st<customer><project><stage>; sanitized and length-checked in "Global Env Vars".
+      STATE_STORAGE_ACCOUNT_NAME: ${{ vars.STATE_STORAGE_ACCOUNT_NAME || format('st{0}{1}{2}', vars.CUSTOMER_ID || 'default', vars.project
+        || inputs.project, vars.STAGE || 'dev') }}
+      STATE_CONTAINER_NAME: ${{ vars.STATE_CONTAINER_NAME || format('{0}-tfstate', vars.CUSTOMER_ID || 'default') }}
+      STATE_RESOURCE_GROUP_NAME: ${{ vars.STATE_RESOURCE_GROUP_NAME || vars.RESOURCE_GROUP_NAME }}
+      PROJECT: ${{ vars.project || inputs.project }}
+      CUSTOMER_ID: ${{ vars.CUSTOMER_ID || 'default' }}
+      STAGE: ${{ vars.STAGE || 'dev' }}
+      PUBLIC_CLOUD_FLAG: ${{ vars.PUBLIC_CLOUD_FLAG || 'true' }}
+      DEFAULT_LOCATION: ${{ vars.DEFAULT_LOCATION || 'northeurope' }}
+      CLOUD: ${{ vars.CLOUD || 'azure' }}
+      STATE_BUCKET_NAME: ${{ vars.STATE_BUCKET_NAME }}
+      STATE_REGION: ${{ vars.STATE_REGION || vars.DEFAULT_LOCATION }}
+      AWS_ACCESS_KEY_ID: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+      AWS_SECRET_ACCESS_KEY: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+      CONFIG_LOCAL: "${{ vars.CONFIG_LOCAL || 'true' }}"
+      CONFIG_REPO: "${{ vars.CONFIG_REPO || '' }}"
+      CONFIG_VERSION: "${{ vars.CONFIG_VERSION || 'main' }}"
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Prepare artifact prefix
+      id: prefix
+      shell: bash
+      run: |
+        raw="${{ inputs.artifact_prefix }}"
+        sanitized=$(echo "$raw" | tr '[:upper:]' '[:lower:]' | tr -d ' -')
+        if [ -n "$sanitized" ]; then
+          echo "value=${sanitized}-" >> "$GITHUB_OUTPUT"
+        else
+          echo "value=" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Resolve App Token Scope
+      id: token-scope
+      shell: bash
+      run: |
+        repositories="${GITHUB_REPOSITORY#*/}"
+        if [[ "${CONFIG_REPO}" == "${GITHUB_REPOSITORY_OWNER}/"* ]]; then
+          config_repo="${CONFIG_REPO#*/}"
+          if [[ -n "$config_repo" && "$config_repo" != "$repositories" ]]; then
+            repositories="${repositories},${config_repo}"
+          fi
+        fi
+        echo "repositories=${repositories}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ steps.token-scope.outputs.repositories }}
+
+
+    - shell: bash
+      run: |
+        echo -e 'ARM_CLIENT_ID = $ARM_CLIENT_ID'
+        echo -e 'ARM_TENANT_ID = $ARM_TENANT_ID'
+        echo -e 'ARM_SUBSCRIPTION_ID = $ARM_SUBSCRIPTION_ID'
+        echo -e 'ARM_CLIENT_SECRET = $ARM_CLIENT_SECRET'
+        echo -e 'ENVIRONMENT = $ENVIRONMENT'
+        echo -e 'RESOURCE_GROUP_NAME = $RESOURCE_GROUP_NAME'
+        echo -e 'DNS_ZONE_RESOURCE_GROUP_NAME = $DNS_ZONE_RESOURCE_GROUP_NAME'
+        echo -e 'STATE_STORAGE_ACCOUNT_NAME = $STATE_STORAGE_ACCOUNT_NAME'
+        echo -e 'STATE_RESOURCE_GROUP_NAME = $STATE_RESOURCE_GROUP_NAME'
+        echo -e 'PROJECT = $PROJECT'
+        echo -e 'CUSTOMER_ID = $CUSTOMER_ID'
+        echo -e 'STAGE = $STAGE'
+        echo -e 'PUBLIC_CLOUD_FLAG = $PUBLIC_CLOUD_FLAG'
+        echo -e 'DEFAULT_LOCATION = $DEFAULT_LOCATION'
+        echo -e 'CONFIG_LOCAL = $CONFIG_LOCAL'
+        echo -e 'CONFIG_REPO = $CONFIG_REPO'
+        echo -e 'CONFIG_VERSION = $CONFIG_VERSION'
+
+    - name: Checkout External Configs
+      if: env.CONFIG_LOCAL == 'false'
+      uses: actions/checkout@v4
+      with:
+        path: ext_configs
+        repository: ${{ env.CONFIG_REPO }}
+        ref: ${{ env.CONFIG_VERSION }}
+        token: ${{ secrets.CONFIG_GITHUB_TOKEN || (env.CONFIG_REPO == github.repository && github.token) || (startsWith(env.CONFIG_REPO, format('{0}/', github.repository_owner)) && steps.app-token.outputs.token) || github.token }}
+
+    - name: Resolve Deploy Config Metadata
+      id: config-metadata
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        prefix="${{ env.CONFIG_LOCAL == 'false' && 'ext_configs/' || '' }}"
+
+        if [[ "${CONFIG_LOCAL}" == "false" ]]; then
+          config_repo="${CONFIG_REPO}"
+          config_requested_ref="${CONFIG_VERSION}"
+          config_resolved_sha="$(git -C ext_configs rev-parse HEAD)"
+        else
+          config_repo="${GITHUB_REPOSITORY}"
+          config_requested_ref="${GITHUB_REF_NAME}"
+          config_resolved_sha="${GITHUB_SHA}"
+        fi
+
+        # release_config_filepath may be a comma-separated list of config files;
+        # aggregate provenance for the deployment summary.
+        config_entries='[]'
+        config_count=0
+        IFS=',' read -ra config_paths <<< "${{ inputs.release_config_filepath }}"
+        for raw_path in "${config_paths[@]}"; do
+          file_path="$(echo "${raw_path}" | xargs)"
+          if [[ -z "${file_path}" ]]; then
+            continue
+          fi
+
+          config_file="${prefix}${file_path}"
+          if [[ ! -f "${config_file}" ]]; then
+            echo "Deploy config file not found: ${config_file}" >&2
+            exit 1
+          fi
+
+          if [[ "${CONFIG_LOCAL}" == "false" ]]; then
+            config_repo_path="${config_file#ext_configs/}"
+          else
+            config_repo_path="${config_file}"
+          fi
+
+          config_file_sha256="$(sha256sum "${config_file}" | awk '{print $1}')"
+          current_config_url="${GITHUB_SERVER_URL}/${config_repo}/blob/${config_resolved_sha}/${config_repo_path}"
+
+          config_entries=$(jq -cn \
+            --argjson configs "${config_entries}" \
+            --arg path "${config_repo_path}" \
+            --arg url "${current_config_url}" \
+            --arg fileSha256 "${config_file_sha256}" \
+            '$configs + [{path: $path, url: $url, fileSha256: $fileSha256}]')
+          ((config_count += 1))
+
+          echo "Deploy config: ${config_repo}@${config_resolved_sha} (${config_repo_path})"
+          echo "Deploy config file SHA256: ${config_file_sha256}"
+        done
+
+        if (( config_count == 0 )); then
+          echo "At least one deploy config file path is required." >&2
+          exit 1
+        fi
+
+        config_metadata=$(jq -cn \
+          --arg repository "${config_repo}" \
+          --arg requestedRef "${config_requested_ref}" \
+          --arg resolvedSha "${config_resolved_sha}" \
+          --argjson configs "${config_entries}" \
+          '{repository: $repository, requestedRef: $requestedRef, resolvedSha: $resolvedSha, configs: $configs}')
+        echo "config-metadata=${config_metadata}" >> "$GITHUB_OUTPUT"
+
+    - name: Validate Environment
+      id: validate-env
+      uses: actions/github-script@v8
+      env:
+        SKIP_AZURE_CREDENTIALS_VALIDATION: ${{ inputs.skip-azure-credentials-validation }}
+        OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
+      with:
+        script: |
+          const env = process.env;
+          const skipCloudValidation = (env.SKIP_AZURE_CREDENTIALS_VALIDATION || 'false') === 'true';
+          const oidcEnabled = (env.OIDC_ENABLED || 'false') === 'true';
+          const cloud = (env.CLOUD || 'azure').toLowerCase();
+
+          if (!['azure', 'aws'].includes(cloud)) {
+            core.setFailed(`Unsupported cloud '${cloud}'. Supported values: azure, aws.`);
+            return;
+          }
+
+          const base_vars = ['ENVIRONMENT', 'CUSTOMER_ID', 'STAGE', 'PROJECT'];
+
+          let required_vars;
+          let required_secrets;
+
+          if (cloud === 'aws') {
+            required_vars = skipCloudValidation
+              ? [...base_vars, 'STATE_BUCKET_NAME']
+              : [...base_vars, 'STATE_BUCKET_NAME', 'STATE_REGION'];
+            required_secrets = skipCloudValidation
+              ? []
+              : (oidcEnabled ? ['AWS_ROLE_ARN'] : ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY']);
+          } else {
+            required_vars = skipCloudValidation
+              ? [...base_vars, 'STATE_STORAGE_ACCOUNT_NAME']
+              : ['ARM_CLIENT_ID', 'ARM_TENANT_ID', 'ARM_SUBSCRIPTION_ID', ...base_vars, 'RESOURCE_GROUP_NAME', 'STATE_STORAGE_ACCOUNT_NAME'];
+            required_secrets = (skipCloudValidation || oidcEnabled) ? [] : ['ARM_CLIENT_SECRET'];
+          }
+
+          const missing_vars = required_vars.filter((key) => !env[key]);
+          const missing_secrets = required_secrets.filter((key) => !env[key]);
+          if (missing_vars.length > 0) {
+            core.setFailed(`Required environment variables are missing: ${missing_vars.join(', ')}`);
+          }
+          if (missing_secrets.length > 0) {
+            core.setFailed(`Required environment secrets are missing: ${missing_secrets.join(', ')}`);
+          }
+
+    - name: Eval Branch or Tag Name
+      id: get-tag
+      run: |2
+
+        # Eval branch or tag name
+        branch_ref="${GITHUB_REF#refs/heads/}"
+        check_branch_prefix=$(echo $branch_ref | cut -c1-10)
+
+        if [[ "${check_branch_prefix}" == 'refs/tags/' ]]; then
+          # Actual tag push
+          has_tag=true
+          tag_name="${branch_ref#refs/tags/}"
+          echo "[INFO] tag=${tag_name}, has_tag=${has_tag}"
+        elif [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+          # Building on main branch - use latest tag version
+          has_tag=true
+
+          # Fetch all tags
+          git fetch --tags
+
+          # Get the latest tag or default to 0.1.0
+          latest_tag=$(git tag --sort=-v:refname | head -n1)
+          if [[ -z "$latest_tag" ]]; then
+            tag_name="0.1.0"
+            echo "[INFO] No existing tags, starting with version ${tag_name}"
+          else
+            # Use the latest tag
+            tag_name="${latest_tag#v}"
+            echo "[INFO] Using latest tag version: ${tag_name}"
+          fi
+        else
+          # Other branches - use commit SHA
+          has_tag=false
+          tag_name="sha-${GITHUB_SHA}"
+          echo "[INFO] sha=${tag_name}, has_tag=${has_tag}"
+        fi
+
+        echo "has_tag=${has_tag}" >> "$GITHUB_OUTPUT"
+        echo "tag=${tag_name}" >> "$GITHUB_OUTPUT"
+
+    - name: Global Env Vars
+      id: global-env-vars
+      env:
+        INPUT_TF_LOG_LEVEL: ${{ inputs.tf-log-level }}
+      run: |
+        # Azure storage account names: 3-24 characters, lowercase letters and digits only. Never truncate:
+        # a cut-off name could silently point two projects at the same account.
+        sa_name=$(printf '%s' "$STATE_STORAGE_ACCOUNT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+        if [[ "$CLOUD" == "azure" ]] && (( ${#sa_name} < 3 || ${#sa_name} > 24 )); then
+          echo "::error::State storage account name '${sa_name}' must be 3-24 characters (derived as st<customer><project><stage>). Set STATE_STORAGE_ACCOUNT_NAME to override."
+          exit 1
+        fi
+
+        # Terraform treats unknown TF_LOG values as TRACE (most verbose, most likely to leak secrets).
+        tf_log_level="${INPUT_TF_LOG_LEVEL^^}"
+        if [[ -n "$tf_log_level" && ! "$tf_log_level" =~ ^(TRACE|DEBUG|INFO|WARN|ERROR|JSON)$ ]]; then
+          echo "::error::Invalid tf-log-level '${INPUT_TF_LOG_LEVEL}'. Allowed: TRACE, DEBUG, INFO, WARN, ERROR, JSON."
+          exit 1
+        fi
+
+        global_vars=$(jq -nrc \
+          --arg customer_id "${{ env.CUSTOMER_ID }}" \
+          --arg stage "${{ env.STAGE }}" \
+          --arg resource_group_name "${{ env.RESOURCE_GROUP_NAME }}" \
+          --arg dry_run "${{ inputs.dry-run }}" \
+          --arg destroy "${{ inputs.destroy }}" \
+          --arg debug "${{ inputs.debug }}" \
+          --arg tf_log_level "$tf_log_level" \
+          --arg state_storage_account_name "$sa_name" \
+          --arg state_storage_container_name "${{ env.STATE_CONTAINER_NAME }}" \
+          --arg state_resource_group_name "${{ env.STATE_RESOURCE_GROUP_NAME }}" \
+          --arg project "${{ env.PROJECT }}" \
+          --arg environment "${{ env.ENVIRONMENT }}" \
+          --arg dns_zone_name "${{ env.DNS_ZONE_NAME }}" \
+          --arg dns_zone_resource_group_name "${{ env.DNS_ZONE_RESOURCE_GROUP_NAME }}" \
+          --arg public_cloud_flag "${{ env.PUBLIC_CLOUD_FLAG }}" \
+          --arg release_tag_name "${{ steps.get-tag.outputs.tag }}" \
+          --arg has_release_tag "${{ steps.get-tag.outputs.has_tag }}" \
+          --arg cloud "${{ env.CLOUD }}" \
+          --arg state_bucket_name "${{ env.STATE_BUCKET_NAME }}" \
+          --arg state_region "${{ env.STATE_REGION }}" \
+          '{
+            customer_id: $customer_id,
+            stage: $stage,
+            resource_group_name: $resource_group_name,
+            dry_run: $dry_run,
+            destroy: $destroy,
+            debug: $debug,
+            tf_log_level: $tf_log_level,
+            state_storage_account_name: $state_storage_account_name,
+            state_storage_container_name: $state_storage_container_name,
+            state_resource_group_name: $state_resource_group_name,
+            project: $project,
+            environment: $environment,
+            dns_zone_name: $dns_zone_name,
+            dns_zone_resource_group_name: $dns_zone_resource_group_name,
+            public_cloud_flag: $public_cloud_flag,
+            release_tag_name: $release_tag_name,
+            has_release_tag: $has_release_tag,
+            cloud: $cloud,
+            state_bucket_name: $state_bucket_name,
+            state_region: $state_region
+          }')
+        echo "global-vars=$global_vars" >> "$GITHUB_OUTPUT"
+
+      # ── Deploy Config Pipeline (inlined from deploy-config/v1) ──────────
+
+    - name: Install yq
+      if: ${{ inputs.is-ghe == 'true' }}
+      shell: bash
+      run: |
+        sudo apt-get update && sudo apt-get install -y wget
+        sudo wget -qO /usr/local/bin/yq \
+          https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64
+        sudo chmod +x /usr/local/bin/yq
+        yq --version
+
+    - name: Read Stacks (Deploy Config)
+      id: read-deploy-config
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        prefix="${{ env.CONFIG_LOCAL == 'false' && 'ext_configs/' || '' }}"
+
+        # release_config_filepath may be a comma-separated list of config files.
+        # Build a JSON array of documents, one per file, each with its stacks
+        # (config_globals attached per-stack), externalRepos and sourceFile.
+        documents='[]'
+        IFS=',' read -ra config_paths <<< "${{ inputs.release_config_filepath }}"
+        for raw_path in "${config_paths[@]}"; do
+          file_path="$(echo "${raw_path}" | xargs)"
+          if [[ -z "${file_path}" ]]; then
+            continue
+          fi
+
+          config_file="${prefix}${file_path}"
+          if [[ ! -f "${config_file}" ]]; then
+            echo "Deploy config file not found: ${config_file}" >&2
+            exit 1
+          fi
+
+          # Attach config_globals (from the deploy-config globals section) to each
+          # stack. Pipeline globals (tf_vars) are NOT merged into stacks — they are
+          # passed separately via global-vars input to the converter.
+          document=$(yq -o=json "${config_file}" | jq -rc \
+            --arg sourceFile "${config_file}" \
+            '{stacks: (.globals as $config_globals | (.stacks // []) | map(. + {config_globals: $config_globals})), externalRepos: ((.externalRepos // {}) | if . == [] then {} else . end), sourceFile: $sourceFile}')
+
+          documents=$(echo "${documents}" | jq -rc --argjson document "${document}" '. + [$document]')
+        done
+
+        # Merged externalRepos (best-effort, later file wins) for the legacy output
+        # consumed downstream by deploy-stack workflows.
+        ext_repo_config=$(echo "${documents}" | jq -rc \
+          'reduce .[] as $doc ({}; . * ($doc.externalRepos // {}))')
+
+        # Legacy scalar stacks output kept for direct/e2e callers (first file).
+        deploy_config=$(echo "${documents}" | jq -rc '(.[0].stacks) // []')
+
+        echo -e "=Documents================"
+        echo -e "${documents}"
+        echo -e "=Repos===================="
+        echo -e "${ext_repo_config}"
+        echo -e "=========================="
+
+        {
+          echo "deploy-configs=${documents}"
+          echo "deploy-config=${deploy_config}"
+          echo "external-repos=${ext_repo_config}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Checkout Shared Code Actions
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        path: _shared_actions
+        sparse-checkout: .github/actions/gh-create-deploy-config
+        clean: false
+
+    - name: Create Deploy Config (Layer Deployments)
+      id: create-deploy-config
+      uses: ./_shared_actions/.github/actions/gh-create-deploy-config
+      with:
+        deploy-depth: "14"
+        stack-filter: ${{ inputs.stack_filter }}
+        deploy-configs: ${{ steps.read-deploy-config.outputs.deploy-configs }}
+        global-vars: ${{ steps.global-env-vars.outputs.global-vars }}
+        external-repos: ${{ steps.read-deploy-config.outputs.external-repos }}
+
+    - name: Build Layer JSON
+      id: build-layers
+      shell: bash
+      run: |
+        if [[ "${{ inputs.destroy }}" == 'true' ]]; then
+          ci_config=$(echo '${{ steps.create-deploy-config.outputs.layer-deployments }}' | jq -rc 'reverse')
+        else
+          ci_config=$(echo '${{ steps.create-deploy-config.outputs.layer-deployments }}' | jq -rc)
+        fi
+
+        echo "$ci_config" > ${{ steps.prefix.outputs.value }}layer_deployments.json
+        cat ${{ steps.prefix.outputs.value }}layer_deployments.json
+
+        echo "ci-config=${ci_config}" >> "$GITHUB_OUTPUT"
+
+    - name: Upload Layer Deployment Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ steps.prefix.outputs.value }}layer-deployment-json
+        path: ${{ steps.prefix.outputs.value }}layer_deployments.json
+
+    - name: Stack Summary
+      uses: actions/github-script@v8
+      continue-on-error: true
+      env:
+        CONFIG_METADATA: ${{ steps.config-metadata.outputs.config-metadata }}
+      with:
+        result-encoding: string
+        script: |
+          const fs = require('fs');
+          const ci_config = JSON.parse(fs.readFileSync('${{ steps.prefix.outputs.value }}layer_deployments.json', 'utf8'));
+          const configMetadata = JSON.parse(process.env.CONFIG_METADATA);
+          const {
+            repository: configRepo,
+            requestedRef: configRequestedRef,
+            resolvedSha: configResolvedSha,
+            configs
+          } = configMetadata;
+          const revisionUrl = `${process.env.GITHUB_SERVER_URL}/${configRepo}/commit/${configResolvedSha}`;
+
+          // Build dependency tree
+          const depTree = new Map();
+          for (const arr of ci_config) {
+            for (const obj of arr) {
+              depTree.set(obj.id, obj.depends_on || []);
+            }
+          }
+
+          // Generate Mermaid syntax
+          const lines = [];
+          const visited = new Set();
+          const urlPrefix = `${process.env.GITHUB_SERVER_URL}/${process.env.GITHUB_REPOSITORY}/tree/${process.env.GITHUB_SHA}/terraform/stacks/`;
+
+          function addDeps(node) {
+            if (visited.has(node)) return;
+            visited.add(node);
+            const deps = depTree.get(node) || [];
+            if (deps.length > 0) {
+              lines.push([...deps, node].join(' --> ') + ';');
+              for (const d of deps) addDeps(d);
+            } else {
+              lines.push(`${node};`);
+            }
+            lines.push(`click ${node} href "${urlPrefix}${node}"`);
+          }
+
+          let i = 0;
+          for (const node of depTree.keys()) {
+            lines.push(`subgraph ${i};`);
+            addDeps(node);
+            lines.push('end;');
+            i++;
+          }
+
+          const mermaidDiagram = lines.join('\n');
+
+          await core.summary
+                .addHeading('Deployment Stack Summary').addEOL()
+                .addHeading('Deploy Config Source', 2).addEOL()
+                .addTable([
+                  [
+                    {data: 'Field', header: true},
+                    {data: 'Value', header: true}
+                  ],
+                  ['Repository', configRepo],
+                  ['Requested ref', configRequestedRef],
+                  ['Resolved Git SHA', `<a href="${revisionUrl}"><code>${configResolvedSha}</code></a>`]
+                ])
+                .addEOL()
+                .addHeading('Configurations', 2).addEOL()
+                .addTable([
+                  [
+                    {data: 'Config', header: true},
+                    {data: 'File SHA256', header: true}
+                  ],
+                  ...configs.map(config => [
+                    `<a href="${config.url}"><code>${config.path}</code></a>`,
+                    `<code>${config.fileSha256}</code>`
+                  ])
+                ])
+                .addEOL()
+                .addCodeBlock(`
+                  graph TD;
+                    ${mermaidDiagram}
+                  `, 'mermaid')
+                .addEOL().write();

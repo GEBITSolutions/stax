@@ -1,0 +1,28 @@
+---
+name: Pin Shared Workflow Refs
+description: Pin configured stax reusable workflow refs to a release tag.
+
+inputs:
+  workflow-files-json:
+    description: JSON array of caller workflow files to pin.
+    required: true
+  version:
+    description: Published stax release tag to use.
+    required: true
+
+outputs:
+  changed-files-json:
+    description: JSON array of changed repository-relative workflow paths.
+    value: ${{ steps.pin.outputs.changed-files-json }}
+
+runs:
+  using: composite
+  steps:
+  - id: pin
+    shell: bash
+    env:
+      WORKFLOW_FILES_JSON: ${{ inputs.workflow-files-json }}
+      VERSION: ${{ inputs.version }}
+    run: >-
+      python3 "$GITHUB_ACTION_PATH/pin_shared_workflow_refs.py" --root "$GITHUB_WORKSPACE"
+      --workflow-files-json "$WORKFLOW_FILES_JSON" --version "$VERSION" --github-output "$GITHUB_OUTPUT"

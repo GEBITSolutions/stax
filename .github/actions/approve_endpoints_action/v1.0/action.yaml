@@ -1,0 +1,26 @@
+---
+name: "Approve Private Connection Endpoint"
+description: "This action is used to approve an azure private link connection endpoint"
+author: "fractiunate"
+inputs:
+  endpoint-resource-id:
+    required: true
+    description: "Resource Endpoint-Id to approve "
+runs:
+  using: "composite"
+  steps:
+  - id: az-login
+    name: az-login
+    shell: bash
+    run: |
+      bash "${GITHUB_WORKSPACE}/.github/scripts/az-login.sh"
+
+  - name: approve-private-link-connections
+    shell: pwsh
+    run: |
+      $endpoint_resource_id = ${{ inputs.endpoint-resource-id }}
+      $private_link = $(az network private-endpoint-connection list `
+        --id $endpoint_resource_id `
+        --query "[?properties.privateLinkServiceConnectionState.status == 'Pending'].id" `
+        -o json) | ConvertFrom-Json
+      az network private-endpoint-connection approve --id $private_link --description "Approved in Terraform"
