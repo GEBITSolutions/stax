@@ -1,0 +1,43 @@
+[project]
+site_name = "STAX Framework"
+site_description = "A modern open-source opinionated GitHub Workflow Framework to combine and deploy all of your cloud infrastructure and services."
+extra_css = ["stylesheets/extra.css"]
+nav = [
+  { "Welcome, STAX!" = [
+    { "Welcome, STAX!" = "index.md" },
+    { "Why STAX?" = "why-stax.md" },
+  ] },
+  { "Start a new project" = [
+    { "Installation" = "installation.md" },
+    { "Your first config" = "your-first-config.md" },
+  ] },
+  { "Configuration" = [
+    { "Overview" = "configuration.md" },
+  ] },
+  { "Stack types" = [
+    { "Supported stack types" = "stack-types.md" },
+  ] },
+  { "Backends" = [
+    { "Overview" = "backends.md" },
+  ] },
+]
+
+[project.theme]
+language = "en"
+logo = "assets/stax-logo.png"
+favicon = "assets/stax-favicon.png"
+features = ["content.code.copy", "navigation.footer", "navigation.expand"]
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "teal"
+accent = "teal"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
