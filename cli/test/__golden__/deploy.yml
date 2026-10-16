@@ -1,0 +1,63 @@
+name: Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: GitHub Environment to deploy to
+        type: environment
+        required: true
+        default: "dev.example.com"
+      stack-filter:
+        description: One or more stack ids, comma separated; empty selects all stacks
+        type: string
+        required: false
+        default: ""
+      deploy-config:
+        description: Deploy config in configs/ (file name without .yaml)
+        type: string
+        required: false
+        default: default
+      dry-run:
+        description: Dry run (plan only, no apply)
+        type: boolean
+        default: true
+      destroy:
+        description: Destroy infrastructure
+        type: boolean
+        default: false
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.dry-run && github.sha || inputs.environment }}
+  cancel-in-progress: false
+
+jobs:
+  setup:
+    name: Setup CI/CD
+    uses: GEBITSolutions/stax/.github/workflows/a-wf-setup-ci.yml@main
+    secrets: inherit
+    with:
+      project: "demo"
+      environment: ${{ inputs.environment }}
+      stack_filter: ${{ inputs.stack-filter }}
+      dry-run: ${{ inputs.dry-run }}
+      destroy: ${{ inputs.destroy }}
+      runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+      release_config_filepath: configs/${{ inputs.deploy-config }}.yaml
+
+  deploy-levels:
+    name: Deploy Levels
+    needs: setup
+    uses: GEBITSolutions/stax/.github/workflows/a-wf-deploy-levels.yml@main
+    secrets: inherit
+    with:
+      ci_config: ${{ needs.setup.outputs.ci-config }}
+      env: ${{ needs.setup.outputs.env }}
+      default_location: ${{ needs.setup.outputs.default-location }}
+      external_repos: ${{ needs.setup.outputs.external-repos }}

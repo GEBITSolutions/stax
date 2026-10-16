@@ -1,0 +1,39 @@
+name: CLI
+
+on:
+  pull_request:
+    paths:
+      - cli/**
+      - .github/workflows/cli.yml
+  push:
+    branches: [main]
+    paths:
+      - cli/**
+      - .github/workflows/cli.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: cli/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: Smoke stax init
+        run: |
+          target="$(mktemp -d)"
+          node dist/cli.js init "$target" --project smoke --environment dev
+          test -f "$target/.github/workflows/deploy.yml"
+          test -f "$target/configs/default.yaml"
