@@ -1,0 +1,1414 @@
+---
+name: "HCL Action"
+description: "This action is used as a github wrapper for terraform- and opentofu-cli"
+author: "Fractiunate"
+inputs:
+  debug:
+    required: false
+    default: "false"
+    description: "Log DEBUG Messages"
+  plan:
+    required: true
+    description: "bool"
+  upload-plan-artifact:
+    required: false
+    default: "true"
+    description: "Upload the binary saved plan artifact"
+  no-lock:
+    required: false
+    description: "bool"
+    default: "true"
+  apply:
+    required: false
+    description: "bool"
+  destroy:
+    required: false
+    description: "destroy run"
+  iac-provider:
+    required: false
+    description: "IaC Provider to use for HCL. Currently supported: terraform, opentofu"
+    default: "terraform"
+  cloud:
+    required: false
+    description: "Target cloud for authentication and remote state. Supported: azure, aws"
+    default: "azure"
+  terraform-version:
+    required: false
+    default: "1.5.5"
+    description: "terraform-version"
+  opentofu-version:
+    required: false
+    default: "1.6.0-rc1"
+    description: "opentofu-version"
+  stage:
+    required: true
+    description: "Deployment Stage (dev, int, prd, etc.)"
+  gh-environment-name:
+    required: false
+    description: "Required for environment transfer."
+  tf-log-level:
+    required: false
+    description: "Terraform Log Level"
+  tf-parallelism:
+    required: false
+    default: "15"
+    description: "Terraform Parallelism parameter"
+  chdir:
+    required: true
+    description: "terraform project folder path"
+    default: terraform
+  stack-id:
+    required: false
+    description: "stack id"
+    default: ""
+  backend-config:
+    required: false
+    description: "IaC backend-config"
+    default: ""
+  backend-state-key-override:
+    required: false
+    description: "IaC backend-config state key override"
+    default: ""
+  backend-state-container-name-override:
+    required: false
+    description: "IaC backend-config state key override"
+    default: "tfstate"
+  backend-state-storage-account-name-override:
+    required: false
+    description: "IaC backend-config storage accoount name override"
+    default: ""
+  backend-state-resource-group-name-override:
+    required: false
+    description: "IaC backend-config storage accoount rg name override"
+    default: ""
+  backend-state-bucket-name-override:
+    required: false
+    description: "IaC backend-config S3 bucket name override (cloud: aws)"
+    default: ""
+  backend-state-region-override:
+    required: false
+    description: "IaC backend-config S3 region override (cloud: aws)"
+    default: ""
+  tfvars-file:
+    required: false
+    description: "IaC tfvars-file"
+    default: ""
+  tf-vars:
+    required: false
+    description: "IaC tfvars-map"
+    default: "{}"
+  solution:
+    required: false
+    description: "Additional sub-project-id. Defaults to empty string/; no subproject."
+    default: ""
+  location:
+    default: "germanywestcentral"
+    required: false
+    description: "Azure Datacenter Location"
+  local-terraform-state:
+    required: false
+    description: "Use local Terraform state (skip Azure login and backend state validation)"
+    default: "false"
+  generate-source-artifact:
+    required: false
+    description: "Generate an artifact for the HCL source files"
+    default: "true"
+  relative-module-path:
+    required: false
+    description: "relative path to module folder"
+    default: "../../modules"
+  TF_PROVIDER_GH_TOKEN:
+    required: false
+    description: "SECRET"
+    default: ""
+  TF_PROVIDER_GH_OWNER:
+    required: false
+    description: "SECRET"
+    default: ""
+  ENV_TRANSFER_GH_TOKEN:
+    required: false
+    description: "SECRET"
+    default: ""
+  INFRACOST_API_KEY:
+    required: false
+    description: "SECRET"
+    default: ""
+  oidc-enabled:
+    required: false
+    description: "Enable OIDC (federated token) authentication instead of client secret"
+    default: "false"
+  ARM_CLIENT_ID:
+    required: true
+    description: "SECRET"
+    default: "none"
+  ARM_CLIENT_SECRET:
+    required: false
+    description: "SECRET — not required when oidc-enabled is true"
+    default: ""
+  ARM_SUBSCRIPTION_ID:
+    required: true
+    description: "SECRET"
+    default: "none"
+  ARM_TENANT_ID:
+    required: true
+    description: "SECRET"
+    default: "none"
+  AWS_ACCESS_KEY_ID:
+    required: false
+    description: "SECRET — static AWS access key. Omit when oidc-enabled is true."
+    default: ""
+  AWS_SECRET_ACCESS_KEY:
+    required: false
+    description: "SECRET — static AWS secret key. Omit when oidc-enabled is true."
+    default: ""
+  AWS_SESSION_TOKEN:
+    required: false
+    description: "SECRET — optional AWS session token for temporary static credentials."
+    default: ""
+  AWS_ROLE_ARN:
+    required: false
+    description: "IAM role ARN assumed via GitHub OIDC. Required when cloud is aws and oidc-enabled is true."
+    default: ""
+  AWS_REGION:
+    required: false
+    description: "Default AWS region for the provider and STS calls."
+    default: ""
+  checkov-skip-checks:
+    required: false
+    description: "Comma separated list of checkov checks to skip"
+    default: ""
+  tf-outputs:
+    required: false
+    description: "IaC outputs. Comma seperated list of keys to out with this action"
+    default: "[]"
+  tf-output-vars:
+    required: false
+    description: "IaC outputs to export to gh env vars. Comma seperated list of keys to out with this action"
+    default: "[]"
+  tf-output-secrets:
+    required: false
+    description: "IaC outputs to export to gh env secrets. Comma seperated list of keys to out with this action"
+    default: "[]"
+  gh-data-transfer-keyvault-url:
+    required: false
+    description: "KeyVault URL for gh-data-transfer action"
+    default: ""
+  gh-data-transfer-ssm-prefix:
+    required: false
+    description: "AWS SSM Parameter Store path prefix for gh-data-transfer action. Takes precedence over gh-data-transfer-keyvault-url."
+    default: ""
+  gh-data-transfer-ssm-region:
+    required: false
+    description: "Region of the SSM Parameter Store. Defaults to AWS_REGION."
+    default: ""
+  gh-data-transfer-ssm-kms-key-id:
+    required: false
+    description: "Optional KMS key id or alias encrypting SecureString parameters. Defaults to the AWS managed alias/aws/ssm\
+      \ key."
+    default: ""
+  keystore-sp-client-id:
+    required: false
+    description: "Keystore SP Client ID for cross-tenant KeyVault writes. When set, used instead of ARM_CLIENT_ID."
+    default: ""
+  keystore-sp-client-secret:
+    required: false
+    description: "Keystore SP Client Secret. Omit when keystore-oidc-enabled is true."
+    default: ""
+  keystore-sp-tenant-id:
+    required: false
+    description: "Keystore SP Tenant ID for cross-tenant KeyVault writes."
+    default: ""
+  keystore-oidc-enabled:
+    required: false
+    description: "Use OIDC for Keystore SP authentication instead of client secret."
+    default: "false"
+
+outputs:
+  tf-outputs-vars:
+    value: ${{ steps.tf-out.outputs.tf-outputs-vars }}
+    description: "IaC Outputs. Keys are defined in action input"
+  tf-outputs-secrets:
+    value: ${{ steps.tf-out.outputs.tf-outputs-secrets }}
+    description: "IaC Outputs. Keys are defined in action input"
+  apply-exit-code:
+    value: ${{ steps.tf-apply.outputs.exit-code }}
+    description: "IaC Apply Exit Code"
+  plan-artifacts-name:
+    value: ${{ steps.artifact-names.outputs.plan-artifacts-name }}
+    description: "IaC Plan Artifact Name"
+  plan-binary-name:
+    value: ${{ steps.artifact-names.outputs.plan-binary-name }}
+    description: "IaC Plan Binary Name"
+runs:
+  using: "composite"
+  steps:
+  - id: tf-folder
+    shell: bash
+    run: |
+      if [ '${{ inputs.stack-id }}' != '' ]; then
+        echo "value=${{inputs.stack-id}}" >> "$GITHUB_OUTPUT"
+      else
+        echo "value=$(echo "$(basename ${{inputs.chdir}})")" >> "$GITHUB_OUTPUT"
+      fi
+
+  - name: Setup Infracost
+    uses: infracost/actions/setup@v3
+    continue-on-error: true   # allow failure for cost reporting steps
+    with:
+      currency: "EUR"
+      api-key: ${{ inputs.INFRACOST_API_KEY }}
+
+      # Handle the usual case when this repo was checked out to <subfolder> instead to root of the workspace
+  - id: root-folder
+    shell: bash
+    run: |
+      path="${{inputs.chdir}}"
+      echo "value=$(echo "$(echo "${path#/}" | cut -d'/' -f1)")" >> "$GITHUB_OUTPUT"
+
+  - name: "Tar Project Files"
+    if: (inputs.generate-source-artifact == 'true' && inputs.destroy != 'true' && inputs.plan == 'true')
+    shell: bash
+    run: tar --exclude="**/kubeconfig" -cvf project.tar "${{inputs.chdir}}"
+
+  - id: artifact-exists
+    uses: LIT-Protocol/artifact-exists-action@v0
+    with:
+      name: ${{ format('{0}-source-code-modules-{1}', inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform', inputs.location)
+        }}
+
+    # - name: "Tar Module Files"
+    #   if: (inputs.generate-source-artifact == 'true' && inputs.destroy != 'true' && inputs.plan == 'true'  &&
+    # steps.artifact-exists.outputs.exists == 'false')
+    #   shell: bash
+    #   run: tar --exclude="**/kubeconfig" -cvf modules.tar "${{inputs.chdir}}/${{inputs.relative-module-path}}"
+
+  - name: "Upload ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Source Code Tar"
+    uses: actions/upload-artifact@v4
+    if: (inputs.generate-source-artifact == 'true' && inputs.destroy != 'true' && inputs.plan == 'true')
+    with:
+      name: "terraform-source-code-${{inputs.solution}}${{steps.tf-folder.outputs.value}}-${{inputs.location}}"
+      path: ${{steps.tf-folder.outputs.value}}.tar
+      if-no-files-found: warn
+
+  - name: Setup Terraform
+    uses: hashicorp/setup-terraform@v3
+    if: (inputs.iac-provider == 'terraform')
+    with:
+      terraform_version: ${{inputs.terraform-version}}
+      terraform_wrapper: false
+
+  - uses: opentofu/setup-opentofu@v1
+    if: (inputs.iac-provider == 'opentofu')
+    with:
+      tofu_version: ${{inputs.opentofu-version}}
+
+  - id: artifact-names
+    name: "Generate Artifact Names"
+    shell: bash
+    run: |
+      plan_artifacts_name=$(echo "${{ inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform' }}"\
+        "-plan-${{inputs.solution}}${{steps.tf-folder.outputs.value}}"\
+        "-${{inputs.location}}.tfplan")
+      plan_binary_name="${{ inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform' }}.tfplan"
+      plan_binary_path=$(echo "${{inputs.chdir}}/${plan_binary_name}" | sed 's/\/.\//\//g')
+      echo "[DEBUG] plan_artifacts_name=$plan_artifacts_name"
+      echo "[DEBUG] plan_binary_name=$plan_binary_name"
+      echo "[DEBUG] plan_binary_path=$plan_binary_path"
+      echo "plan-binary-name=$(echo ${plan_binary_name})" >> "$GITHUB_OUTPUT"
+      echo "plan-artifacts-name=$(echo ${plan_artifacts_name})" >> "$GITHUB_OUTPUT"
+      echo "plan-binary-path=$(echo ${plan_binary_path})" >> "$GITHUB_OUTPUT"
+
+  - name: Validate cloud input
+    shell: bash
+    run: |
+      case "${{ inputs.cloud }}" in
+        azure|aws) ;;
+        *)
+          echo "::error::Unsupported cloud '${{ inputs.cloud }}'. Supported values: azure, aws."
+          exit 1
+          ;;
+      esac
+
+  - name: Validate OIDC Terraform authentication inputs
+    if: ((inputs.plan == 'true' || inputs.apply == 'true') && inputs.cloud == 'azure')
+    shell: bash
+    env:
+      ACTION_ARM_CLIENT_SECRET: ${{ inputs.ARM_CLIENT_SECRET }}
+    run: |
+      if [[ "${{ inputs.oidc-enabled }}" != "true" ]]; then
+        exit 0
+      fi
+
+      blocked_env_keys=()
+      for secret_key in ARM_CLIENT_SECRET DNS_ARM_CLIENT_SECRET AZURE_CLIENT_SECRET ACTION_ARM_CLIENT_SECRET; do
+        if [[ -n "${!secret_key:-}" ]]; then
+          blocked_env_keys+=("${secret_key/ACTION_/input.}")
+        fi
+      done
+
+      if (( ${#blocked_env_keys[@]} > 0 )); then
+        message="OIDC is enabled, but client-secret auth values are present: ${blocked_env_keys[*]}."
+        message="${message} Clear these values and use workflow-level OIDC auth instead."
+        echo "::error::${message}"
+        exit 1
+      fi
+
+      TF_VARS_MAP='${{ toJSON(inputs.tf-vars) }}'
+      tf_vars_json="$(echo "$TF_VARS_MAP" | jq -c '
+        try (if type == "string" then fromjson else . end) catch []
+        | if type == "array" then . else [] end
+      ')"
+
+      blocked_keys="$(echo "$tf_vars_json" | jq -r '
+        map(select(
+            ((.key == "ARM_CLIENT_SECRET") or
+             (.key == "DNS_ARM_CLIENT_SECRET") or
+             (.key == "AZURE_CLIENT_SECRET")) and
+            (((.value // "") | tostring | length) > 0)
+          ))
+        | map(.key)
+        | unique
+        | join(",")
+      ')"
+
+      if [[ -n "$blocked_keys" ]]; then
+        message="OIDC is enabled, but Terraform variables include client-secret auth keys: ${blocked_keys}."
+        message="${message} Remove these from deploy-config inputs and use workflow-level OIDC auth instead."
+        echo "::error::${message}"
+        exit 1
+      fi
+
+      dns_oidc_keys="$(echo "$tf_vars_json" | jq -r '
+        map(select(
+            ((.key == "DNS_ARM_CLIENT_ID") or
+             (.key == "DNS_ARM_TENANT_ID") or
+             (.key == "DNS_ARM_SUBSCRIPTION_ID")) and
+            (((.value // "") | tostring | length) > 0)
+          ))
+        | map(.key)
+        | unique
+        | join(",")
+      ')"
+
+      all_dns_oidc_keys="DNS_ARM_CLIENT_ID,DNS_ARM_SUBSCRIPTION_ID,DNS_ARM_TENANT_ID"
+      if [[ -n "$dns_oidc_keys" && "$dns_oidc_keys" != "$all_dns_oidc_keys" ]]; then
+        message="DNS OIDC provider variables must be supplied together. Found: ${dns_oidc_keys}."
+        message="${message} Provide DNS_ARM_CLIENT_ID, DNS_ARM_TENANT_ID, and DNS_ARM_SUBSCRIPTION_ID, or omit all."
+        echo "::error::${message}"
+        exit 1
+      fi
+
+  - id: az-login
+    name: az-login
+    if: (inputs.local-terraform-state != 'true' && inputs.cloud == 'azure')
+    shell: bash
+    run: |
+      if [ "${{ inputs.oidc-enabled }}" = "true" ]; then
+        TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+          "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+          | jq -r .value)
+        echo "::add-mask::$TOKEN"
+
+        if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+          echo "::error::OIDC token request failed. Verify the workflow has 'permissions: id-token: write' and the job uses an environment."
+          exit 1
+        fi
+
+        echo "[OIDC] Token claims:"
+        # JWT uses base64url without padding; fix padding before decoding
+        PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}')
+        echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{sub, iss, aud, environment, ref, job_workflow_ref}' || true
+
+        # Capture az login output to a file so ::add-mask:: doesn't swallow it
+        AZ_ERR=$(mktemp)
+        set +e
+        az login --service-principal \
+          --username "${{ inputs.ARM_CLIENT_ID }}" \
+          --tenant "${{ inputs.ARM_TENANT_ID }}" \
+          --federated-token "$TOKEN" > /dev/null 2>"$AZ_ERR"
+        AZ_EXIT=$?
+        set -e
+
+        if [ $AZ_EXIT -ne 0 ]; then
+          echo "::error::OIDC az login failed (exit $AZ_EXIT). Client: ${{ inputs.ARM_CLIENT_ID }}, Tenant: ${{ inputs.ARM_TENANT_ID }}"
+          # Redact the token from Azure AD error output, then print
+          sed "s|$TOKEN|[REDACTED]|g" "$AZ_ERR" >&2
+          rm -f "$AZ_ERR"
+          exit $AZ_EXIT
+        fi
+        rm -f "$AZ_ERR"
+
+        az account set -s "${{ inputs.ARM_SUBSCRIPTION_ID }}"
+      else
+        az login --service-principal -u ${{ inputs.ARM_CLIENT_ID }} -p ${{ inputs.ARM_CLIENT_SECRET }} \
+          --tenant ${{ inputs.ARM_TENANT_ID }} && az account set -s ${{ inputs.ARM_SUBSCRIPTION_ID }}
+      fi
+
+  - id: aws-login
+    name: aws-login
+    if: (inputs.local-terraform-state != 'true' && inputs.cloud == 'aws')
+    shell: bash
+    env:
+      ACTION_AWS_ACCESS_KEY_ID: ${{ inputs.AWS_ACCESS_KEY_ID }}
+      ACTION_AWS_SECRET_ACCESS_KEY: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+      ACTION_AWS_SESSION_TOKEN: ${{ inputs.AWS_SESSION_TOKEN }}
+      ACTION_AWS_ROLE_ARN: ${{ inputs.AWS_ROLE_ARN }}
+      ACTION_AWS_REGION: ${{ inputs.AWS_REGION }}
+      OIDC_ENABLED: ${{ inputs.oidc-enabled }}
+    run: |
+      set -euo pipefail
+
+      if [ -z "${ACTION_AWS_REGION}" ]; then
+        echo "::error::AWS_REGION is required when cloud is 'aws'."
+        exit 1
+      fi
+
+      {
+        echo "AWS_REGION=${ACTION_AWS_REGION}"
+        echo "AWS_DEFAULT_REGION=${ACTION_AWS_REGION}"
+      } >> "$GITHUB_ENV"
+
+      export AWS_REGION="${ACTION_AWS_REGION}"
+      export AWS_DEFAULT_REGION="${ACTION_AWS_REGION}"
+
+      if [ "${OIDC_ENABLED}" = "true" ]; then
+        if [ -n "${ACTION_AWS_SECRET_ACCESS_KEY}" ]; then
+          echo "::error::OIDC is enabled, but AWS_SECRET_ACCESS_KEY is set. Clear it and use role assumption instead."
+          exit 1
+        fi
+        if [ -z "${ACTION_AWS_ROLE_ARN}" ]; then
+          echo "::error::AWS_ROLE_ARN is required when cloud is 'aws' and oidc-enabled is true."
+          exit 1
+        fi
+
+        TOKEN=$(curl -s -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" \
+          "${ACTIONS_ID_TOKEN_REQUEST_URL:-}&audience=sts.amazonaws.com" \
+          | jq -r .value)
+        echo "::add-mask::$TOKEN"
+
+        if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+          echo "::error::OIDC token request failed. Verify the workflow has 'permissions: id-token: write' and the job uses an environment."
+          exit 1
+        fi
+
+        echo "[OIDC] Token claims:"
+        PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}')
+        echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{sub, iss, aud, environment, ref, job_workflow_ref}' || true
+
+        TOKEN_FILE=$(mktemp)
+        printf '%s' "$TOKEN" > "$TOKEN_FILE"
+
+        STS_ERR=$(mktemp)
+        set +e
+        CREDS=$(aws sts assume-role-with-web-identity \
+          --role-arn "${ACTION_AWS_ROLE_ARN}" \
+          --role-session-name "gha-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+          --web-identity-token "file://${TOKEN_FILE}" \
+          --region "${ACTION_AWS_REGION}" \
+          --query 'Credentials' --output json 2>"$STS_ERR")
+        STS_EXIT=$?
+        set -e
+        rm -f "$TOKEN_FILE"
+
+        if [ $STS_EXIT -ne 0 ]; then
+          echo "::error::OIDC assume-role failed (exit $STS_EXIT). Role: ${ACTION_AWS_ROLE_ARN}"
+          sed "s|$TOKEN|[REDACTED]|g" "$STS_ERR" >&2
+          rm -f "$STS_ERR"
+          exit $STS_EXIT
+        fi
+        rm -f "$STS_ERR"
+
+        ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.AccessKeyId')
+        SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.SecretAccessKey')
+        SESSION_TOKEN=$(echo "$CREDS" | jq -r '.SessionToken')
+      else
+        if [ -z "${ACTION_AWS_ACCESS_KEY_ID}" ] || [ -z "${ACTION_AWS_SECRET_ACCESS_KEY}" ]; then
+          echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required when cloud is 'aws' and oidc-enabled is false."
+          exit 1
+        fi
+        ACCESS_KEY_ID="${ACTION_AWS_ACCESS_KEY_ID}"
+        SECRET_ACCESS_KEY="${ACTION_AWS_SECRET_ACCESS_KEY}"
+        SESSION_TOKEN="${ACTION_AWS_SESSION_TOKEN}"
+      fi
+
+      echo "::add-mask::$SECRET_ACCESS_KEY"
+      {
+        echo "AWS_ACCESS_KEY_ID=${ACCESS_KEY_ID}"
+        echo "AWS_SECRET_ACCESS_KEY=${SECRET_ACCESS_KEY}"
+      } >> "$GITHUB_ENV"
+
+      export AWS_ACCESS_KEY_ID="${ACCESS_KEY_ID}"
+      export AWS_SECRET_ACCESS_KEY="${SECRET_ACCESS_KEY}"
+
+      if [ -n "${SESSION_TOKEN}" ] && [ "${SESSION_TOKEN}" != "null" ]; then
+        echo "::add-mask::$SESSION_TOKEN"
+        echo "AWS_SESSION_TOKEN=${SESSION_TOKEN}" >> "$GITHUB_ENV"
+        export AWS_SESSION_TOKEN="${SESSION_TOKEN}"
+      fi
+
+      aws sts get-caller-identity
+
+  - name: Validate Backend State Config
+    id: validate-env
+    if: (inputs.local-terraform-state != 'true')
+    uses: actions/github-script@v8
+    env:
+      CLOUD: ${{ inputs.cloud }}
+      BACKEND_CONFIG: ${{ inputs.backend-config }}
+      TF_VAR_state_resource_group_name: ${{ inputs.backend-state-resource-group-name-override }}
+      TF_VAR_state_storage_account_name: ${{ inputs.backend-state-storage-account-name-override }}
+      TF_VAR_state_storage_container_name: ${{ inputs.backend-state-container-name-override }}
+      TF_VAR_state_bucket_name: ${{ inputs.backend-state-bucket-name-override }}
+      TF_VAR_state_region: ${{ inputs.backend-state-region-override }}
+      TF_VAR_state_key: ${{ inputs.backend-state-key-override }}
+    with:
+      script: |
+        const env = process.env;
+
+        const required_config_kv = env.CLOUD === 'aws'
+          ? [
+            'TF_VAR_state_bucket_name',
+            'TF_VAR_state_region',
+            'TF_VAR_state_key'
+          ]
+          : [
+            'TF_VAR_state_resource_group_name',
+            'TF_VAR_state_storage_account_name',
+            'TF_VAR_state_storage_container_name',
+            'TF_VAR_state_key'
+          ];
+        const has_backend_config_file = !!env.BACKEND_CONFIG;
+        const present_config_kv = required_config_kv.filter((key) => !!env[key]);
+
+        if (!has_backend_config_file && present_config_kv.length === 0) {
+          core.info('No backend state config provided. Assuming local or non-remote backend.');
+        } else if (!has_backend_config_file) {
+          core.info('Config filepath is empty. Validating provided backend state variables.');
+          const missing_config_kv = required_config_kv.filter((key) => !env[key]);
+          if (missing_config_kv.length > 0) {
+            core.setFailed(`Required state config variables are missing: ${missing_config_kv.join(', ')}`);
+          }
+        }
+
+  - id: init
+    name: "${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} init"
+    shell: bash
+    env:
+      ACTION_DEBUG: ${{ inputs.debug }}
+      ACTION_STAGE: ${{ inputs.stage }}
+      ACTION_CHDIR: ${{ inputs.chdir }}
+      ACTION_IAC_PROVIDER: ${{ inputs.iac-provider }}
+      ACTION_CLOUD: ${{ inputs.cloud }}
+      ACTION_LOCAL_STATE: ${{ inputs.local-terraform-state }}
+      ACTION_BACKEND_CONFIG: ${{ inputs.backend-config }}
+      OVERRIDE_STATE_KEY: ${{ inputs.backend-state-key-override }}
+      OVERRIDE_STATE_CONTAINER_NAME: ${{ inputs.backend-state-container-name-override }}
+      OVERRIDE_STATE_STORAGE_ACCOUNT_NAME: ${{ inputs.backend-state-storage-account-name-override }}
+      OVERRIDE_STATE_RESOURCE_GROUP_NAME: ${{ inputs.backend-state-resource-group-name-override }}
+      OVERRIDE_STATE_BUCKET_NAME: ${{ inputs.backend-state-bucket-name-override }}
+      OVERRIDE_STATE_REGION: ${{ inputs.backend-state-region-override }}
+    run: |2
+
+      if [[ "$ACTION_DEBUG" == 'true' ]]; then
+        echo "[DEBUG] stage: ${ACTION_STAGE}, chdir: ${ACTION_CHDIR}";
+      fi
+
+      tf_bin="$ACTION_IAC_PROVIDER"
+      if [[ "$ACTION_IAC_PROVIDER" == 'opentofu' ]]; then tf_bin="tofu"; fi
+      chdir="$ACTION_CHDIR"
+
+      if [[ -n "$ACTION_BACKEND_CONFIG" ]]; then
+        if [[ "$ACTION_DEBUG" == 'true' ]]; then cat "$ACTION_BACKEND_CONFIG"; fi
+        # shellcheck disable=SC1090,SC1091
+        source "$ACTION_BACKEND_CONFIG"
+      fi
+
+      if [[ -n "$OVERRIDE_STATE_KEY" ]]; then
+        export TF_VAR_state_key="$OVERRIDE_STATE_KEY"
+        echo "TF_VAR_state_key=$TF_VAR_state_key"
+      fi
+
+      if [[ -n "$OVERRIDE_STATE_CONTAINER_NAME" ]]; then
+        export TF_VAR_state_storage_container_name="$OVERRIDE_STATE_CONTAINER_NAME"
+        echo "TF_VAR_state_storage_container_name=$TF_VAR_state_storage_container_name"
+      fi
+
+      if [[ -n "$OVERRIDE_STATE_STORAGE_ACCOUNT_NAME" ]]; then
+        export TF_VAR_state_storage_account_name="$OVERRIDE_STATE_STORAGE_ACCOUNT_NAME"
+        echo "TF_VAR_state_storage_account_name=$TF_VAR_state_storage_account_name"
+      fi
+
+      if [[ -n "$OVERRIDE_STATE_RESOURCE_GROUP_NAME" ]]; then
+        export TF_VAR_state_resource_group_name="$OVERRIDE_STATE_RESOURCE_GROUP_NAME"
+        echo "TF_VAR_state_resource_group_name=$TF_VAR_state_resource_group_name"
+      fi
+
+      if [[ -n "$OVERRIDE_STATE_BUCKET_NAME" ]]; then
+        export TF_VAR_state_bucket_name="$OVERRIDE_STATE_BUCKET_NAME"
+        echo "TF_VAR_state_bucket_name=$TF_VAR_state_bucket_name"
+      fi
+
+      if [[ -n "$OVERRIDE_STATE_REGION" ]]; then
+        export TF_VAR_state_region="$OVERRIDE_STATE_REGION"
+        echo "TF_VAR_state_region=$TF_VAR_state_region"
+      fi
+
+      "${tf_bin}" version
+      tf_ver="$("${tf_bin}" version -json | jq -r '.terraform_version')"
+
+      # Backend type is static HCL and cannot be selected by a variable, so the
+      # pipeline owns it: a backend block in an override file always replaces the
+      # one committed in the stack.
+      if [[ "$ACTION_LOCAL_STATE" == 'true' ]]; then
+        backend_type="local"
+      elif [[ "$ACTION_CLOUD" == 'aws' ]]; then
+        backend_type="s3"
+      else
+        backend_type="azurerm"
+      fi
+      printf 'terraform {\n  backend "%s" {}\n}\n' "$backend_type" > "${chdir}/zz_backend_override.tf"
+      echo "[INFO] Backend type '${backend_type}' written to ${chdir}/zz_backend_override.tf"
+
+      backend_args=()
+      if [[ "$ACTION_LOCAL_STATE" == 'true' ]]; then
+        echo "[INFO] Running init without backend-config overrides (local terraform state)."
+      elif [[ "$ACTION_CLOUD" == 'aws' ]]; then
+        if [[ -n "${TF_VAR_state_bucket_name:-}" || -n "${TF_VAR_state_key:-}" ]]; then
+          # S3 native state locking: OpenTofu >= 1.10, Terraform >= 1.11. Unlocked remote state is refused.
+          lock_min="1.10.0"
+          if [[ "${tf_bin}" == 'terraform' ]]; then lock_min="1.11.0"; fi
+          if [[ "$(printf '%s\n%s\n' "$lock_min" "$tf_ver" | sort -V | head -n1)" != "$lock_min" ]]; then
+            echo "::error::${tf_bin} ${tf_ver} predates S3 native state locking (needs >= ${lock_min}). Set terraform_version / opentofu_version in the stack descriptor."
+            exit 1
+          fi
+          backend_args+=(
+            "-backend-config=bucket=${TF_VAR_state_bucket_name}"
+            "-backend-config=key=${TF_VAR_state_key}"
+            "-backend-config=region=${TF_VAR_state_region}"
+            "-backend-config=use_lockfile=true"
+          )
+        else
+          echo "[INFO] Running init without backend-config overrides (local/non-remote backend)."
+        fi
+      elif [[ -n "${TF_VAR_state_resource_group_name:-}" \
+        || -n "${TF_VAR_state_storage_account_name:-}" \
+        || -n "${TF_VAR_state_storage_container_name:-}" \
+        || -n "${TF_VAR_state_key:-}" ]]; then
+        backend_args+=(
+          "-backend-config=resource_group_name=${TF_VAR_state_resource_group_name}"
+          "-backend-config=storage_account_name=${TF_VAR_state_storage_account_name}"
+          "-backend-config=container_name=${TF_VAR_state_storage_container_name}"
+          "-backend-config=key=${TF_VAR_state_key}"
+        )
+      else
+        echo "[INFO] Running init without backend-config overrides (local/non-remote backend)."
+      fi
+
+      "${tf_bin}" -chdir="${chdir}" init -reconfigure -input=false "${backend_args[@]}"
+
+  - name: "${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-Validate"
+    id: tf-validate
+      # TODO: only plan or fast-lane (plan+apply)
+    shell: bash
+    run: |
+      echo "==== ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Validate ================"
+      ${{ inputs.iac-provider == 'opentofu' && 'tofu' || inputs.iac-provider }} -chdir="${{inputs.chdir}}" \
+        validate -no-color; tf_exit_code=$?
+      echo "exit-code=$(echo ${tf_exit_code})" >> "$GITHUB_OUTPUT"
+
+  - id: setup-python-cache
+    name: "Setup Python with pip cache"
+    if: (inputs.plan == 'true')
+    uses: actions/setup-python@v5
+    with:
+      python-version: '3.x'
+      cache: 'pip'
+      cache-dependency-path: |
+        **/requirements*.txt
+        **/pyproject.toml
+        **/Pipfile.lock
+
+  - id: install-checkov
+    name: "Install Checkov"
+    if: (inputs.plan == 'true')
+    shell: bash
+    run: |
+      echo "==== Install Checkov ===================="
+      echo "Pip upgrade..."
+      echo "Pip install..."
+      python3 -m pip install --upgrade pip > /dev/null 2>&1
+      python3 -m pip install checkov > /dev/null 2>&1
+      echo "Pip finished"
+
+  - name: "${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-plan"
+    id: plan
+    if: (inputs.plan == 'true')
+    shell: bash
+    continue-on-error: true
+    env:
+      INFRA_PROJECT: "infra"
+      SOLUTION_INFRA_PROJECT: "infra-solutions"
+      ACTION_DEBUG: ${{ inputs.debug }}
+      ACTION_CHDIR: ${{ inputs.chdir }}
+      ACTION_IAC_PROVIDER: ${{ inputs.iac-provider }}
+      ACTION_DESTROY: ${{ inputs.destroy }}
+      ACTION_NO_LOCK: ${{ inputs.no-lock }}
+      ACTION_BACKEND_CONFIG: ${{ inputs.backend-config }}
+      ACTION_TFVARS_FILE: ${{ inputs.tfvars-file }}
+      ACTION_LOCATION: ${{ inputs.location }}
+      ACTION_TF_LOG_LEVEL: ${{ inputs.tf-log-level }}
+      ACTION_GH_TOKEN: ${{ inputs.TF_PROVIDER_GH_TOKEN }}
+      ACTION_GH_OWNER: ${{ inputs.TF_PROVIDER_GH_OWNER || github.repository_owner }}
+      ACTION_PLAN_BINARY_NAME: ${{ steps.artifact-names.outputs.plan-binary-name }}
+      TF_VARS_MAP: ${{ toJSON(inputs.tf-vars) }}
+      OVERRIDE_STATE_KEY: ${{ inputs.backend-state-key-override }}
+      OVERRIDE_STATE_CONTAINER_NAME: ${{ inputs.backend-state-container-name-override }}
+      OVERRIDE_STATE_STORAGE_ACCOUNT_NAME: ${{ inputs.backend-state-storage-account-name-override }}
+      OVERRIDE_STATE_RESOURCE_GROUP_NAME: ${{ inputs.backend-state-resource-group-name-override }}
+      OVERRIDE_STATE_BUCKET_NAME: ${{ inputs.backend-state-bucket-name-override }}
+      OVERRIDE_STATE_REGION: ${{ inputs.backend-state-region-override }}
+    run: |2
+
+      echo "==== ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Plan ===================="
+      chdir="$ACTION_CHDIR"
+      tf_destroy="$ACTION_DESTROY"
+      tf_bin="$ACTION_IAC_PROVIDER"
+      concise=""
+      if [[ "$ACTION_IAC_PROVIDER" == 'opentofu' ]]; then tf_bin="tofu"; concise="-concise"; fi
+
+      if [[ "$ACTION_BACKEND_CONFIG" != '' ]]; then
+        if [[ "$ACTION_DEBUG" == 'true' ]]; then cat "$ACTION_BACKEND_CONFIG"; fi
+        # shellcheck disable=SC1090
+        source "$ACTION_BACKEND_CONFIG"
+      fi
+
+      if [[ "$OVERRIDE_STATE_KEY" != '' ]]; then
+        export TF_VAR_state_key="$OVERRIDE_STATE_KEY"
+        echo "TF_VAR_state_key=$TF_VAR_state_key"
+      fi
+
+      if [[ "$OVERRIDE_STATE_CONTAINER_NAME" != '' ]]; then
+        export TF_VAR_state_storage_container_name="$OVERRIDE_STATE_CONTAINER_NAME"
+        echo "TF_VAR_state_storage_container_name=$TF_VAR_state_storage_container_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_STORAGE_ACCOUNT_NAME" != '' ]]; then
+        export TF_VAR_state_storage_account_name="$OVERRIDE_STATE_STORAGE_ACCOUNT_NAME"
+        echo "TF_VAR_state_storage_account_name=$TF_VAR_state_storage_account_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_RESOURCE_GROUP_NAME" != '' ]]; then
+        export TF_VAR_state_resource_group_name="$OVERRIDE_STATE_RESOURCE_GROUP_NAME"
+        echo "TF_VAR_state_resource_group_name=$TF_VAR_state_resource_group_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_BUCKET_NAME" != '' ]]; then
+        export TF_VAR_state_bucket_name="$OVERRIDE_STATE_BUCKET_NAME"
+        echo "TF_VAR_state_bucket_name=$TF_VAR_state_bucket_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_REGION" != '' ]]; then
+        export TF_VAR_state_region="$OVERRIDE_STATE_REGION"
+        echo "TF_VAR_state_region=$TF_VAR_state_region"
+      fi
+
+      if [[ "$ACTION_LOCATION" != '' ]]; then
+        export TF_VAR_location="$ACTION_LOCATION"
+        echo "TF_VAR_location=$TF_VAR_location"
+      fi
+
+      if [[ "$ACTION_DEBUG" == 'true' ]]; then
+        export TF_LOG="$ACTION_TF_LOG_LEVEL";
+        echo -e "\033[0;33mTF_LOG=$TF_LOG";echo -en "\033[0m"
+      fi
+
+      export TF_VAR_github_repo=${{ github.repository }}
+      export GITHUB_TOKEN="$ACTION_GH_TOKEN"
+      export GITHUB_OWNER="$ACTION_GH_OWNER"
+
+      if [[ $tf_destroy == 'true' ]];then
+        export TF_VAR_DESTROY="true"
+        if [[ "$ACTION_DEBUG" == 'true' ]]; then echo "[DEBUG] $TF_VAR_DESTROY";fi
+        tf_plan_args=" --destroy "
+      fi
+
+      if [[ "$ACTION_TFVARS_FILE" != '' ]]; then
+        var_files=" -var-file=$(realpath -- "$ACTION_TFVARS_FILE") "
+      fi
+
+      if [[ -f "${chdir}/TF_VAR_FILE.tfvars" ]]; then
+        rm -f "${chdir}/TF_VAR_FILE.tfvars"
+      fi
+
+      tf_vars_file="$(mktemp "${RUNNER_TEMP:?}/tfvars-plan.XXXXXX")"
+      chmod 600 "$tf_vars_file"
+      trap 'rm -f -- "$tf_vars_file"' EXIT
+      echo "$TF_VARS_MAP" |
+        jq -cr --arg q "'" \
+          'fromjson | .[] | "export TF_VAR_\(.key)=\($q)\(.value | tostring)\($q)"' \
+          > "$tf_vars_file"
+      source "$tf_vars_file"
+      rm -f -- "$tf_vars_file"
+      trap - EXIT
+
+      # TODO: tf root dir --> https://discuss.hashicorp.com/t/terraform-chdir-folder-isolation/24789/2
+      lock=""
+      if [[ "$ACTION_NO_LOCK" == 'true' ]]; then lock="-lock"; fi
+      echo -e "\033[1;35mRun HCL Plan ${tf_bin} \
+        -chdir=${chdir} tf_plan_args=${tf_plan_args} lock=$lock \
+        -out ${ACTION_PLAN_BINARY_NAME}";
+      echo -en "\033[0m";
+      set +e
+      "${tf_bin}" -chdir="${chdir}" \
+        plan ${var_files} ${tf_plan_args} -detailed-exitcode $lock -input=false -compact-warnings \
+        ${concise} \
+        -out "${ACTION_PLAN_BINARY_NAME}"
+      exitcode="$?"
+      "${tf_bin}" -chdir="${chdir}" \
+        show -json "${ACTION_PLAN_BINARY_NAME}" | jq > tfplan.json
+      echo "tf-plan-exit-code=$exitcode" >> "$GITHUB_OUTPUT"
+
+  - id: checkov
+    name: "Run Checkov Tests"
+    if: (inputs.plan == 'true')
+    shell: bash
+    run: |
+      if [[ "${{ inputs.checkov-skip-checks }}" != '' ]]; then
+        echo "[INFO] Skipping Checkov checks: ${{ inputs.checkov-skip-checks }}"
+        root_prefix=""
+        if [[ "${{ steps.root-folder.outputs.value }}" != "terraform" ]]; then
+          root_prefix="${{ steps.root-folder.outputs.value }}/"
+        fi
+        checks_dir="${root_prefix}terraform/checkov_rules,./../../checkov_rules"
+        checkov -f tfplan.json \
+          --output-file-path "./checkov-report" \
+          --output json \
+          --external-checks-dir "${checks_dir}" \
+          --skip-check "${{ inputs.checkov-skip-checks }}" > /dev/null
+      fi
+
+      if [[ "${{ inputs.checkov-skip-checks }}" == '' ]]; then
+        echo "[INFO] No Checkov checks to skip."
+        root_prefix=""
+        if [[ "${{ steps.root-folder.outputs.value }}" != "terraform" ]]; then
+          root_prefix="${{ steps.root-folder.outputs.value }}/"
+        fi
+        checks_dir="${root_prefix}terraform/checkov_rules,./../../checkov_rules"
+        checkov -f tfplan.json \
+          --output-file-path "./checkov-report" \
+          --output json \
+          --external-checks-dir "${checks_dir}" > /dev/null
+      fi
+
+  - name: "set-exit-code"
+    id: set-exit-code
+    if: (steps.plan.outputs.tf-plan-exit-code == '1')
+    uses: actions/github-script@v8
+    with:
+      script: |
+        core.setFailed("[ERROR] TF plan exited with code 1 ERROR");
+
+  - uses: actions/upload-artifact@v4
+    name: Upload Checkov Report
+    if: always() && (inputs.plan == 'true')
+    with:
+      name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-checkov-report"
+      path: "./checkov-report"
+      if-no-files-found: ignore
+
+  - name: Chekov Summary
+    uses: actions/github-script@v8
+    if: always() && (inputs.plan == 'true')
+    with:
+      result-encoding: string
+      script: |2
+
+        const fs = require('fs');
+
+        const id = '${{ (inputs.solution == '' && steps.tf-folder.outputs.value  ||
+          format('{0}-{1}', steps.tf-folder.outputs.value, inputs.solution)) }}';
+
+        // Guard: report may be missing if checkov itself failed to start
+        if (!fs.existsSync('checkov-report/results_json.json')) {
+          const planOutcome = '${{ steps.plan.outcome }}';
+          // If the plan step was skipped (upstream failure like az-login), don't double-fail
+          if (!planOutcome || planOutcome === 'skipped') {
+            core.warning('Checkov report not found — plan step was skipped due to an earlier failure.');
+          } else {
+            await core.summary
+              .addHeading(`⚠️ Checkov — Report not generated (${id})`)
+              .addRaw('The checkov report file was not created. Check the checkov step logs for details.')
+              .addEOL()
+              .write();
+            core.setFailed('Checkov report not found — checkov may have crashed before writing output.');
+          }
+          return;
+        }
+
+        const checkov_report = JSON.parse(fs.readFileSync('checkov-report/results_json.json', 'utf8'));
+
+        // Collect all checks, preserving failed_checks separately
+        let all_checks = [];
+        let failed_checks = [];
+
+        const extractChecks = (report) => {
+          if (!report || !report.hasOwnProperty('results')) return;
+          const results = report.results;
+          const passed  = results.passed_checks  || [];
+          const failed  = results.failed_checks  || [];
+          const skipped = results.skipped_checks || [];
+          failed_checks = failed_checks.concat(failed);
+          all_checks    = all_checks.concat(passed, failed, skipped);
+        };
+
+        if (Array.isArray(checkov_report)) {
+          for (const check_type_report of checkov_report) extractChecks(check_type_report);
+        } else {
+          extractChecks(checkov_report);
+        }
+
+        let summary = core.summary
+          .addHeading('Checkov — Full Report')
+          .addEOL();
+
+        // ── Failed checks block ────────────────────────────────────────────────
+        if (failed_checks.length > 0) {
+          const failed_table = [[
+            {data: 'Check ID',    header: true},
+            {data: 'Severity',    header: true},
+            {data: 'Description', header: true}
+          ]];
+          const failed_ids = [];
+          for (const check of failed_checks) {
+            failed_ids.push(check.check_id);
+            failed_table.push([check.check_id, check.severity || 'N/A', check.check_name]);
+            core.error(`Checkov FAILED: ${check.check_id} — ${check.check_name}`);
+          }
+          summary = summary
+            .addRaw(`**Failed — ${failed_checks.length} check(s) require attention (${id})**`)
+            .addEOL()
+            .addTable(failed_table)
+            .addRaw('To suppress a check, add it to <code>checkov_skip_checks</code> with a reason in the deploy config.')
+            .addEOL();
+          core.setFailed(`Checkov failed on: ${failed_ids.join(', ')}`);
+        } else {
+          summary = summary
+            .addRaw(`**Passed (${id})**`)
+            .addEOL();
+        }
+
+        // ── Full report table ─────────────────────────────────────────────────
+        const full_table = [[
+          {data: 'CVE',         header: true},
+          {data: 'Severity',    header: true},
+          {data: 'Status',      header: true},
+          {data: 'Description', header: true}
+        ]];
+        for (const check of all_checks) {
+          const result = check.check_result.result;
+          core.info(`Checkov: ${check.check_id} - ${check.severity || 'N/A'} - ${result} - ${check.check_name}`);
+          full_table.push([check.check_id, check.severity || 'N/A', result, check.check_name]);
+        }
+
+        if (all_checks.length > 0) {
+          summary = summary
+            .addTable(full_table)
+            .addEOL();
+        } else {
+          summary = summary.addRaw('No checks found.').addEOL();
+        }
+
+
+        await summary.write();
+
+  - id: tf-apply
+    name: "${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-Apply"
+    shell: bash
+    if: (inputs.apply == 'true')
+    env:
+      ACTION_DEBUG: ${{ inputs.debug }}
+      ACTION_CHDIR: ${{ inputs.chdir }}
+      ACTION_IAC_PROVIDER: ${{ inputs.iac-provider }}
+      ACTION_DESTROY: ${{ inputs.destroy }}
+      ACTION_SOLUTION: ${{ inputs.solution }}
+      ACTION_BACKEND_CONFIG: ${{ inputs.backend-config }}
+      ACTION_TFVARS_FILE: ${{ inputs.tfvars-file }}
+      ACTION_LOCATION: ${{ inputs.location }}
+      ACTION_TF_LOG_LEVEL: ${{ inputs.tf-log-level }}
+      ACTION_TF_PARALLELISM: ${{ inputs.tf-parallelism }}
+      ACTION_GH_TOKEN: ${{ inputs.TF_PROVIDER_GH_TOKEN }}
+      ACTION_GH_OWNER: ${{ inputs.TF_PROVIDER_GH_OWNER || github.repository_owner }}
+      TF_VARS_MAP: ${{ toJSON(inputs.tf-vars) }}
+      OVERRIDE_STATE_KEY: ${{ inputs.backend-state-key-override }}
+      OVERRIDE_STATE_CONTAINER_NAME: ${{ inputs.backend-state-container-name-override }}
+      OVERRIDE_STATE_STORAGE_ACCOUNT_NAME: ${{ inputs.backend-state-storage-account-name-override }}
+      OVERRIDE_STATE_RESOURCE_GROUP_NAME: ${{ inputs.backend-state-resource-group-name-override }}
+      OVERRIDE_STATE_BUCKET_NAME: ${{ inputs.backend-state-bucket-name-override }}
+      OVERRIDE_STATE_REGION: ${{ inputs.backend-state-region-override }}
+    run: |2
+
+      echo "==== ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Apply ==================="
+
+      tf_bin="$ACTION_IAC_PROVIDER"
+      concise=""
+      if [[ "$ACTION_IAC_PROVIDER" == 'opentofu' ]]; then tf_bin="tofu"; concise="-concise"; fi
+
+      if [[ "$ACTION_DEBUG" == 'true' ]]; then export TF_LOG="$ACTION_TF_LOG_LEVEL";fi
+
+      if [[ "$ACTION_BACKEND_CONFIG" != '' ]]; then
+        if [[ "$ACTION_DEBUG" == 'true' ]]; then cat "$ACTION_BACKEND_CONFIG"; fi
+        # shellcheck disable=SC1090
+        source "$ACTION_BACKEND_CONFIG"
+      fi
+
+      if [[ "$OVERRIDE_STATE_KEY" != '' ]]; then
+        export TF_VAR_state_key="$OVERRIDE_STATE_KEY"
+        echo "TF_VAR_state_key=$TF_VAR_state_key"
+      fi
+
+      if [[ "$OVERRIDE_STATE_CONTAINER_NAME" != '' ]]; then
+        export TF_VAR_state_storage_container_name="$OVERRIDE_STATE_CONTAINER_NAME"
+        echo "TF_VAR_state_storage_container_name=$TF_VAR_state_storage_container_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_STORAGE_ACCOUNT_NAME" != '' ]]; then
+        export TF_VAR_state_storage_account_name="$OVERRIDE_STATE_STORAGE_ACCOUNT_NAME"
+        echo "TF_VAR_state_storage_account_name=$TF_VAR_state_storage_account_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_RESOURCE_GROUP_NAME" != '' ]]; then
+        export TF_VAR_state_resource_group_name="$OVERRIDE_STATE_RESOURCE_GROUP_NAME"
+        echo "TF_VAR_state_resource_group_name=$TF_VAR_state_resource_group_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_BUCKET_NAME" != '' ]]; then
+        export TF_VAR_state_bucket_name="$OVERRIDE_STATE_BUCKET_NAME"
+        echo "TF_VAR_state_bucket_name=$TF_VAR_state_bucket_name"
+      fi
+
+      if [[ "$OVERRIDE_STATE_REGION" != '' ]]; then
+        export TF_VAR_state_region="$OVERRIDE_STATE_REGION"
+        echo "TF_VAR_state_region=$TF_VAR_state_region"
+      fi
+
+      if [[ "$ACTION_LOCATION" != '' ]]; then
+        export TF_VAR_location="$ACTION_LOCATION"
+        echo "TF_VAR_location=$TF_VAR_location"
+      fi
+
+      export TF_VAR_github_repo=${{ github.repository }}
+
+      export GITHUB_TOKEN="$ACTION_GH_TOKEN"
+      export GITHUB_OWNER="$ACTION_GH_OWNER"
+
+      if [[ "$ACTION_TFVARS_FILE" != '' ]]; then
+        var_files=" -var-file=$(realpath -- "$ACTION_TFVARS_FILE") "
+      fi
+
+      tf_vars_file="$(mktemp "${RUNNER_TEMP:?}/tfvars-apply.XXXXXX")"
+      chmod 600 "$tf_vars_file"
+      trap 'rm -f -- "$tf_vars_file"' EXIT
+      echo "$TF_VARS_MAP" |
+        jq -cr --arg q "'" \
+          'fromjson | .[] | "export TF_VAR_\(.key)=\($q)\(.value | tostring)\($q)"' \
+          > "$tf_vars_file"
+      source "$tf_vars_file"
+      rm -f -- "$tf_vars_file"
+      trap - EXIT
+
+      re='^[0-9]+$'
+      if ! [[ "$ACTION_TF_PARALLELISM" =~ $re ]]; then
+        tf_parallelism=" -parallelism=${ACTION_TF_PARALLELISM} "
+      fi
+
+      tf_destroy_args=""
+      if [[ "$ACTION_DESTROY" == 'true' ]]; then
+        export TF_VAR_DESTROY="true"
+        if [[ "$ACTION_DEBUG" == 'true' ]]; then echo "[DEBUG] $TF_VAR_DESTROY";fi
+        tf_destroy_args=" -destroy "
+      fi
+
+      "${tf_bin}" -chdir="${ACTION_CHDIR}" \
+        apply ${var_files} ${tf_destroy_args} -auto-approve -input=false $tf_parallelism \
+        ${concise};tf_apply_exit_code=$?
+      if [[ "$ACTION_SOLUTION" != '' ]];then set -e; fi;
+      echo "exit-code=$(echo ${tf_apply_exit_code})" >> "$GITHUB_OUTPUT"
+      set +e
+
+  - name: Publish ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Apply to Task Summary
+    id: applytosummary
+    if: (inputs.apply == 'true')
+    uses: actions/github-script@v8
+    with:
+      script: |
+        const operation = '${{ inputs.destroy }}' === 'true' ? 'Destroy' : 'Apply';
+        const exitCode = '${{ steps.tf-apply.outputs.exit-code || 'n/a' }}';
+        const status = exitCode === '0' ? 'success' : (exitCode === 'n/a' ? 'unknown' : 'failed');
+
+        await core.summary
+          .addHeading('${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Run Summary')
+          .addTable([
+            [{data: 'Key', header: true}, {data: 'Value', header: true}],
+            ['Operation', operation],
+            ['Stack', '${{ steps.tf-folder.outputs.value }}'],
+            ['Stage', '${{ inputs.stage }}'],
+            ['Location', '${{ inputs.location }}'],
+            ['Status', status],
+            ['Exit Code', exitCode]
+          ])
+          .addEOL()
+          .write();
+
+  - name: "${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Output"
+    id: tf-out
+    if: (inputs.apply == 'true' && inputs.destroy != 'true')
+    shell: bash
+    run: |2
+
+      echo "==== ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Output =================="
+      echo "[INFO] Generating TF Output Map..."
+
+      tf_output_map_secrets='{}'
+      tf_output_secrets="$(echo '${{ inputs.tf-output-secrets || '[]' }}' | jq -rc '. // []')"
+      echo "tf-output-secrets=${tf_output_secrets}"
+
+      tf_output_map_vars='{}'
+      tf_output_vars="$(echo '${{ inputs.tf-output-vars || '[]' }}' | jq -rc '. // []')"
+      echo "tf-output-vars=${tf_output_vars}"
+
+      while read key
+      do
+        if [[ "$key" != '' ]]; then
+          key_basename="$(echo "$key" | sed 's/^.*__//')"
+          key_with_prefix="$key"
+          if [[ "${{ inputs.stack-id }}" != '' ]]; then
+            key_with_prefix="$(echo ${{ inputs.stack-id }}__${key} | tr '-' '_')"
+          fi
+          echo "[DEBUG] key=$key_with_prefix (basename=$key_basename)"
+          tf_value=$(${{ inputs.iac-provider == 'opentofu' && 'tofu' || inputs.iac-provider }} \
+            -chdir="${{inputs.chdir}}" output "$(echo "$key_basename" |
+            sed -e 's/\(.*\)/\L\1/')" |
+            perl -00pe 's/,(?=\s*$)//s' |
+            jq -rc)
+          echo "[INFO] Reading Key: ${key_with_prefix}, Value: ${tf_value}"
+          tf_output_map_vars=$(echo $tf_output_map_vars |
+            jq -c --arg key "$(echo $key_with_prefix |
+            awk '{print toupper($0)}')" --arg value "$tf_value" '. + {($key):($value)}')
+        fi
+      done <<< "$(echo $tf_output_vars | jq -rc ' .[]')"
+
+      while read key
+      do
+        if [[ "$key" != '' ]]; then
+          key_basename="$(echo "$key" | sed 's/^.*__//')"
+          key_with_prefix="$key"
+          if [[ "${{ inputs.stack-id }}" != '' ]]; then
+            key_with_prefix="$(echo ${{ inputs.stack-id }}__${key} | tr '-' '_')"
+          fi
+          echo "[DEBUG] key=$key_with_prefix (basename=$key_basename)"
+          tf_value=$(${{ inputs.iac-provider == 'opentofu' && 'tofu' || inputs.iac-provider }} \
+            -chdir="${{inputs.chdir}}" output "$(echo "$key_basename" |
+              sed -e 's/\(.*\)/\L\1/')" |
+              perl -00pe 's/,(?=\s*$)//s' | jq -rc)
+          echo "::add-mask::$tf_value"
+          echo "[INFO] Reading Key: ${key_with_prefix}, Value: ${tf_value}"
+          tf_output_map_secrets=$(echo $tf_output_map_secrets |
+            jq -c --arg key "$(echo $key_with_prefix |
+            awk '{print toupper($0)}')" --arg value "$tf_value" '. + {($key):($value)}')
+        fi
+      done <<< "$(echo $tf_output_secrets | jq -rc ' .[]')"
+
+      echo "tf_output_map_vars=$tf_output_map_vars"
+      echo "tf-outputs-vars=$(echo $tf_output_map_vars | jq -rc)" >> "$GITHUB_OUTPUT"
+      echo "tf_output_map_secrets=$tf_output_map_secrets"
+      echo "tf-outputs-secrets=$(echo $tf_output_map_secrets | jq -rc)" >> "$GITHUB_OUTPUT"
+
+  - uses: ./.github/actions/gh-data-transfer/v2
+    id: gh-data-transfer-ssm
+    name: "Export TF Output to SSM Parameter Store"
+    if: (inputs.gh-data-transfer-ssm-prefix != '' && inputs.apply == 'true' && inputs.destroy != 'true' && inputs.gh-environment-name
+      != '' && (steps.tf-out.outputs.tf-outputs-vars != '{}' || steps.tf-out.outputs.tf-outputs-secrets != '{}'))
+    with:
+      ssm-parameter-prefix: ${{ inputs.gh-data-transfer-ssm-prefix }}
+      ssm-kms-key-id: ${{ inputs.gh-data-transfer-ssm-kms-key-id }}
+      aws-region: ${{ inputs.gh-data-transfer-ssm-region || inputs.AWS_REGION }}
+      aws-role-arn: ${{ inputs.AWS_ROLE_ARN }}
+      aws-access-key-id: ${{ inputs.AWS_ACCESS_KEY_ID }}
+      aws-secret-access-key: ${{ inputs.AWS_SECRET_ACCESS_KEY }}
+      aws-session-token: ${{ inputs.AWS_SESSION_TOKEN }}
+      environment-name: ${{ inputs.gh-environment-name}}
+      variables: ${{ steps.tf-out.outputs.tf-outputs-vars }}
+      secrets: ${{ steps.tf-out.outputs.tf-outputs-secrets }}
+
+  - uses: ./.github/actions/gh-data-transfer/v2
+    id: gh-data-transfer-keyvault-keystore
+    name: "Export TF Output to KeyVault Secrets (Keystore SP)"
+    if: (inputs.gh-data-transfer-ssm-prefix == '' && inputs.gh-data-transfer-keyvault-url != '' && inputs.keystore-sp-client-id
+      != '' && inputs.apply == 'true' && inputs.destroy != 'true' && inputs.gh-environment-name != '' && (steps.tf-out.outputs.tf-outputs-vars
+      != '{}' || steps.tf-out.outputs.tf-outputs-secrets != '{}'))
+    with:
+      key-vault-url: ${{ inputs.gh-data-transfer-keyvault-url }}
+      key-vault-sp-client-id: ${{ inputs.keystore-sp-client-id }}
+      key-vault-sp-client-secret: ${{ inputs.keystore-oidc-enabled != 'true' && inputs.keystore-sp-client-secret || '' }}
+      key-vault-sp-tenant-id: ${{ inputs.keystore-sp-tenant-id }}
+      environment-name: ${{ inputs.gh-environment-name}}
+      variables: ${{ steps.tf-out.outputs.tf-outputs-vars }}
+      secrets: ${{ steps.tf-out.outputs.tf-outputs-secrets }}
+
+  - uses: ./.github/actions/gh-data-transfer/v2
+    id: gh-data-transfer-keyvault-arm
+    name: "Export TF Output to KeyVault Secrets (ARM SP)"
+    if: (inputs.gh-data-transfer-ssm-prefix == '' && inputs.gh-data-transfer-keyvault-url != '' && inputs.keystore-sp-client-id
+      == '' && inputs.apply == 'true' && inputs.destroy != 'true' && inputs.gh-environment-name != '' && (steps.tf-out.outputs.tf-outputs-vars
+      != '{}' || steps.tf-out.outputs.tf-outputs-secrets != '{}'))
+    with:
+      key-vault-url: ${{ inputs.gh-data-transfer-keyvault-url }}
+      key-vault-sp-client-id: ${{ inputs.ARM_CLIENT_ID }}
+      key-vault-sp-client-secret: ${{ inputs.ARM_CLIENT_SECRET }}
+      key-vault-sp-tenant-id: ${{ inputs.ARM_TENANT_ID }}
+      environment-name: ${{ inputs.gh-environment-name}}
+      variables: ${{ steps.tf-out.outputs.tf-outputs-vars }}
+      secrets: ${{ steps.tf-out.outputs.tf-outputs-secrets }}
+
+  - uses: ./.github/actions/gh-data-transfer/v2
+    name: "Export TF Output to Github ENV Vars and Secrets"
+    if: (inputs.gh-data-transfer-ssm-prefix == '' && inputs.gh-data-transfer-keyvault-url == '' && inputs.apply == 'true'
+      && inputs.destroy != 'true' && inputs.ENV_TRANSFER_GH_TOKEN != '' && inputs.gh-environment-name != '' && (steps.tf-out.outputs.tf-outputs-vars
+      != '{}' || steps.tf-out.outputs.tf-outputs-secrets != '{}'))
+    with:
+      github-token: ${{ inputs.ENV_TRANSFER_GH_TOKEN }}
+      environment-name: ${{ inputs.gh-environment-name}}
+      variables: ${{ steps.tf-out.outputs.tf-outputs-vars }}
+      secrets: ${{ steps.tf-out.outputs.tf-outputs-secrets }}
+
+  - name: Check if gh-data-transfer failed
+    shell: bash
+    if: steps.gh-data-transfer-ssm.outcome == 'failure' || steps.gh-data-transfer-keyvault-keystore.outcome == 'failure' ||
+      steps.gh-data-transfer-keyvault-arm.outcome == 'failure'
+    run: |
+      echo "gh-data-transfer failed!"
+      exit 1
+
+  - name: "${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Plan as String"
+    id: plantostring
+    if: (inputs.apply != 'true')
+    shell: bash
+    run: |
+      ${{ inputs.iac-provider == 'opentofu' && 'tofu' || inputs.iac-provider }} \
+        -chdir="${{inputs.chdir}}" \
+          show -no-color "${{steps.artifact-names.outputs.plan-binary-name}}" > ./tf_plan_output.txt
+      ${{ inputs.iac-provider == 'opentofu' && 'tofu' || inputs.iac-provider }} \
+        -chdir="${{inputs.chdir}}" \
+          show -json "${{steps.artifact-names.outputs.plan-binary-name}}" > ./tf_plan_output.json
+
+  - name: Generate Infracost diff
+    shell: bash
+    if: (inputs.apply != 'true')
+    continue-on-error: true   # allow failure for cost reporting steps
+    run: |2
+
+      infracost breakdown --path ./tf_plan_output.json --out-file=infracost.txt
+      infracost breakdown --path ./tf_plan_output.json --format json --out-file=infracost.json
+      cat infracost.txt
+
+    # Publish Plan as task summary
+  - name: Publish ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Plan to Task Summary
+    id: plantosummary
+    if: (inputs.apply != 'true')
+    uses: actions/github-script@v8
+    with:
+      result-encoding: string
+      script: |
+        try {
+          const fs = require('fs')
+          if (fs.existsSync('./tf_plan_output.txt')){
+            const hPlanOutput = fs.readFileSync('./tf_plan_output.txt')
+            if (typeof hPlanOutput != 'undefined'){
+              const sPlanOutput = hPlanOutput.toString()
+              let sInfraCostBreakdown = "";
+              if (fs.existsSync('./infracost.txt')){
+                let hInfraCostBreakdown = fs.readFileSync('./infracost.txt')
+                if (typeof hInfraCostBreakdown != 'undefined'){
+                  sInfraCostBreakdown = hInfraCostBreakdown.toString()
+                }
+              }
+
+              if (sInfraCostBreakdown != ""){
+                await core.summary
+                .addHeading('${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Plan Summary')
+                .addEOL()
+                // note: the additional second \n is a github quirk.. (as of 20240109)
+                .addDetails("Click to expand", `\n\n~~~\n${sPlanOutput}\n~~~\n`)
+                .addEOL()
+                .addHeading('Infracost Breakdown')
+                .addEOL()
+                .addDetails("Click to expand", `\n\n~~~\n${sInfraCostBreakdown}\n~~~\n`)
+                .addEOL()
+                .write();
+              } else {
+                await core.summary
+                .addHeading('${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Plan Summary')
+                .addEOL()
+                // note: the additional second \n is a github quirk.. (as of 20240109)
+                .addDetails("Click to expand", `\n\n~~~\n${sPlanOutput}\n~~~\n`)
+                .addEOL()
+                .write();
+              }
+            }
+          }
+        } catch(err) {
+          core.error("Error while reading file:"+ err)
+          core.setFailed(err)
+        }
+
+  - uses: actions/upload-artifact@v4
+    name: Upload ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-plan
+    if: (inputs.plan == 'true' && inputs.upload-plan-artifact == 'true')
+    with:
+      name: ${{ steps.artifact-names.outputs.plan-artifacts-name }}
+      path: "${{ steps.artifact-names.outputs.plan-binary-path }}"
+      if-no-files-found: error
+      overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
+
+  - uses: actions/upload-artifact@v4
+    name: Upload ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-plan txt
+    with:
+      name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-as-text"
+      path: "./tf_plan_output.txt"
+      if-no-files-found: ignore
+      overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
+
+  - uses: actions/upload-artifact@v4
+    if: (inputs.plan == 'true')
+    name: Upload Terracost report
+    with:
+      name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-infracost-report"
+      path: "./infracost.json"
+      if-no-files-found: ignore
+      overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
+
+  - uses: actions/upload-artifact@v4
+    if: (inputs.plan == 'true')
+    name: Upload Terracost markdown
+    with:
+      name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-infracost-report-md"
+      path: "./infracost.txt"
+      if-no-files-found: ignore
+      overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
+
+  - name: Add pipeline job backlink
+    if: ${{ !cancelled() }}
+    uses: ./.github/actions/pipeline-job-backlink
+    with:
+      job-name: ${{ github.job }}
+
+  - name: Clean up plan and variable files
+    if: always()
+    shell: bash
+    run: |
+      plan_binary_path="${{ steps.artifact-names.outputs.plan-binary-path }}"
+      if [[ -n "$plan_binary_path" ]]; then
+        rm -f -- "$plan_binary_path"
+      fi
+      rm -f -- tfplan.json ./tf_plan_output.json
+      rm -f -- "${RUNNER_TEMP:?}"/tfvars-plan.* "${RUNNER_TEMP:?}"/tfvars-apply.*

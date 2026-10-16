@@ -1,0 +1,334 @@
+---
+name: ".Script Workflow (Abstract)"
+# ##################################
+#
+# TODO: destroy         # -  &&  (fromJson(inputs.env)['destroy'] || 'false') != 'true'
+#
+# ##################################
+on:
+  workflow_call:
+    inputs:
+      data:
+        type: string
+        required: true
+        default: "{}"
+      env:
+        type: string
+        required: true
+        default: "{}"
+      external-repos:
+        type: string
+        required: false
+        default: "[]"
+      actions-repository:
+        type: string
+        required: false
+        default: "GEBITSolutions/stax"
+      actions-version:
+        type: string
+        required: false
+        default: "main"
+    secrets:
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_CLIENT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+      REPO_KEYSTORE_SP_CLIENT_SECRET:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+      CI_ENV_TRANSFER_GH_TOKEN:
+        required: false
+jobs:
+  script:
+    if: (fromJson(inputs.data)['type'] == 'bizep' || fromJson(inputs.data)['type'] == 'script')
+    name: "Script ${{ (fromJson(inputs.data)['type'] == 'bizep') && 'BIZEP' || 'GH Action' }} ${{ fromJson(inputs.data)['name']\
+      \ }}"
+    runs-on: ${{ fromJson(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+    environment: "${{ fromJson(inputs.env)['environment'] }}"
+    env:
+      ENVIRONMENT: "${{ fromJson(inputs.env)['environment'] || 'default' }}"
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+      RESOURCE_PREFIX: ${{ fromJson(inputs.data)['resource_prefix'] || '' }}
+      STAGE: ${{ fromJson(inputs.env)['stage'] }}
+      CUSTOMER_ID: ${{ fromJson(inputs.env)['customer_id'] || 'default' }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN || ''}}
+      OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
+    steps:
+    - name: Resolve App Token Scope
+      id: token-scope
+      shell: bash
+      run: |
+        repositories="${GITHUB_REPOSITORY#*/}"
+        while read -r repo_url; do
+          repo_ref=$(echo "$repo_url" | sed -E 's#.*github\.com[:/]([^/]+)/([^/.]+)(\.git)?$#\1/\2#')
+          repo_owner="${repo_ref%%/*}"
+          repo_name="${repo_ref#*/}"
+          if [[ "$repo_owner" == "$GITHUB_REPOSITORY_OWNER" && "$repo_name" != "$repo_ref" && ",${repositories}," != *",${repo_name},"* ]]; then
+            repositories="${repositories},${repo_name}"
+          fi
+        done < <(echo '${{ inputs.external-repos || '[]' }}' | jq -r '. | to_entries[]? | .value[0]?.repoURL // empty')
+        echo "repositories=${repositories}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ steps.token-scope.outputs.repositories }}
+        permission-contents: read
+        permission-environments: write
+        permission-secrets: write
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+
+    - id: source-repo
+      name: Determine source repository and token
+      shell: bash
+      run: |
+        SOURCE_REPO="${{ fromJson(inputs.data)['source_repo'] || '' }}"
+        SOURCE_VERSION="${{ fromJson(inputs.data)['source_version'] || '' }}"
+        if [[ -n "$SOURCE_REPO" ]] && [[ $(echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | wc -l) -gt 0 ]]; then
+          echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | while read -r repo; do
+            repo_key=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            repoName=$(basename "$repoURL" .git)
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+            echo "Checking Repo ID: $repo_key against source repo: $SOURCE_REPO"
+
+            if [[ "$repo_key" == "$SOURCE_REPO" ]]; then
+              echo "Found matching repo: $repoOrg/$repoName, getting token..."
+              use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+              token=$(echo "$repo" | jq -r '.value[0].token // empty')
+
+              token_value=""
+              if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+                token_value="${{ steps.app-token.outputs.token }}"
+              fi
+              if [[ -z "$token_value" && -n "$token" ]]; then
+                token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token]')
+              fi
+
+              echo "Repo Org/Name: $repoOrg/$repoName"
+              if [[ -n "$token_value" && "$token_value" != "null" ]]; then
+                echo "stack-repository-token=$token_value" >> "$GITHUB_OUTPUT"
+              fi
+              echo "stack-repository=$repoOrg/$repoName" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
+        fi
+        if [[ -n "$SOURCE_VERSION" ]]; then
+          echo "stack-repository-version=$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: "Checkout Source Repository"
+      uses: actions/checkout@v4
+      with:
+        path: source_repo
+        repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}
+        ref: ${{ steps.source-repo.outputs.stack-repository-version || github.sha }}
+        token: ${{ steps.source-repo.outputs.stack-repository-token || (steps.source-repo.outputs.stack-repository == '' && github.token) || github.token }}
+        clean: false
+
+    - name: Merge stack to global-vars
+      id: merge-global-vars
+      uses: actions/github-script@v8
+      with:
+        result-encoding: json
+        script: |
+          const GLOBALS = ${{ toJson(fromJson(inputs.data)['globals']) || '{}' }};
+          return {
+              ...GLOBALS,
+              "stack_id": "${{ fromJson(inputs.data)['id'] }}",
+              "deployment_id": "${{ fromJson(inputs.data)['id'] }}-${{ env.STAGE }}-${{ env.CUSTOMER_ID }}"
+          }
+
+    - id: convert-inputs
+      name: Convert Inputs
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        pipeline-globals: ${{ inputs.env }}
+
+    - id: convert-inputs-ssm
+      name: Convert Inputs SSM
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        pipeline-globals: ${{ inputs.env }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+
+    - id: convert-inputs-key-vault
+      name: Convert Inputs Key Vault (ARM SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        pipeline-globals: ${{ inputs.env }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+
+    - id: convert-inputs-key-vault-keystore
+      name: Convert Inputs Key Vault (Keystore SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        pipeline-globals: ${{ inputs.env }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
+    - name: Run script
+      id: script
+      run: |2
+
+        script_inputs="$(echo '${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map }}' |
+          jq -r '.[] | "export \(.key | gsub("-"; "_"))=\(.value)"')"
+
+        export DRY_RUN="${{ fromJson(inputs.env)['dry_run'] || 'false' }}"
+
+        if [[ "${{ fromJson(inputs.data)['type'] }}" == 'bizep' ]]; then
+          script=".github/scripts/deploy-bizep-template.sh"
+          export TEMPLATE_FILE="$(pwd)/${{ fromJson(inputs.data)['template'] }}"
+          if [[ ! -f "${TEMPLATE_FILE}" ]]; then
+            echo "Template file not found: ${TEMPLATE_FILE}"
+            exit 1
+            fi
+          echo "[DEBUG] TEMPLATE_FILE=${TEMPLATE_FILE}"
+        else
+          pwd
+          script=source_repo/${{ fromJson(inputs.data)['script'] }}
+          ls -lah ${script}
+          if [[ ! -f "${script}" ]]; then
+            echo "Script file not found: ${script}"
+            exit 1
+          fi
+          echo "[DEBUG] SCRIPT=${script}"
+        fi
+
+        chmod +x ${script}
+        bash ${script} "${script_inputs}"
+        echo "dry-run=$DRY_RUN" >> "$GITHUB_OUTPUT"
+
+    - uses: ./.github/actions/gh-data-transfer/v2
+      name: "Export Script Output to SSM"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX != '' && fromJson(inputs.env)['environment']
+        != '' && (steps.script.outputs.output_vars != '' || steps.script.outputs.output_secrets != '')
+      with:
+        environment-name: ${{ env.ENVIRONMENT }}
+        variables: ${{ steps.script.outputs.output_vars }}
+        secrets: ${{ steps.script.outputs.output_secrets }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        ssm-kms-key-id: ${{ vars.REPO_KEYSTORE_SSM_KMS_KEY_ID }}
+
+      # KeyVault path — Keystore SP (cross-tenant, preferred when REPO_KEYSTORE_SP_CLIENT_ID is set)
+    - uses: ./.github/actions/gh-data-transfer/v2
+      name: "Export Script Output to KeyVault (Keystore SP)"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL
+        != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID != '' && fromJson(inputs.env)['environment'] != '' && (steps.script.outputs.output_vars
+        != '' || steps.script.outputs.output_secrets != '')
+      with:
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        variables: ${{ steps.script.outputs.output_vars }}
+        secrets: ${{ steps.script.outputs.output_secrets }}
+
+      # KeyVault path — ARM SP (fallback when no dedicated Keystore SP is configured)
+    - uses: ./.github/actions/gh-data-transfer/v2
+      name: "Export Script Output to KeyVault (ARM SP)"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL
+        != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID == '' && fromJson(inputs.env)['environment'] != '' && (steps.script.outputs.output_vars
+        != '' || steps.script.outputs.output_secrets != '')
+      with:
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        variables: ${{ steps.script.outputs.output_vars }}
+        secrets: ${{ steps.script.outputs.output_secrets }}
+
+      # GitHub API path (fallback when no KeyVault URL configured)
+    - uses: ./.github/actions/gh-data-transfer/v2
+      name: "Export Script Output to Github ENV"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL
+        == '' && (steps.app-token.outputs.token != '' || env.CI_ENV_TRANSFER_GH_TOKEN != '') && fromJson(inputs.env)['environment'] != '' && (steps.script.outputs.output_vars != '' || steps.script.outputs.output_secrets != '')
+      with:
+        environment-name: ${{ env.ENVIRONMENT }}
+        github-token: ${{ steps.app-token.outputs.token || env.CI_ENV_TRANSFER_GH_TOKEN }}
+        variables: ${{ steps.script.outputs.output_vars }}
+        secrets: ${{ steps.script.outputs.output_secrets }}
+
+    - name: Add pipeline job backlink
+      if: ${{ !cancelled() }}
+      uses: ./.github/actions/pipeline-job-backlink
+      with:
+        job-name: ${{ format('Script {0} {1}', fromJson(inputs.data)['type'] == 'bizep' && 'BIZEP' || 'GH Action', fromJson(inputs.data)['name'])
+          }}

@@ -1,0 +1,809 @@
+---
+name: ".Terraform Workflow (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      # Start work in progress ----
+      # In the future all inputs will be passed as two json objects data and env
+      data:
+        type: string
+        required: true
+        default: "{}"
+      env:
+        type: string
+        required: true
+        default: "{}"
+      external-repos:
+        type: string
+        required: false
+        default: "[]"
+      #
+      #
+      #  End work in progress ----
+      runs-on:
+        required: false
+        type: string
+        default: ""
+      dry-run:
+        required: false
+        type: string
+        default: ""
+      debug:
+        required: false
+        type: string
+      local-terraform-state:
+        required: false
+        type: string
+        default: "false"
+      stage:
+        required: true
+        type: string
+      location:
+        required: true
+        type: string
+      environment:
+        required: false
+        type: string
+      destroy:
+        required: false
+        type: string
+        default: "false"
+      terraform-project:
+        required: true
+        type: string
+        default: ""
+      stack-id:
+        required: true
+        type: string
+        default: ""
+      local-terraform-project-base-path:
+        required: false
+        type: string
+        default: ""
+      backend-config:
+        required: false
+        default: ""
+        type: string
+      backend-state-key-override:
+        required: false
+        default: ""
+        type: string
+      backend-state-container-name-override:
+        required: false
+        default: "tfstate"
+        type: string
+      backend-state-storage-account-name-override:
+        required: false
+        default: ""
+        type: string
+      backend-state-resource-group-name-override:
+        required: false
+        default: ""
+        type: string
+      backend-state-bucket-name-override:
+        required: false
+        default: ""
+        type: string
+      backend-state-region-override:
+        required: false
+        default: ""
+        type: string
+      cloud:
+        required: false
+        default: "azure"
+        description: "Target cloud for authentication and remote state. Supported: azure, aws"
+        type: string
+      globals:
+        required: false
+        default: "{}"
+        type: string
+      pipeline-globals:
+        required: false
+        default: "{}"
+        type: string
+      tf-output-vars:
+        required: false
+        default: "[]"
+        type: string
+      tf-output-secrets:
+        required: false
+        default: "[]"
+        type: string
+      tf-vars-type:
+        required: false
+        default: "tojson"
+        type: string
+      tf-vars-input:
+        required: false
+        description: "terraform tfvars list"
+        default: "[]"
+        type: string
+      tf-vars-gh:
+        required: false
+        description: "terraform tfvars-map"
+        default: "[]" # [\"VAR_A\"]
+        type: string
+      generate-source-artifact:
+        required: false
+        default: "false"
+        description: "generate tars of source code"
+        type: string
+      upload-plan-artifact:
+        required: false
+        default: true
+        description: "Upload the binary saved plan artifact"
+        type: boolean
+      relative-module-path:
+        required: false
+        default: "../../"
+        description: "relative path to module folder"
+        type: string
+      actions-repository:
+        required: false
+        default: "GEBITSolutions/stax"
+        description: "Github Repo for shared actions."
+        type: string
+      stack-repository:
+        required: false
+        default: ""
+        description: "Github Repo of stack source code."
+        type: string
+      stack-repository-version:
+        required: false
+        default: ""
+        description: "Github Repo Revision for stack source code."
+        type: string
+      actions-version:
+        required: false
+        default: "main"
+        description: "Github Repo branch for shared actions."
+        type: string
+      tfvars-file:
+        required: false
+        default: ""
+        # required: false
+        # default: "<stage>.<location>.tfvars"
+        type: string
+    secrets:
+      CI_GITHUB_PAT:
+        required: false
+      CI_GITHUB_TOKEN_TERRAFORM:
+        required: false
+      CI_ENV_TRANSFER_GH_TOKEN:
+        required: false
+      INFRACOST_API_KEY:
+        required: false
+      TF_PROVIDER_GH_OWNER:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_CLIENT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+      REPO_KEYSTORE_SP_CLIENT_SECRET:
+        required: false
+
+jobs:
+  terraform-plan:
+    if: (inputs.dry-run == 'true')
+    name: "TF Plan ${{ inputs.terraform-project }}"
+    runs-on: ${{ inputs.runs-on || vars.RUNNER || 'ubuntu-22.04' }}
+    environment: ${{ inputs.environment || 'dev' }}
+    outputs:
+      # Test if outputs are valid
+      plan-artifacts-name: ${{ steps.plan.outputs.plan-artifacts-name }}
+      plan-binary-name: ${{ steps.plan.outputs.plan-binary-name }}
+      plan-exit-code: ${{ steps.plan.outputs.plan-exit-code }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
+      ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
+      STAGE: ${{ inputs.stage || 'dev' }}
+      ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+      DEFAULT_LOCATION: "germanywestcentral"
+      STACK_ID: ${{ inputs.stack-id }}
+    steps:
+    - name: Resolve App Token Scope
+      id: token-scope
+      shell: bash
+      run: |
+        repositories="${GITHUB_REPOSITORY#*/}"
+        add_repo() {
+          local repo="$1"
+          if [[ -n "$repo" && ",${repositories}," != *",${repo},"* ]]; then
+            repositories="${repositories},${repo}"
+          fi
+        }
+        stack_repository="${{ inputs.stack-repository || '' }}"
+        if [[ "$stack_repository" == "${GITHUB_REPOSITORY_OWNER}/"* ]]; then
+          add_repo "${stack_repository#*/}"
+        fi
+        while read -r repo_url; do
+          repo_ref=$(echo "$repo_url" | sed -E 's#.*github\.com[:/]([^/]+)/([^/.]+)(\.git)?$#\1/\2#')
+          if [[ "${repo_ref%%/*}" == "$GITHUB_REPOSITORY_OWNER" && "${repo_ref#*/}" != "$repo_ref" ]]; then
+            add_repo "${repo_ref#*/}"
+          fi
+        done < <(echo '${{ inputs.external-repos || '[]' }}' | jq -r '. | to_entries[]? | .value[0]?.repoURL // empty')
+        echo "repositories=${repositories}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ steps.token-scope.outputs.repositories }}
+
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+
+    - name: Merge stack to global-vars
+      id: merge-global-vars
+      uses: actions/github-script@v8
+      with:
+        result-encoding: json
+        script: |
+          return {
+              "stack_id": "${{ inputs.stack-id }}"
+          }
+
+    - id: debug
+      name: Debug external-repos
+      run: echo 'external-repos=${{ inputs.external-repos }}'
+      shell: bash
+
+      # This is a ugly way to do it. Usualy i would love to do it in a more elegant way, but honestly this
+      # is just the easiest way to do it right now. Sorry for that, my future self.
+      # We use the external-repo map id from the stack-config file to map the token to the referenced repo.
+    - id: source-repo
+      name: Determine source repository and token
+      shell: bash
+      run: |
+        if [[ $(echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | wc -l) -gt 0 ]]; then
+          echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | while read -r repo; do
+            repo_key=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            repoName=$(basename "$repoURL" .git)
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+            echo "Checking Repo ID: $repo_key against source repo: ${{ inputs.stack-repository }}"
+
+            if [[ "$repo_key" == "${{ inputs.stack-repository }}" ]]; then
+              echo "Found matching repo: $repoOrg/$repoName, getting token..."
+              use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+              token=$(echo "$repo" | jq -r '.value[0].token // empty')
+
+              token_value=""
+              if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+                token_value="${{ steps.app-token.outputs.token }}"
+              fi
+              if [[ -z "$token_value" && -n "$token" ]]; then
+                token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token]')
+              fi
+
+              echo "Repo Org/Name: $repoOrg/$repoName"
+              echo "stack-repository=$repoOrg/$repoName" >> "$GITHUB_OUTPUT"
+              if [[ -n "$token_value" && "$token_value" != "null" ]]; then
+                echo "stack-repository-token=$token_value" >> "$GITHUB_OUTPUT"
+              fi
+              break
+            fi
+          done
+        fi
+
+    - name: Checkout Source Repository
+      uses: actions/checkout@v4
+      with:
+        path: source_repo
+        repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}
+        ref: ${{ inputs.stack-repository-version || github.sha }}
+        token: ${{ steps.source-repo.outputs.stack-repository-token || github.token }}
+        clean: false
+
+    - id: checkout-ext-repos
+      shell: bash
+      run: |
+        git --version
+        mkdir -p externalRepos
+        cd externalRepos
+        ext_repo_exists=false
+        external_repos='${{ inputs.external-repos || '[]' }}'
+        repo_count=$(echo "$external_repos" | jq -r 'if type == "object" then (to_entries | length) else 0 end' 2>/dev/null || echo 0)
+
+        if [[ "$repo_count" -gt 0 ]]; then
+          ext_repo_exists=true
+          while read -r repo; do
+            name=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            targetRevision=$(echo "$repo" | jq -r '.value[0].targetRevision')
+            use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+            token=$(echo "$repo" | jq -r '.value[0].token // empty')
+
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+
+            token_value=""
+            if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+              token_value="${{ steps.app-token.outputs.token }}"
+            fi
+            if [[ -z "$token_value" && -n "$token" ]]; then
+              token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token]')
+            fi
+
+
+            repo_url_no_scheme="$repoURL"
+            if [[ "$repo_url_no_scheme" =~ ^https?:// ]]; then
+              repo_url_no_scheme="${repo_url_no_scheme#https://}"
+              repo_url_no_scheme="${repo_url_no_scheme#http://}"
+            elif [[ "$repo_url_no_scheme" =~ ^git@github.com: ]]; then
+              repo_url_no_scheme="${repo_url_no_scheme#git@github.com:}"
+              repo_url_no_scheme="github.com/${repo_url_no_scheme}"
+            fi
+            repo_url_no_scheme="${repo_url_no_scheme%.git}.git"
+
+            if [[ -n "$token_value" && "$token_value" != "null" ]]; then
+              git clone --single-branch --branch "${targetRevision}" "https://x-access-token:${token_value}@${repo_url_no_scheme}" "${name}"
+            else
+              git clone --single-branch --branch "${targetRevision}" "https://${repo_url_no_scheme}" "${name}"
+            fi
+            echo "ID: $name"
+            echo "Repo URL: $repoURL"
+            echo "Target Revision: $targetRevision"
+            echo "----------------------------"
+          done < <(echo "$external_repos" | jq -c '. | to_entries[]?')
+        fi
+        cd ../
+        ls -lah externalRepos
+        echo "ext-repo-exists=${ext_repo_exists}" >> "$GITHUB_OUTPUT"
+
+    - id: convert-inputs
+      name: Convert Inputs
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+
+    - id: convert-inputs-ssm
+      name: Convert Inputs SSM
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+
+    - id: convert-inputs-key-vault
+      name: Convert Inputs Key Vault (ARM SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+
+    - id: convert-inputs-key-vault-keystore
+      name: Convert Inputs Key Vault (Keystore SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
+    - id: plan
+      name: Terraform Plan
+      uses: ./.github/actions/terraform_action/v2.0
+      with:
+        debug: ${{ (inputs.debug == 'true' || runner.debug == '1') && 'true' || 'false' }}
+        plan: "true"
+        no-lock: ${{ (fromJson(inputs.env)['dry_run']) }}
+        destroy: ${{ inputs.destroy }}
+        stack-id: ${{ inputs.stack-id }}
+        chdir: ${{ inputs.local-terraform-project-base-path != '' && format('{0}/{1}/{2}', 'source_repo' , inputs.local-terraform-project-base-path,
+          inputs.terraform-project) || format('{0}/{1}', 'terraform/projects' , inputs.terraform-project) }}
+        checkov-skip-checks: ${{ join(fromJson(inputs.data)['checkov_skip_checks'], ',') }}
+        iac-provider: ${{ fromJson(inputs.data)['type'] }}
+        terraform-version: "${{ fromJson(inputs.data)['terraform_version'] || '1.5.7' }}"
+        opentofu-version: "${{ fromJson(inputs.data)['opentofu_version'] || '1.6.0-rc1' }}"
+        backend-config: "${{ inputs.backend-config != '' && format('{0}/{1}','source_repo',inputs.backend-config) || '' }}"
+        backend-state-key-override: ${{ inputs.backend-state-key-override }}
+        backend-state-container-name-override: ${{ inputs.backend-state-container-name-override }}
+        backend-state-storage-account-name-override: ${{ inputs.backend-state-storage-account-name-override }}
+        backend-state-resource-group-name-override: ${{ inputs.backend-state-resource-group-name-override }}
+        backend-state-bucket-name-override: ${{ inputs.backend-state-bucket-name-override }}
+        backend-state-region-override: ${{ inputs.backend-state-region-override }}
+        tfvars-file: ${{inputs.tfvars-file != '' && format('{0}/{1}', 'source_repo' , inputs.tfvars-file) || '' }}
+        tf-vars: ${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map
+          || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map || '{}' }}
+        local-terraform-state: ${{ inputs.local-terraform-state || fromJson(inputs.data)['local_terraform_state'] || 'false'
+          }}
+        tf-log-level: ${{ fromJson(inputs.env)['tf_log_level'] || vars.TF_LOG_LEVEL || 'DEBUG' }}
+        generate-source-artifact: ${{inputs.generate-source-artifact}}
+        upload-plan-artifact: ${{ inputs.upload-plan-artifact && 'true' || 'false' }}
+        relative-module-path: ${{inputs.relative-module-path}}
+        stage: ${{ env.STAGE }}
+        location: ${{ inputs.location || env.DEFAULT_LOCATION }}
+        TF_PROVIDER_GH_TOKEN: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+        TF_PROVIDER_GH_OWNER: ${{ vars.TF_PROVIDER_GH_OWNER || secrets.TF_PROVIDER_GH_OWNER || github.repository_owner }}
+        INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        ARM_CLIENT_ID: ${{ env.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ env.ARM_CLIENT_SECRET }}
+        ARM_TENANT_ID: ${{ env.ARM_TENANT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ env.ARM_SUBSCRIPTION_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+        cloud: ${{ inputs.cloud }}
+        AWS_ACCESS_KEY_ID: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        AWS_SECRET_ACCESS_KEY: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        AWS_SESSION_TOKEN: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        AWS_REGION: ${{ inputs.location || env.DEFAULT_LOCATION }}
+
+  terraform-apply:
+    if: (inputs.dry-run == 'false')
+    runs-on: ${{ inputs.runs-on || vars.RUNNER || 'ubuntu-22.04' }}
+    environment: ${{ inputs.environment || 'dev' }}
+    name: ${{ (inputs.destroy == 'true') && 'TF Destroy' || 'TF Apply' }} ${{ inputs.terraform-project }}
+    outputs:
+      apply-exit-code: ${{ steps.apply.outputs.apply-exit-code }}
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
+      ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
+      STAGE: ${{ inputs.stage || 'dev' }}
+      ENVIRONMENT: ${{ inputs.environment || 'dev' }}
+      DEFAULT_LOCATION: "germanywestcentral"
+    steps:
+    - name: Resolve App Token Scope
+      id: token-scope
+      shell: bash
+      run: |
+        repositories="${GITHUB_REPOSITORY#*/}"
+        add_repo() {
+          local repo="$1"
+          if [[ -n "$repo" && ",${repositories}," != *",${repo},"* ]]; then
+            repositories="${repositories},${repo}"
+          fi
+        }
+        stack_repository="${{ inputs.stack-repository || '' }}"
+        if [[ "$stack_repository" == "${GITHUB_REPOSITORY_OWNER}/"* ]]; then
+          add_repo "${stack_repository#*/}"
+        fi
+        while read -r repo_url; do
+          repo_ref=$(echo "$repo_url" | sed -E 's#.*github\.com[:/]([^/]+)/([^/.]+)(\.git)?$#\1/\2#')
+          if [[ "${repo_ref%%/*}" == "$GITHUB_REPOSITORY_OWNER" && "${repo_ref#*/}" != "$repo_ref" ]]; then
+            add_repo "${repo_ref#*/}"
+          fi
+        done < <(echo '${{ inputs.external-repos || '[]' }}' | jq -r '. | to_entries[]? | .value[0]?.repoURL // empty')
+        echo "repositories=${repositories}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ steps.token-scope.outputs.repositories }}
+        permission-contents: read
+        permission-environments: write
+        permission-secrets: write
+
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+
+    - id: source-repo
+      name: Determine source repository and token
+      shell: bash
+      run: |
+        if [[ $(echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | wc -l) -gt 0 ]]; then
+          echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | while read -r repo; do
+            repo_key=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            repoName=$(basename "$repoURL" .git)
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+            echo "Checking Repo ID: $repo_key against target repo: ${{ inputs.stack-repository }}"
+
+            if [[ "$repo_key" == "${{ inputs.stack-repository }}" ]]; then
+              echo "Found matching repo: $repoOrg/$repoName, getting token..."
+              use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+              token=$(echo "$repo" | jq -r '.value[0].token // empty')
+
+              token_value=""
+              if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+                token_value="${{ steps.app-token.outputs.token }}"
+              fi
+              if [[ -z "$token_value" && -n "$token" ]]; then
+                token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token]')
+              fi
+
+              echo "Repo Org/Name: $repoOrg/$repoName"
+              echo "stack-repository=$repoOrg/$repoName" >> "$GITHUB_OUTPUT"
+              if [[ -n "$token_value" && "$token_value" != "null" ]]; then
+                echo "stack-repository-token=$token_value" >> "$GITHUB_OUTPUT"
+              fi
+              break
+            fi
+          done
+        fi
+
+    - name: Checkout Source Repository
+      uses: actions/checkout@v4
+      with:
+        path: source_repo
+        repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}
+        ref: ${{ inputs.stack-repository-version || github.sha }}
+        token: ${{ steps.source-repo.outputs.stack-repository-token || github.token }}
+        clean: false
+
+    - id: checkout-ext-repos
+      shell: bash
+      run: |
+        git --version
+        mkdir -p externalRepos
+        cd externalRepos
+        ext_repo_exists=false
+        external_repos='${{ inputs.external-repos || '[]' }}'
+        repo_count=$(echo "$external_repos" | jq -r 'if type == "object" then (to_entries | length) else 0 end' 2>/dev/null || echo 0)
+
+        if [[ "$repo_count" -gt 0 ]]; then
+          ext_repo_exists=true
+          while read -r repo; do
+            name=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            targetRevision=$(echo "$repo" | jq -r '.value[0].targetRevision')
+            use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+            token=$(echo "$repo" | jq -r '.value[0].token // empty')
+
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+
+            token_value=""
+            if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+              token_value="${{ steps.app-token.outputs.token }}"
+            fi
+            if [[ -z "$token_value" && -n "$token" ]]; then
+              token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token]')
+            fi
+
+
+            repo_url_no_scheme="$repoURL"
+            if [[ "$repo_url_no_scheme" =~ ^https?:// ]]; then
+              repo_url_no_scheme="${repo_url_no_scheme#https://}"
+              repo_url_no_scheme="${repo_url_no_scheme#http://}"
+            elif [[ "$repo_url_no_scheme" =~ ^git@github.com: ]]; then
+              repo_url_no_scheme="${repo_url_no_scheme#git@github.com:}"
+              repo_url_no_scheme="github.com/${repo_url_no_scheme}"
+            fi
+            repo_url_no_scheme="${repo_url_no_scheme%.git}.git"
+
+            if [[ -n "$token_value" && "$token_value" != "null" ]]; then
+              git clone --single-branch --branch "${targetRevision}" "https://x-access-token:${token_value}@${repo_url_no_scheme}" "${name}"
+            else
+              git clone --single-branch --branch "${targetRevision}" "https://${repo_url_no_scheme}" "${name}"
+            fi
+            echo "ID: $name"
+            echo "Repo URL: $repoURL"
+            echo "Target Revision: $targetRevision"
+            echo "----------------------------"
+          done < <(echo "$external_repos" | jq -c '. | to_entries[]?')
+        fi
+        cd ../
+        ls -lah externalRepos
+        echo "ext-repo-exists=${ext_repo_exists}" >> "$GITHUB_OUTPUT"
+
+    - id: debug
+      run: echo 'external-repos=${{ inputs.external-repos }}'
+      shell: bash
+
+    - name: Merge stack to global-vars
+      id: merge-global-vars
+      uses: actions/github-script@v8
+      with:
+        result-encoding: json
+        script: |
+          return {
+              "stack_id": "${{ inputs.stack-id }}"
+          }
+
+    - id: convert-inputs
+      name: Convert Inputs
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+
+    - id: convert-inputs-ssm
+      name: Convert Inputs SSM
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+
+    - id: convert-inputs-key-vault
+      name: Convert Inputs Key Vault (ARM SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+
+    - id: convert-inputs-key-vault-keystore
+      name: Convert Inputs Key Vault (Keystore SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ inputs.tf-vars-input }}
+        additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ inputs.globals }}
+        pipeline-globals: ${{ inputs.pipeline-globals }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
+    - id: apply
+      name: Terraform Apply
+      uses: ./.github/actions/terraform_action/v2.0
+      with:
+        plan: "false"
+        upload-plan-artifact: ${{ inputs.upload-plan-artifact && 'true' || 'false' }}
+        apply: "true"
+        destroy: ${{ inputs.destroy }}
+        iac-provider: ${{ fromJson(inputs.data)['type'] }}
+        terraform-version: "${{ fromJson(inputs.data)['terraform_version'] || '1.5.7' }}"
+        opentofu-version: "${{ fromJson(inputs.data)['opentofu_version'] || '1.6.0-rc1' }}"
+        debug: ${{ (inputs.debug == 'true' || runner.debug == '1') && 'true' || 'false' }}
+        chdir: ${{ inputs.local-terraform-project-base-path != '' && format('{0}/{1}/{2}', 'source_repo' , inputs.local-terraform-project-base-path,
+          inputs.terraform-project) || format('{0}/{1}', 'terraform/projects' , inputs.terraform-project) }}
+        stack-id: ${{ inputs.stack-id }}
+        backend-config: "${{ inputs.backend-config != '' && format('{0}/{1}','source_repo',inputs.backend-config) || '' }}"
+        backend-state-key-override: ${{ inputs.backend-state-key-override }}
+        backend-state-container-name-override: ${{ inputs.backend-state-container-name-override }}
+        backend-state-storage-account-name-override: ${{ inputs.backend-state-storage-account-name-override }}
+        backend-state-resource-group-name-override: ${{ inputs.backend-state-resource-group-name-override }}
+        backend-state-bucket-name-override: ${{ inputs.backend-state-bucket-name-override }}
+        backend-state-region-override: ${{ inputs.backend-state-region-override }}
+        tfvars-file: ${{inputs.tfvars-file != '' && format('{0}/{1}', 'source_repo' , inputs.tfvars-file) || '' }}
+        tf-vars: ${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map
+          || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map || '{}' }}
+        local-terraform-state: ${{ inputs.local-terraform-state || fromJson(inputs.data)['local_terraform_state'] || 'false'
+          }}
+        tf-log-level: ${{ fromJson(inputs.env)['tf_log_level'] || vars.TF_LOG_LEVEL || 'DEBUG' }}
+        tf-output-vars: ${{ inputs.tf-output-vars || '[]' }}
+        tf-output-secrets: ${{ inputs.tf-output-secrets || '[]' }}
+        stage: ${{ env.STAGE }}
+        location: ${{ inputs.location || env.DEFAULT_LOCATION }}
+        gh-data-transfer-keyvault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        gh-data-transfer-ssm-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX || '' }}
+        gh-data-transfer-ssm-region: ${{ vars.REPO_KEYSTORE_SSM_REGION || '' }}
+        gh-data-transfer-ssm-kms-key-id: ${{ vars.REPO_KEYSTORE_SSM_KMS_KEY_ID || '' }}
+        TF_PROVIDER_GH_TOKEN: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+        TF_PROVIDER_GH_OWNER: ${{ vars.TF_PROVIDER_GH_OWNER || secrets.TF_PROVIDER_GH_OWNER || github.repository_owner }}
+        ENV_TRANSFER_GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+        gh-environment-name: ${{ env.ENVIRONMENT }}
+        ARM_CLIENT_ID: ${{ env.ARM_CLIENT_ID }}
+        ARM_CLIENT_SECRET: ${{ env.ARM_CLIENT_SECRET }}
+        ARM_TENANT_ID: ${{ env.ARM_TENANT_ID }}
+        ARM_SUBSCRIPTION_ID: ${{ env.ARM_SUBSCRIPTION_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+        keystore-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID || '' }}
+        keystore-sp-client-secret: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET || '' }}
+        keystore-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID || '' }}
+        keystore-oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+        cloud: ${{ inputs.cloud }}
+        AWS_ACCESS_KEY_ID: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        AWS_SECRET_ACCESS_KEY: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        AWS_SESSION_TOKEN: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        AWS_REGION: ${{ inputs.location || env.DEFAULT_LOCATION }}

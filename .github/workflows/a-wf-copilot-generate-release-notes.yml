@@ -1,0 +1,415 @@
+---
+name: "\U0001F916 Copilot: Generate Release Notes"
+
+on:
+  workflow_call:
+    inputs:
+      pr_number:
+        description: "Pull request number"
+        required: true
+        type: number
+      branch:
+        description: "Branch name"
+        required: true
+        type: string
+      base_ref:
+        description: "Base branch to compare against"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: write
+
+jobs:
+  generate-release-notes:
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      contents: write
+      issues: write
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+        permission-issues: write
+        permission-pull-requests: write
+        permission-contents: write
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token }}
+
+    - name: Install Copilot CLI
+      run: curl -fsSL https://gh.io/copilot-install | bash
+
+    - name: Get PR Commits
+      id: commits
+      env:
+        BASE_REF: ${{ inputs.base_ref }}
+      run: |
+        # shellcheck disable=SC2086,SC2129
+        # Fetch the base branch to compare
+        git fetch origin "${BASE_REF}"
+        # Get only commits in this PR (between base and head)
+        COMMITS=$(git log --oneline "origin/${BASE_REF}..HEAD")
+        {
+          echo "commits<<EOF"
+          echo "${COMMITS}"
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
+        CHANGES=$(git diff "origin/${BASE_REF}..HEAD")
+        # Write to tmp files to avoid GitHub Actions template size limit when
+        # large diffs (e.g. bundled dist files) are interpolated via expressions
+        echo "${COMMITS}" > /tmp/pr-commits.txt
+        echo "${CHANGES}" > /tmp/pr-changes.txt
+
+        # TODO: How to deal with User TOKEN dependency? Maybe create a bot user for this?
+        # Currently its MY token!
+    - name: Generate Release Notes with Copilot CLI
+      id: generate
+      env:
+        GITHUB_TOKEN: ${{ secrets.COPILOT_USER_TOKEN }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+      run: |
+        # shellcheck disable=SC2086,SC2129
+
+        # Write the prompt to a file to avoid ARG_MAX limits
+        cat > /tmp/copilot-prompt.txt << 'PROMPT_EOF'
+        You are a release notes generator. Your task is to create structured JSON release notes.
+
+        CRITICAL RULES (MUST FOLLOW):
+        1. NEVER output raw commit hashes, SHAs, or merge commit messages
+        2. ALWAYS transform commits into human-readable descriptions (plain strings, no icons/emojis)
+        3. Output ONLY valid JSON - NO markdown, NO code blocks, NO backticks, NO explanations
+        4. DO NOT wrap output in ```json or ``` markers - output raw JSON only
+        5. ALWAYS include ALL category arrays, even if empty
+        6. Each entry in an array should be a single descriptive string
+        7. Start your response with { and end with } - nothing else
+        8. If a commit contains issue-closing keywords (fix/fixes/fixed/close/closes/closed/resolve/resolves/resolved followed by #<number>), append (issue: #<number>) to that entry. For multiple issues in one commit, use (issue: #1, #2)
+
+        COMMIT PREFIX MAPPING:
+        - feat/feature → feature
+        - fix/bugfix → bugfixes
+        - perf → performance
+        - chore/refactor/deps/ci → maintenance
+        - BREAKING CHANGE/breaking → breaking
+        - docs → docs
+
+        REQUIRED JSON SCHEMA:
+        {
+          "pr": <number>,
+          "feature": ["string", ...],
+          "bugfixes": ["string", ...],
+          "performance": ["string", ...],
+          "maintenance": ["string", ...],
+          "breaking": ["string", ...],
+          "docs": ["string", ...]
+        }
+
+        EXAMPLE - Given commit 'fix: resolve login timeout issue':
+        ❌ WRONG: {"bugfixes": ["2a4637e fix: resolve login timeout issue"]}
+        ✅ CORRECT: {"bugfixes": ["Fixed an issue where users experienced timeouts during authentication"]}
+
+        EXAMPLE - Given commit 'fix: resolve login timeout (fixes #42)':
+        ❌ WRONG: {"bugfixes": ["Fixed login timeout issue"]}
+        ✅ CORRECT: {"bugfixes": ["Fixed an issue where users experienced timeouts during authentication (issue: #42)"]}
+
+        EXAMPLE - Given commit 'feat: add dark mode support (closes #15, closes #28)':
+        ✅ CORRECT: {"feature": ["Added dark mode support for improved visual accessibility (issue: #15, #28)"]}
+        PROMPT_EOF
+
+        # Append the dynamic parts (PR number + file references)
+        cat >> /tmp/copilot-prompt.txt << EOF
+
+        ---
+        INPUT DATA FOR PR #${PR_NUMBER}:
+
+        Commits are in the file /tmp/pr-commits.txt — read that file.
+        Code changes (diff) are in the file /tmp/pr-changes.txt — read that file.
+
+        ---
+        Now generate the release notes as valid JSON following the REQUIRED JSON SCHEMA above.
+        The pr field must be ${PR_NUMBER}. Include all category arrays (empty if no changes).
+        Do NOT include commit hashes or raw commit messages.
+        EOF
+
+        COPILOT_EXIT_CODE=0
+        AI_RAW="$("${HOME}/.local/bin/copilot" \
+          -p "$(cat /tmp/copilot-prompt.txt)" \
+          --allow-all-tools)" || COPILOT_EXIT_CODE=$?
+
+        # If Copilot CLI failed, surface diagnostics and fail the step.
+        if [ "${COPILOT_EXIT_CODE}" -ne 0 ]; then
+          echo "::error::Copilot CLI exited with code ${COPILOT_EXIT_CODE}. Generating release notes failed."
+          echo "--- Last 500 chars of Copilot CLI stdout ---"
+          echo "${AI_RAW}" | tail -c 500 || true
+          echo "--- End stdout ---"
+          exit 1
+        fi
+
+        # Copilot can print tool-use logs before a pretty-printed final JSON answer.
+        # Decode complete JSON values from stdout and retain the last schema-valid object.
+        printf '%s' "${AI_RAW}" > /tmp/copilot-output.txt
+        if ! AI_NOTES="$(python3 - "${PR_NUMBER}" /tmp/copilot-output.txt <<'PY'
+        import json
+        import sys
+        from pathlib import Path
+
+        EXPECTED_KEYS = {"pr", "feature", "bugfixes", "performance", "maintenance", "breaking", "docs"}
+        CATEGORY_KEYS = EXPECTED_KEYS - {"pr"}
+        VALUE_STARTS = '{["-0123456789tfn'
+
+
+        class JSONObject(dict):
+            def __init__(self, pairs):
+                super().__init__(pairs)
+                seen = set()
+                self.duplicate_keys = []
+                for key, _ in pairs:
+                    if key in seen and key not in self.duplicate_keys:
+                        self.duplicate_keys.append(key)
+                    seen.add(key)
+
+
+        def json_type(value):
+            if value is None:
+                return "null"
+            if isinstance(value, bool):
+                return "boolean"
+            if isinstance(value, str):
+                return "string"
+            if isinstance(value, list):
+                return "array"
+            if isinstance(value, dict):
+                return "object"
+            return "number"
+
+
+        def validate_release_notes(value, requested_pr):
+            if not isinstance(value, dict):
+                return [f"is a JSON {json_type(value)}; expected an object"]
+
+            errors = []
+            if value.duplicate_keys:
+                errors.append(f"has duplicate key(s): {', '.join(sorted(value.duplicate_keys))}")
+
+            actual_keys = set(value)
+            missing = EXPECTED_KEYS - actual_keys
+            extra = actual_keys - EXPECTED_KEYS
+            if missing:
+                errors.append(f"is missing required key(s): {', '.join(sorted(missing))}")
+            if extra:
+                errors.append(f"has unexpected key(s): {', '.join(sorted(extra))}")
+
+            if "pr" in value:
+                actual_pr = value["pr"]
+                if isinstance(actual_pr, bool) or not isinstance(actual_pr, int):
+                    errors.append(f"has a non-integer pr value ({json_type(actual_pr)})")
+                elif actual_pr != requested_pr:
+                    errors.append(f"has pr {actual_pr}; expected {requested_pr}")
+
+            for category in sorted(CATEGORY_KEYS):
+                if category not in value:
+                    continue
+                entries = value[category]
+                if not isinstance(entries, list):
+                    errors.append(f"key '{category}' is a {json_type(entries)}; expected an array of strings")
+                    continue
+                for index, entry in enumerate(entries):
+                    if not isinstance(entry, str):
+                        errors.append(
+                            f"key '{category}' entry {index} is a {json_type(entry)}; expected a string"
+                        )
+
+            return errors
+
+
+        requested_pr = int(sys.argv[1])
+        raw_output = Path(sys.argv[2]).read_text(encoding="utf-8", errors="replace")
+        decoder = json.JSONDecoder(object_pairs_hook=JSONObject)
+        rejected = []
+        accepted = []
+
+        for offset, character in enumerate(raw_output):
+            if character not in VALUE_STARTS:
+                continue
+            if character != "{" and offset > 0 and raw_output[offset - 1] not in "\r\n":
+                continue
+            try:
+                value, _ = decoder.raw_decode(raw_output, offset)
+            except json.JSONDecodeError:
+                continue
+
+            errors = validate_release_notes(value, requested_pr)
+            if errors:
+                rejected.append(f"JSON value at character {offset} {'; '.join(errors)}")
+            else:
+                accepted.append(value)
+
+        if accepted:
+            print(json.dumps(accepted[-1], ensure_ascii=False, sort_keys=True, separators=(",", ":")))
+            sys.exit(0)
+
+        print(
+            "::error::Copilot output did not contain a JSON object matching the required release-notes schema.",
+            file=sys.stderr,
+        )
+        if rejected:
+            for diagnostic in rejected[-5:]:
+                print(f"::error::{diagnostic}", file=sys.stderr)
+        else:
+            print("::error::No complete JSON value was found in Copilot CLI stdout.", file=sys.stderr)
+        sys.exit(1)
+        PY
+        )"; then
+          echo "--- Last 500 chars of Copilot CLI stdout ---"
+          echo "${AI_RAW}" | tail -c 500 || true
+          echo "--- End stdout ---"
+          exit 1
+        fi
+
+        {
+          echo "notes_success=true"
+          echo "notes<<EOF"
+          echo "${AI_NOTES}"
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Generate Warning
+      if: ${{ steps.generate.outputs.notes_success != 'true' }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: ${{ inputs.pr_number }},
+            body: '⚠️ **Warning:** Automated release notes generation failed for this PR. Please create the release notes manually.',
+          });
+
+    - name: Validate JSON Output
+      id: validate
+      if: ${{ steps.generate.outputs.notes_success == 'true' }}
+      env:
+        NOTES: ${{ steps.generate.outputs.notes }}
+      run: |2
+
+        # shellcheck disable=SC2016  # $ is regex end-of-line anchor, not a variable
+        # Strip markdown code block markers if present (defense in depth)
+        CLEAN_NOTES=$(echo "${NOTES}" | sed 's/^```json//; s/^```//; s/```$//; /^$/d' | tr -d '\r')
+
+        if ! echo "${CLEAN_NOTES}" | jq . > /dev/null 2>&1; then
+          echo "::error::Generated output is not valid JSON"
+          echo "json_valid=false" >> "${GITHUB_OUTPUT}"
+          exit 0
+        fi
+        echo "json_valid=true" >> "${GITHUB_OUTPUT}"
+        {
+          echo "clean_notes<<EOF"
+          echo "${CLEAN_NOTES}"
+          echo "EOF"
+        } >> "${GITHUB_OUTPUT}"
+
+    - name: Generate Warning (Invalid JSON)
+      if: ${{ steps.generate.outputs.notes_success == 'true' && steps.validate.outputs.json_valid == 'false' }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          await github.rest.issues.createComment({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            issue_number: ${{ inputs.pr_number }},
+            body: '⚠️ **Warning:** Automated release notes generation produced invalid JSON. Please create the release notes manually.',
+          });
+
+    - name: Create Release Notes JSON via API
+      if: ${{ steps.generate.outputs.notes_success == 'true' && steps.validate.outputs.json_valid == 'true' }}
+      env:
+        NOTES: ${{ steps.validate.outputs.clean_notes }}
+        PR_NUMBER: ${{ inputs.pr_number }}
+        BRANCH: ${{ inputs.branch }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+
+          const filePath = `release-ready/release-notes/pr-${process.env.PR_NUMBER}.json`;
+          const content = process.env.NOTES;
+          const branch = process.env.BRANCH;
+
+          // Get the current HEAD commit SHA of the branch
+          const { data: refData } = await github.rest.git.getRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`
+          });
+          const parentSha = refData.object.sha;
+
+          // Create a new blob with the file content
+          const { data: blob } = await github.rest.git.createBlob({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            content: Buffer.from(content).toString('base64'),
+            encoding: 'base64'
+          });
+
+          // Get the current tree to find the file's current blob SHA (if it exists)
+          let fileSha = undefined;
+          try {
+            const { data: fileData } = await github.rest.repos.getContent({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              path: filePath,
+              ref: parentSha
+            });
+            fileSha = fileData.sha;
+          } catch (e) {
+            // File doesn't exist yet, which is fine
+          }
+
+          // Create a new tree with the updated file
+          const treeItems = [{
+            path: filePath,
+            mode: '100644',
+            type: 'blob',
+            sha: blob.sha
+          }];
+
+          const { data: tree } = await github.rest.git.createTree({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            base_tree: parentSha,
+            tree: treeItems
+          });
+
+          // Create a new commit with the new tree, using the current HEAD as parent
+          const { data: commit } = await github.rest.git.createCommit({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            message: "docs: add release notes for PR #" + process.env.PR_NUMBER,
+            tree: tree.sha,
+            parents: [parentSha]
+          });
+
+          // Update the branch reference to point to the new commit (no merge)
+          await github.rest.git.updateRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`,
+            sha: commit.sha,
+            force: true
+          });

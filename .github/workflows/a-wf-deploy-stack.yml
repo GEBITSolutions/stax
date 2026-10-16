@@ -1,0 +1,872 @@
+---
+# yamllint disable rule:line-length
+name: ".Stack (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      dry-run:
+        required: false
+        type: string
+      env:
+        required: true
+        type: string
+      default-location:
+        required: false
+        default: "northeurope"
+        type: string
+      data:
+        required: false
+        type: string
+        default: "{}"
+      external-repos:
+        required: false
+        type: string
+        default: "[]"
+      actions-version:
+        required: false
+        default: "main"
+        description: "Github Repo branch for shared actions."
+        type: string
+      actions-repository:
+        required: false
+        default: "GEBITSolutions/stax"
+        description: "Github Repo for shared actions."
+        type: string
+      destroy:
+        required: false
+        default: "false"
+        type: string
+    outputs:
+      image_id:
+        value: ${{ jobs.Packer.outputs.image_id }}
+
+    secrets:
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_CLIENT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+      REPO_KEYSTORE_SP_CLIENT_SECRET:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+      PULP_HOSTNAME:
+        required: false
+      PULP_USERNAME:
+        required: false
+      PULP_PASSWORD:
+        required: false
+      GPG_PRIVATE_KEY:
+        required: false
+      GPG_PUBLIC_KEY:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+      CI_ENV_TRANSFER_GH_TOKEN:
+        required: false
+
+jobs:
+  script:
+    if: (fromJson(inputs.data)['type'] == 'bizep' || fromJson(inputs.data)['type'] == 'script') &&  (fromJson(inputs.env)['destroy']
+      || 'false') != 'true'
+    name: "Script: ${{ (fromJson(inputs.data)['type'] == 'bizep') && 'BIZEP' || 'GH Action' }} ${{ fromJson(inputs.data)['name']\
+      \ }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-script.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  Packer:
+    if: fromJson(inputs.data)['type'] == 'packer'
+    name: "Packer: ${{ fromJson(inputs.data)['name'] }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-packer.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  rpmbuild:
+    if: fromJson(inputs.data)['type'] == 'rpmbuild'
+    name: "RPM Build: ${{ fromJson(inputs.data)['name'] }}"
+    runs-on: ${{ fromJson(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+    environment: "${{ fromJson(inputs.env)['environment'] }}"
+    env:
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME || ''}}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME || ''}}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD || ''}}
+      # RPM settings: stack config field first, then repository/environment variable.
+      RPM_REPO_BASEURL: ${{ fromJson(inputs.data)['rpm_repo_baseurl'] || vars.RPM_REPO_BASEURL || '' }}
+      PULP_RPM_REPOSITORY: ${{ fromJson(inputs.data)['pulp_rpm_repository'] || vars.PULP_RPM_REPOSITORY || '' }}
+      RPM_GPG_NAME: ${{ fromJson(inputs.data)['rpm_gpg_name'] || vars.RPM_GPG_NAME || '' }}
+      DOCKER_USERNAME: ${{ github.actor }}
+      DOCKER_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+    container:
+      image: rockylinux/rockylinux:9
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    steps:
+    - name: Check required RPM settings
+      shell: bash
+      run: |
+        missing=()
+        [[ -n "$PULP_RPM_REPOSITORY" ]] || missing+=("pulp_rpm_repository (stack field) / PULP_RPM_REPOSITORY (variable)")
+        [[ -n "$RPM_GPG_NAME" ]] || missing+=("rpm_gpg_name (stack field) / RPM_GPG_NAME (variable)")
+        if (( ${#missing[@]} > 0 )); then
+          printf '::error::Missing RPM setting: %s\n' "${missing[@]}"
+          exit 1
+        fi
+
+    - uses: actions/checkout@v4
+
+    - name: Create python virtual environment and install Pulp CLI
+      shell: bash
+      run: |
+        python3 -m venv .venv
+        source .venv/bin/activate
+        .venv/bin/pip install pulp-cli
+
+    - name: Generate Pulp CLI configuration
+      shell: bash
+      run: .venv/bin/pulp config create --base-url https://${{ secrets.PULP_HOSTNAME }} --username ${{ secrets.PULP_USERNAME
+        }} --password ${{ secrets.PULP_PASSWORD }}
+
+    - name: Verify Pulp CLI configuration
+      shell: bash
+      run: .venv/bin/pulp status
+
+    - name: Install RPM build dependencies
+      run: |
+        dnf install -y epel-release rpm-build rpmdevtools dnf-plugins-core rsync jq createrepo rpm-sign pinentry-tty
+        dnf config-manager --set-enabled crb
+
+    - name: Set up RPM build environment
+      run: |
+        rpmdev-setuptree
+
+    - name: Update rpmbuild environment
+      working-directory: edge
+      run: |
+        mkdir -p ~/rpmbuild/SOURCES/collections
+        rsync -avP ./rpmbuild/SPECS/ ~/rpmbuild/SPECS/
+        rsync -avP ./ansible/collections/ ~/rpmbuild/SOURCES/collections
+
+    - name: Create repository configuration for build dependencies
+      if: env.RPM_REPO_BASEURL != ''
+      run: |
+        {
+          echo "[rpm-repo-latest]"
+          echo "name=rpm-repo-latest"
+          echo "baseurl=${RPM_REPO_BASEURL}"
+          echo "enabled=1"
+          echo "gpgcheck=0"
+          echo "skip_if_unavailable=True"
+        } > /etc/yum.repos.d/latest.repo
+
+    - name: Create repository configuration for local
+      run: |
+        {
+          echo "[local]"
+          echo "name=local"
+          echo "baseurl=file:///github/home/rpmbuild/RPMS/"
+          echo "enabled=1"
+          echo "gpgcheck=0"
+          echo "skip_if_unavailable=True"
+        } > /etc/yum.repos.d/local.repo
+
+    - name: Get SPECFILES from Pulp
+      run: |
+        .venv/bin/pulp file content list --limit 10000 --field sha1 > ~/rpmbuild/specfiles.json
+
+    - name: Set up GPG key
+      run: |
+        echo "${{ secrets.GPG_PRIVATE_KEY }}" | gpg --batch --yes --import
+        echo "${{ secrets.GPG_PUBLIC_KEY }}" > ~/.public_key
+        rpm --import ~/.public_key
+        echo "%_signature gpg" >> ~/.rpmmacros
+        echo "%_gpg_name ${RPM_GPG_NAME}" >> ~/.rpmmacros
+      env:
+        GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+        GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+
+    - name: Verify GPG key
+      run: gpg --list-keys
+
+    - name: Get Python3 RPM sources, build dependencies & build RPM packages
+      run: |
+        # shellcheck disable=SC2012,SC2086
+        for SPECFILE in $( ls ~/rpmbuild/SPECS/*.spec | sort ); do
+          HASH=$(sha1sum $SPECFILE | awk '{print $1}')
+          if ! grep -q "$HASH" ~/rpmbuild/specfiles.json; then
+            spectool -g -R $SPECFILE
+            dnf builddep -y $SPECFILE
+            rpmbuild -ba $SPECFILE
+            createrepo ~/rpmbuild/RPMS/
+            rm -Rf /var/cache/dnf/local*
+            touch ~/rpmbuild/specfiles.done
+            echo $SPECFILE >> ~/rpmbuild/specfiles.done
+          fi
+        done
+
+    - name: Sign RPM packages
+      run: |
+        # shellcheck disable=SC2044,SC2086,SC2155
+        for RPM in $( find ~/rpmbuild/RPMS/ -type f -name "*.rpm" ); do
+          export GPG_TTY=$(tty)
+          gpg --batch --pinentry-mode loopback --passphrase $GPG_PASSPHRASE --sign $RPM
+          rpm --addsign $RPM
+          rpm --checksig --verbose $RPM | grep "DSA/SHA256 Signature" || exit 1
+        done
+      env:
+        GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+
+    - name: Upload Specfiles to Pulp
+      run: |
+        # shellcheck disable=SC2013,SC2046,SC2086
+        for SPECFILE in $( cat ~/rpmbuild/specfiles.done ); do
+          .venv/bin/pulp file content upload --file $SPECFILE --relative-path $(basename $SPECFILE) --repository specfiles
+        done
+
+    - name: Upload RPM packages to Pulp
+      shell: bash
+      run: find ~/rpmbuild/RPMS/ -name '*.rpm' -exec .venv/bin/pulp rpm content -t package upload --file {} --repository "$PULP_RPM_REPOSITORY"
+        \;
+
+    - name: Publish RPM packages
+      shell: bash
+      run: |
+        # shellcheck disable=SC2046
+        .venv/bin/pulp rpm distribution update --name "$PULP_RPM_REPOSITORY" --publication \
+        $(.venv/bin/pulp rpm publication list --repository "$PULP_RPM_REPOSITORY" --limit 1 2>/dev/null | jq -rc '[.[].pulp_href][0]')
+
+    - name: Remove Pulp CLI configuration & Clean up RPM build environment
+      if: always()
+      run: |
+        rm -f /home/runner/.config/pulp/cli.toml
+        rm -Rf ~/rpmbuild/
+
+    - name: Add pipeline job backlink
+      if: ${{ !cancelled() }}
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+          const jobName = 'RPM Build: ${{ fromJson(inputs.data)['name'] }}';
+          let jobUrl = runUrl;
+
+          try {
+            const { data } = await github.rest.actions.listJobsForWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+              filter: 'latest',
+              per_page: 100
+            });
+            const runnerName = process.env.RUNNER_NAME;
+            const job = data.jobs.find(({ runner_name, status }) =>
+              runner_name === runnerName && status === 'in_progress'
+            ) || data.jobs.find(({ name }) => name === jobName || name.endsWith(jobName));
+            jobUrl = job?.html_url || runUrl;
+          } catch (error) {
+            core.warning(`Unable to resolve pipeline job URL: ${error.message}`);
+          }
+
+          await core.summary
+            .addLink('View pipeline job', jobUrl)
+            .addEOL()
+            .write();
+
+  docker-build-push:
+    if: fromJson(inputs.data)['type'] == 'docker-build-push'
+    name: "Docker: ${{ fromJson(inputs.data)['name'] }}"
+    runs-on: ${{ fromJson(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+    environment: "${{ fromJson(inputs.env)['environment'] }}"
+    env:
+      ENVIRONMENT: ${{ fromJson(inputs.env)['environment'] || 'dev' }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN || ''}}
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+      id-token: write
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    - name: Setup Docker BuildX
+      uses: docker/setup-buildx-action@v3
+
+    - name: Lowercase repository owner
+      id: repo-owner
+      run: |
+        echo "repo-owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_OUTPUT"
+
+    - name: Full Repository Name
+      id: repo
+      run: |
+        echo "repo=${{ github.repository }}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+        path: shared-code
+
+    - id: convert-inputs
+      name: Convert Inputs
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL == '')
+      uses: ./shared-code/.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
+          '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        allowNull: ${{ inputs.destroy }}
+
+    - id: convert-inputs-ssm
+      name: Convert Inputs SSM
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX != '')
+      uses: ./shared-code/.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
+          '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+    - id: convert-inputs-key-vault
+      name: Convert Inputs Key Vault (ARM SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        == '')
+      uses: ./shared-code/.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
+          '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+
+    - id: convert-inputs-key-vault-keystore
+      name: Convert Inputs Key Vault (Keystore SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        != '')
+      uses: ./shared-code/.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
+          '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        allowNull: ${{ inputs.destroy }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
+    - name: Determine image tag
+      id: image-tag
+      run: |
+        HAS_RELEASE_TAG="${{ fromJson(inputs.data)['config_globals']['has_release_tag'] || fromJson(inputs.env)['has_release_tag'] || 'false' }}"
+        RELEASE_TAG="${{ fromJson(inputs.data)['config_globals']['release_tag_name'] || fromJson(inputs.env)['release_tag_name'] || '' }}"
+
+        if [ "$HAS_RELEASE_TAG" = "true" ] && [ -n "$RELEASE_TAG" ]; then
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+          echo "Using release tag: $RELEASE_TAG"
+        else
+          echo "tag=type=sha,format=long" >> "$GITHUB_OUTPUT"
+          echo "Using commit SHA"
+        fi
+
+    - name: Prepare build secrets
+      id: build-secrets
+      run: |
+        CONVERTED_VARS='${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map }}'
+
+        # Extract build_secrets from converted inputs
+        BUILD_SECRETS=$(echo "$CONVERTED_VARS" | jq -r '.[] | select(.key == "build_secrets") | .value')
+
+        if [ -z "$BUILD_SECRETS" ] || [ "$BUILD_SECRETS" = "null" ]; then
+          echo "No build_secrets found in converted inputs"
+          exit 0
+        fi
+
+        echo "Processing build secrets from converted inputs..."
+
+        # Create temporary file to store secret file mappings
+        SECRET_FILES_LIST=$(mktemp)
+
+        # Iterate through each secret in build_secrets
+        while IFS='=' read -r secret_id secret_value; do
+          if [ -n "$secret_value" ] && [ "$secret_value" != "null" ]; then
+            echo "Processing secret: $secret_id"
+            # Write the secret to a file
+            echo -n "$secret_value" > "/tmp/${secret_id}"
+            # Add to secret files list
+            echo "${secret_id}=/tmp/${secret_id}" >> "$SECRET_FILES_LIST"
+          else
+            echo "Warning: Secret '$secret_id' has empty or null value"
+          fi
+        done < <(echo "$BUILD_SECRETS" | jq -r 'to_entries[] | "\(.key)=\(.value)"')
+
+        # Output the secret files mapping
+        {
+          echo "secret-files<<EOF"
+          cat "$SECRET_FILES_LIST"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"
+
+        # Verify created files
+        while IFS= read -r line; do
+          secret_id="${line%%=*}"
+          file="/tmp/$secret_id"
+
+          if [ -f "$file" ]; then
+            echo "$file exists"
+          else
+            echo "$file not created"
+          fi
+        done < "$SECRET_FILES_LIST"
+
+        # Clean up temporary file
+        rm -f "$SECRET_FILES_LIST"
+
+    - id: registry_url
+      name: Resolve container registry URL
+      if: (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') != 'ghcr'
+      shell: bash
+      run: |
+        CONVERTED_VARS='${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map }}'
+        REGISTRY_URL="$(echo "$CONVERTED_VARS" | jq -r '[.[] | select(.key == "docker_registry_url") | .value] | last // empty')"
+        if [[ -z "$REGISTRY_URL" || "$REGISTRY_URL" == "null" ]]; then
+          echo "::error::Non-GHCR docker-build-push stacks require input.docker_registry_url"
+          exit 1
+        fi
+        DELIMITER="$(uuidgen)"
+        {
+          echo "url<<$DELIMITER"
+          echo "$REGISTRY_URL"
+          echo "$DELIMITER"
+        } >> "$GITHUB_OUTPUT"
+    - name: Log into Container Registry
+      if: (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') != 'ghcr'
+      uses: docker/login-action@v3
+      with:
+        registry: ${{ steps.registry_url.outputs.url }}
+        username: ${{ secrets[format('{0}', fromJson(inputs.data)['input-gh-secrets']['DOCKER_USERNAME_SECRET_NAME'] || 'DOCKER_REGISTRY_USERNAME'
+          )] }}
+        password: ${{ secrets[format('{0}', fromJson(inputs.data)['input-gh-secrets']['DOCKER_PASSWORD_SECRET_NAME'] || 'DOCKER_REGISTRY_PASSWORD'
+          )] }}
+
+    - name: Log into GitHub Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Generate container image metadata
+      id: meta
+      uses: docker/metadata-action@v5
+      with:
+        images: |
+          ${{ (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') == 'ghcr' && format('{0}/{1}', 'ghcr.io', steps.repo.outputs.repo) || steps.registry_url.outputs.url }}/${{ fromJson(inputs.data)['image_name'] }}
+        flavor: |
+          latest=auto
+        tags: |
+          latest
+          ${{ steps.image-tag.outputs.tag }}
+        labels: |
+          provider=${REPO_OWNER}
+          issues=https://github.com/${{ steps.repo-owner.outputs.repo-owner }}/${{ fromJson(inputs.data)['image_name'] }}/issues
+          org.opencontainers.image.vendor=${REPO_OWNER}
+          org.opencontainers.image.title=${{ fromJson(inputs.data)['name'] }}
+          org.opencontainers.image.description=${{ fromJson(inputs.data)['name'] }} container image
+          org.opencontainers.image.source=https://github.com/${{ steps.repo-owner.outputs.repo-owner }}/${{fromJson(inputs.data)['dockerfile_folder'] }}/tree/main/build
+          # org.opencontainers.image.url=https://github.com/${{ steps.repo-owner.outputs.repo-owner }}/oci-oryx-pulp/pkgs/container/oryx-pulp
+          # org.opencontainers.image.base.name=ghcr.io/${{ steps.repo-owner.outputs.repo-owner }}/oryx-pulp:latest
+
+    - name: Build and push image
+      id: build-and-push
+      uses: docker/build-push-action@v5
+      with:
+        context: ./${{fromJson(inputs.data)['dockerfile_folder'] }}
+        platforms: linux/amd64
+        tags: ${{ steps.meta.outputs.tags }}
+        labels: ${{ steps.meta.outputs.labels }}
+        no-cache: "${{ fromJson(inputs.data)['no_cache'] || 'false' }}"
+        push: ${{ ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' }}
+        secret-files: ${{ steps.build-secrets.outputs.secret-files }}
+
+    - id: image-push-gh-out-vars
+      run: |
+        # shellcheck disable=SC2005,SC2046
+        echo "variables=$(echo "$(echo '{"${{ fromJson(inputs.data)['output-gh-vars']['DOCKER_IMAGES_VAR_NAME'] || 'DOCKER_IMAGES' }}": ${{ toJSON(steps.meta.outputs.tags) }}}' | sed -z 's/\\n/,/g')")" >> "$GITHUB_OUTPUT"
+
+    - uses: ./shared-code/.github/actions/gh-data-transfer/v2
+      name: "Export Docker Image Tags to SSM"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX != '' && fromJson(inputs.env)['environment']
+        != ''
+      with:
+        environment-name: ${{ fromJson(inputs.env)['environment'] }}
+        variables: ${{ steps.image-push-gh-out-vars.outputs.variables }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        ssm-kms-key-id: ${{ vars.REPO_KEYSTORE_SSM_KMS_KEY_ID }}
+
+    # KeyVault path — Keystore SP (cross-tenant, preferred when REPO_KEYSTORE_SP_CLIENT_ID is set)
+    - uses: ./shared-code/.github/actions/gh-data-transfer/v2
+      name: "Export Docker Image Tags to KeyVault (Keystore SP)"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL
+        != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID != '' && fromJson(inputs.env)['environment'] != ''
+      with:
+        environment-name: ${{ fromJson(inputs.env)['environment'] }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        variables: ${{ steps.image-push-gh-out-vars.outputs.variables }}
+
+    # KeyVault path — ARM SP (fallback when no dedicated Keystore SP is configured)
+    - uses: ./shared-code/.github/actions/gh-data-transfer/v2
+      name: "Export Docker Image Tags to KeyVault (ARM SP)"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL
+        != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID == '' && fromJson(inputs.env)['environment'] != ''
+      with:
+        environment-name: ${{ fromJson(inputs.env)['environment'] }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        variables: ${{ steps.image-push-gh-out-vars.outputs.variables }}
+
+    # GitHub API path (fallback when no KeyVault URL configured)
+    - uses: ./shared-code/.github/actions/gh-data-transfer/v2
+      name: "Export Docker Image Tags to GitHub ENV"
+      if: ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' && vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL
+        == '' && env.CI_ENV_TRANSFER_GH_TOKEN != '' && fromJson(inputs.env)['environment'] != ''
+      with:
+        environment-name: ${{ fromJson(inputs.env)['environment'] }}
+        github-token: ${{ env.CI_ENV_TRANSFER_GH_TOKEN }}
+        variables: ${{ steps.image-push-gh-out-vars.outputs.variables }}
+
+    - name: Delete Secret Files
+      if: fromJson(inputs.data)['input']['build_secrets'] != null
+      run: |
+        # shellcheck disable=SC2086
+        CONVERTED_VARS='${{ steps.convert-inputs.outputs.tf-vars-map }}'
+        BUILD_SECRETS=$(echo "$CONVERTED_VARS" | jq -r '.[] | select(.key == "build_secrets") | .value')
+
+        if [ -n "$BUILD_SECRETS" ] && [ "$BUILD_SECRETS" != "null" ]; then
+          echo "$BUILD_SECRETS" | jq -r 'keys[]' | while read -r secret_id; do
+            echo "Deleting secret file: /tmp/${secret_id}"
+            rm -f "/tmp/${secret_id}"
+          done
+        fi
+
+    - name: Add pipeline job backlink
+      if: ${{ !cancelled() }}
+      uses: ./shared-code/.github/actions/pipeline-job-backlink
+      with:
+        job-name: "${{ format('Docker: {0}', fromJson(inputs.data)['name']) }}"
+
+  function-build-deploy:
+    if: fromJson(inputs.data)['type'] == 'function-build-deploy'
+    name: "Function Deploy: ${{ fromJson(inputs.data)['name'] }}"
+    runs-on: ubuntu-latest-large
+    environment: "${{ fromJson(inputs.env)['environment'] }}"
+    # defaults:
+    #   run:
+    #     shell: bash
+    #     working-directory: functions/${{ fromJson(inputs.data)['folder'] }}
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+        path: shared-code
+
+    - id: convert-inputs
+      name: Convert Inputs
+      uses: ./shared-code/.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) || '{}' }}
+        additionalInputs: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
+          '{}' }}
+
+    - name: Extract function_name from tf-vars-map
+      run: |
+        TF_VARS_MAP='${{ steps.convert-inputs.outputs.tf-vars-map }}'
+        FUNCTION_NAME=$(echo "$TF_VARS_MAP" | jq -r '.[] | select(.key=="function_name") | .value')
+        echo "Function name is: $FUNCTION_NAME"
+        echo "function_name=$FUNCTION_NAME" >> "$GITHUB_ENV"
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        token: ${{ steps.app-token.outputs.token || github.token }}
+        clean: false
+
+    - name: Setup Python ${{ fromJson(inputs.data)['version'] }} Environment
+      if: ((fromJson(inputs.data)['runtime'] || 'python') == 'python')
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ fromJson(inputs.data)['version'] }}
+
+    - name: "Setup Node ${{ fromJson(inputs.data)['version'] }} Environment"
+      if: ((fromJson(inputs.data)['runtime'] || 'node') == 'node')
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ fromJson(inputs.data)['version'] }}
+
+    - name: Setup Runtime & Install Dependencies
+      run: |
+        cd functions/${{ fromJson(inputs.data)['folder'] }}
+        if [[ ${{ fromJson(inputs.data)['runtime'] }} == "python" ]]; then
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+        elif [[  ${{ fromJson(inputs.data)['runtime'] }} == "node" ]]; then
+          npm install
+          npm run build --if-present
+          npm run test --if-present
+        fi
+
+    - name: "Create ZIP"
+      run: |
+        cd functions/${{ fromJson(inputs.data)['folder'] }}
+        zip -r function.zip ./
+        mv function.zip ../../
+
+    - uses: actions/upload-artifact@v4
+      name: Upload function zip artifact
+      with:
+        name: ${{ fromJson(inputs.data)['name'] }}-${{ fromJson(inputs.data)['location'] || inputs.default-location }}
+        path: function.zip
+        include-hidden-files: true
+        if-no-files-found: warn
+        overwrite: true
+
+    - id: az-login
+      name: az-login-get-publishing-credentials
+      shell: bash
+      run: |
+        if [ "${{ vars.OIDC_ENABLED }}" = "true" ]; then
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+            | jq -r .value)
+          echo "::add-mask::$TOKEN"
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::OIDC token request failed. Verify the workflow has 'permissions: id-token: write' and the job uses an environment."
+            exit 1
+          fi
+
+          echo "[OIDC] Token claims:"
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}')
+          echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{sub, iss, aud, environment, ref, job_workflow_ref}' || true
+
+          AZ_ERR=$(mktemp)
+          set +e
+          az login --service-principal \
+            --username "${{ secrets.ARM_CLIENT_ID }}" \
+            --tenant "${{ secrets.ARM_TENANT_ID }}" \
+            --federated-token "$TOKEN" > /dev/null 2>"$AZ_ERR"
+          AZ_EXIT=$?
+          set -e
+
+          if [ $AZ_EXIT -ne 0 ]; then
+            echo "::error::OIDC az login failed (exit $AZ_EXIT). Client: ${{ secrets.ARM_CLIENT_ID }}, Tenant: ${{ secrets.ARM_TENANT_ID }}"
+            sed "s|$TOKEN|[REDACTED]|g" "$AZ_ERR" >&2
+            rm -f "$AZ_ERR"
+            exit $AZ_EXIT
+          fi
+          rm -f "$AZ_ERR"
+        else
+          az login --service-principal -u ${{ secrets.ARM_CLIENT_ID }} -p ${{ secrets.ARM_CLIENT_SECRET }} --tenant ${{ secrets.ARM_TENANT_ID }}
+        fi
+        # shellcheck disable=SC2005,SC2046
+        echo $(az functionapp deployment list-publishing-profiles --name ${{ env.function_name }} --resource-group ${{ fromJson(inputs.env)['resource_group_name'] }} --xml) > "../publishingcredentials.xml"
+
+        # Destroy flow intentionally disabled for function deployments.
+
+    - name: XML to Secret
+      if: ${{ (fromJson(inputs.env)['destroy'] || 'false') != 'true' }}
+      id: xml-to-secret
+      shell: bash
+      run: |
+        echo "publishing_credentials=$(cat ../publishingcredentials.xml)" >> "$GITHUB_OUTPUT"
+
+    - name: "Deploy the ZIP to the app"
+      if: ${{ (fromJson(inputs.env)['destroy'] || 'false') != 'true' && (fromJson(inputs.env)['dry_run'] || 'true') != 'true'
+        }}
+      uses: azure/webapps-deploy@v2
+      with:
+        app-name: ${{ env.function_name }}
+        publish-profile: ${{ steps.xml-to-secret.outputs.publishing_credentials }}
+        package: function.zip
+
+    - name: Add pipeline job backlink
+      if: ${{ !cancelled() }}
+      uses: ./shared-code/.github/actions/pipeline-job-backlink
+      with:
+        job-name: "${{ format('Function Deploy: {0}', fromJson(inputs.data)['name']) }}"
+
+  swa:
+    if: (fromJson(inputs.data)['type'] == 'swa-docs-site-deploy' || fromJson(inputs.data)['type'] == 'swa-site-deploy')
+    name: "SWA Docs: ${{ fromJson(inputs.data)['name'] }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-swa-site.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      stack-repository: ${{ fromJson(inputs.data)['source_repo'] || github.repository }}
+      stack-repository-version: ${{ fromJson(inputs.data)['source_version'] || github.sha }}
+      destroy: ${{ fromJson(inputs.env)['destroy'] || fromJson(inputs.data)['destroy'] || 'false' }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  s3-site:
+    if: fromJson(inputs.data)['type'] == 's3-site-deploy' && (fromJson(inputs.env)['destroy'] || 'false') != 'true'
+    name: "S3 Site: ${{ fromJson(inputs.data)['name'] }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-s3-site.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      stack-repository: ${{ fromJson(inputs.data)['source_repo'] || github.repository }}
+      stack-repository-version: ${{ fromJson(inputs.data)['source_version'] || github.sha }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  terraform:
+    if: ((fromJson(inputs.data)['type'] == 'terraform' || fromJson(inputs.data)['type'] == 'opentofu') && (fromJson(inputs.env)['dry_run']
+      || 'true'))
+    name: "Terraform: ${{ fromJson(inputs.data)['name'] }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-terraform.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      stack-id: ${{ fromJson(inputs.data)['id'] }}
+      stage: ${{ fromJson(inputs.env)['stage'] }}
+      location: ${{ fromJson(inputs.data)['location'] || inputs.default-location }}
+      terraform-project: ${{ fromJson(inputs.data)['folder'] || fromJson(inputs.data)['id'] }}
+      local-terraform-project-base-path: ${{ fromJson(inputs.data)['stack_base_path'] || 'terraform/stacks' }}
+      backend-state-key-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && format('{0}.{1}.{2}.{3}.terraform.tfstate',\
+        \ fromJson(inputs.env)['customer_id'] || 'default', fromJson(inputs.env)['stage'], fromJson(inputs.data)['id'], fromJson(inputs.data)['location']\
+        \ || inputs.default-location) || '' }}"
+      backend-state-container-name-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && (fromJson(inputs.env)['state_storage_container_name']\
+        \ || format('{0}-tfstate', fromJson(inputs.env)['customer_id'] || 'default')) || '' }}"
+      backend-state-storage-account-name-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && fromJson(inputs.env)['state_storage_account_name']\
+        \ || '' }}"
+      backend-state-resource-group-name-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && fromJson(inputs.env)['state_resource_group_name']\
+        \ || '' }}"
+      backend-state-bucket-name-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && fromJson(inputs.env)['state_bucket_name']\
+        \ || '' }}"
+      backend-state-region-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && (fromJson(inputs.env)['state_region']\
+        \ || fromJson(inputs.data)['location'] || inputs.default-location) || '' }}"
+      cloud: ${{ fromJson(inputs.data)['cloud'] || fromJson(inputs.env)['cloud'] || 'azure' }}
+      globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
+      pipeline-globals: ${{ inputs.env }}
+      stack-repository: ${{ fromJson(inputs.data)['source_repo'] || github.repository }}
+      stack-repository-version: ${{ fromJson(inputs.data)['source_version'] || github.sha }}
+      tf-vars-input: ${{ toJson(fromJson(inputs.data)['input']) }}
+      local-terraform-state: ${{ (fromJson(inputs.data)['local_backend'] || fromJson(inputs.data)['local_terraform_state']
+        || false) && 'true' || 'false' }}
+      tf-output-vars: ${{ (toJson(fromJson(inputs.data)['output-var']) == 'null') && '[]' || toJson(fromJson(inputs.data)['output-var'])
+        }}
+      tf-output-secrets: ${{ (toJson(fromJson(inputs.data)['output-secret']) == 'null') && '[]' || toJson(fromJson(inputs.data)['output-secret'])
+        }}
+      tf-vars-type: "fromjson"
+      generate-source-artifact: ${{ 'false' }}
+      upload-plan-artifact: ${{ toJson(fromJson(inputs.data)['upload_plan_artifact']) != 'false' }}
+      # relative-module-path: "../../" # only used when generate-source-artifact: true, current bug: multiple stacks lead to multiple source artifacts with same name ~> error
+      environment: "${{ fromJson(inputs.env)['environment'] }}"
+      runs-on: ${{ fromJson(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+      dry-run: ${{ fromJson(inputs.env)['dry_run'] || 'true' }}
+      destroy: ${{ fromJson(inputs.env)['destroy'] || fromJson(inputs.data)['destroy'] || 'false' }}
+      debug: ${{ fromJson(inputs.env)['debug'] || 'false' }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit

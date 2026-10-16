@@ -1,0 +1,183 @@
+---
+name: ".Update OpenTofu Version (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: >
+          Target OpenTofu version (exact pin, e.g. "1.9.0").
+          Set to "latest" to auto-resolve the newest release.
+        required: false
+        type: string
+        default: "latest"
+      path:
+        description: "Directory to scan for .tf files"
+        required: false
+        type: string
+        default: "terraform/"
+      recursive:
+        description: "Check the directory recursively"
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  update-opentofu-version:
+    name: Update OpenTofu Version
+    runs-on: ubuntu-latest
+    steps:
+      # --- Caller repository GitHub App token ---
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token || github.token }}
+
+    - name: Checkout Shared Actions
+      uses: actions/checkout@v4
+      with:
+        repository: GEBITSolutions/stax
+        ref: ${{ github.repository == 'GEBITSolutions/stax' && (github.head_ref || github.ref_name) || 'main'
+          }}
+        path: shared-code
+
+    - name: Setup tfupdate
+      run: |
+        chmod +x "${GITHUB_WORKSPACE}/shared-code/.github/bin/tfupdate"
+        echo "${GITHUB_WORKSPACE}/shared-code/.github/bin" >> "$GITHUB_PATH"
+        "${GITHUB_WORKSPACE}/shared-code/.github/bin/tfupdate" --version
+
+    - name: Resolve target version
+      id: resolve
+      run: |
+        if [ "${{ inputs.version }}" = "latest" ]; then
+          VERSION=$(tfupdate release latest opentofu/opentofu)
+          echo "Resolved latest OpenTofu version: ${VERSION}"
+        else
+          VERSION="${{ inputs.version }}"
+          echo "Using specified version: ${VERSION}"
+        fi
+        echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+
+        # Derive a deterministic branch name from the version
+        SAFE_VERSION="${VERSION//[^A-Za-z0-9._-]/-}"
+        BRANCH="feature/opentofu-v${SAFE_VERSION}"
+        echo "branch=${BRANCH}" >> "$GITHUB_OUTPUT"
+
+    - name: Scan current versions
+      run: |
+        echo "### Current required_version constraints" >> "$GITHUB_STEP_SUMMARY"
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+        if ! grep -rn 'required_version' --include='*.tf' "${{ inputs.path }}" \
+          | tee -a "$GITHUB_STEP_SUMMARY"; then
+          echo "No required_version found" >> "$GITHUB_STEP_SUMMARY"
+        fi
+        echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Update OpenTofu version
+      id: update
+      run: |
+        RECURSIVE_FLAG=""
+        if [ "${{ inputs.recursive }}" = "true" ]; then
+          RECURSIVE_FLAG="-r"
+        fi
+
+        tfupdate opentofu -v "${{ steps.resolve.outputs.version }}" ${RECURSIVE_FLAG} "${{ inputs.path }}"
+
+        if git diff --quiet; then
+          echo "changed=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "### ✅ No changes needed"
+            echo "All files already at v${{ steps.resolve.outputs.version }}"
+          } >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          {
+            echo "### 📝 Files updated"
+            echo '```'
+            git diff --name-only
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Check for existing open PR
+      id: existing-pr
+      if: steps.update.outputs.changed == 'true'
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+        BRANCH: ${{ steps.resolve.outputs.branch }}
+        VERSION: ${{ steps.resolve.outputs.version }}
+      run: |
+        # Check for an open PR on the deterministic branch
+        count=$(gh pr list \
+          --repo "${GITHUB_REPOSITORY}" \
+          --state open \
+          --head "${BRANCH}" \
+          --json number --jq 'length')
+        echo "count=${count}" >> "$GITHUB_OUTPUT"
+        if [ "${count}" -gt 0 ]; then
+          echo "### ℹ️ Existing open PR for branch \`${BRANCH}\` — will update in place" >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+        # Detect legacy duplicate PRs from the old run-id branch scheme
+        legacy=$(gh pr list \
+          --repo "${GITHUB_REPOSITORY}" \
+          --state open \
+          --search "in:title \"chore(deps): update OpenTofu to v${VERSION}\"" \
+          --json number,headRefName \
+          --jq "[.[] | select(.headRefName != \"${BRANCH}\")]")
+        legacy_count=$(echo "${legacy}" | jq 'length')
+        if [ "${legacy_count}" -gt 0 ]; then
+          {
+            echo "### ⚠️ Legacy duplicate PRs detected for v${VERSION}"
+            echo '```json'
+            echo "${legacy}"
+            echo '```'
+            echo "Close these manually; future runs will reuse \`${BRANCH}\`."
+          } >> "$GITHUB_STEP_SUMMARY"
+        fi
+
+    - name: Create Pull Request
+      if: steps.update.outputs.changed == 'true'
+      uses: peter-evans/create-pull-request@v7
+      with:
+        token: ${{ steps.app-token.outputs.token || github.token }}
+        commit-message: |
+          chore(deps): update OpenTofu to v${{ steps.resolve.outputs.version }}
+
+          Automated OpenTofu version update via tfupdate.
+        branch: ${{ steps.resolve.outputs.branch }}
+        delete-branch: true
+        title: "chore(deps): update OpenTofu to v${{ steps.resolve.outputs.version }}"
+        body: |
+          ## Automated OpenTofu Version Update
+
+          Updates `required_version` to **v${{ steps.resolve.outputs.version }}** in `${{ inputs.path }}`.
+
+          **Recursive:** `${{ inputs.recursive }}`
+
+          ### Review checklist
+          - [ ] Verify the new version is compatible with your providers
+          - [ ] Check the [OpenTofu changelog](https://github.com/opentofu/opentofu/releases/tag/v${{ steps.resolve.outputs.version }})
+          - [ ] Run `tofu plan` to verify no breaking changes
+
+          ---
+          > This PR uses a deterministic branch (`${{ steps.resolve.outputs.branch }}`).
+          > Re-runs of the workflow update this PR in place instead of opening duplicates.
+
+          *Created by [Update OpenTofu Version](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) workflow.*

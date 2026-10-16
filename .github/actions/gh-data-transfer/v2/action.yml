@@ -1,0 +1,78 @@
+---
+name: 'Environment Transfer Action'
+description: 'This action can read and set environment secrets and variables for a github environment'
+author: 'Fractiunate'
+
+branding:
+  icon: 'shield'
+  color: 'blue'
+
+# Define your inputs here.
+inputs:
+  github-token:
+    description: 'Github Token with permissions: Read and Write access to actions variables and secrets'
+    required: false
+  environment-name:
+    description: 'Name of the github environment'
+    required: false
+  key-vault-project-prefix:
+    description: 'Project prefix of the Azure Key Vault to read secrets and variables from'
+    required: false
+  key-vault-url:
+    description: 'URL of the Azure Key Vault to read secrets and variables from'
+    required: false
+  key-vault-sp-client-id:
+    description: 'Service Principal Client ID with access to the Key Vault'
+    required: false
+  key-vault-sp-client-secret:
+    description: 'Service Principal Client Secret with access to the Key Vault. Optional when using OIDC (federated credentials)
+      — omit to use workload identity federation via GitHub Actions ID token.'
+    required: false
+  key-vault-sp-tenant-id:
+    description: 'Service Principal Tenant ID with access to the Key Vault'
+    required: false
+  ssm-parameter-prefix:
+    description: 'Path prefix of the AWS SSM Parameter Store to write variables and secrets to (e.g. /example/cicd). A non-empty value enables the SSM sink.'
+    required: false
+  ssm-kms-key-id:
+    description: 'Optional KMS key id or alias used to encrypt SecureString parameters. Defaults to the AWS managed alias/aws/ssm key.'
+    required: false
+  aws-region:
+    description: 'AWS region hosting the SSM Parameter Store. Required when ssm-parameter-prefix is set.'
+    required: false
+  aws-role-arn:
+    description: 'IAM role ARN assumed via GitHub OIDC to access the SSM Parameter Store. Requires the job to grant id-token write permission.'
+    required: false
+  aws-access-key-id:
+    description: 'Static AWS access key id with access to the SSM Parameter Store. Omit when using aws-role-arn.'
+    required: false
+  aws-secret-access-key:
+    description: 'Static AWS secret access key with access to the SSM Parameter Store. Omit when using aws-role-arn.'
+    required: false
+  aws-session-token:
+    description: 'Optional AWS session token for temporary static credentials.'
+    required: false
+  # import-variables-from-file: ?
+  # import-secrets-from-file: ?
+  # import-secrets-include:
+  # import-secrets-exclude:
+  # import-variables-include:
+  # import-variables-exclude:
+  variables:
+    description: 'Export Environment Variables'
+    required: false
+    default: '{}'
+  secrets:
+    description: 'Export Environment Secrets'
+    required: false
+    default: '{}'
+  secretsFile:
+    description: 'Export Environment Variables from KV File'
+    required: false
+  variablesFile:
+    description: 'Export Environment Secrets from KV File'
+    required: false
+
+runs:
+  using: node24
+  main: dist/index.cjs

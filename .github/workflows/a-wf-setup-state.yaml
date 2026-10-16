@@ -1,0 +1,698 @@
+---
+name: ".TF State (Abstract)"
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        required: true
+        type: string
+        description: "GitHub environment for deployment"
+      customer_id:
+        required: false
+        type: string
+        default: "default"
+        description: "Customer/Project ID"
+      stage:
+        required: false
+        type: string
+        default: "dev"
+        description: "Deployment stage (dev, test, prod)"
+      project:
+        required: false
+        type: string
+        default: ""
+        description: "Project name; part of the derived storage account name st<customer><project><stage>"
+      resource_group_name:
+        required: false
+        type: string
+        default: ""
+        description: "Resource Group name (defaults to derived name)"
+      storage_account_name:
+        required: false
+        type: string
+        default: ""
+        description: "Storage Account name (defaults to st<customer_id><project><stage>)"
+      container_name:
+        required: false
+        type: string
+        default: ""
+        description: "Container name (defaults to customer_id-tfstate, e.g. default-tfstate)"
+      cloud:
+        required: false
+        type: string
+        default: "azure"
+        description: "Target cloud for the remote state backend. Supported: azure, aws"
+      bucket_name:
+        required: false
+        type: string
+        default: ""
+        description: "S3 bucket name for Terraform state (defaults to the STATE_BUCKET_NAME variable; required for cloud: aws)"
+      region:
+        required: false
+        type: string
+        default: ""
+        description: "AWS region hosting the state bucket (defaults to the STATE_REGION or DEFAULT_LOCATION variable)"
+    secrets:
+      ARM_CLIENT_ID:
+        required: false
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+
+jobs:
+  validate:
+    name: "Validate cloud input"
+    runs-on: ${{ vars.RUNNER || 'ubuntu-22.04' }}
+    steps:
+    - name: Validate cloud
+      env:
+        CLOUD: ${{ inputs.cloud }}
+      run: |
+        case "$CLOUD" in
+          azure|aws) ;;
+          *)
+            echo "::error::Unsupported cloud '${CLOUD}'. Supported values: azure, aws."
+            exit 1
+            ;;
+        esac
+
+  setup:
+    name: "Setup TF State (Azure)"
+    needs: validate
+    if: (inputs.cloud == 'azure')
+    runs-on: ${{ vars.RUNNER || 'ubuntu-22.04' }}
+    environment: "${{ inputs.environment }}"
+    env:
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
+      ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
+      LOCATION: ${{ vars.location || 'northeurope' }}
+    steps:
+    - name: Validate required envs
+      id: validate
+      uses: actions/github-script@v8
+      with:
+        script: |
+          const oidcEnabled = '${{ vars.OIDC_ENABLED }}' === 'true';
+          const required_envs = oidcEnabled
+            ? ['ARM_CLIENT_ID', 'ARM_TENANT_ID', 'ARM_SUBSCRIPTION_ID']
+            : ['ARM_CLIENT_ID', 'ARM_CLIENT_SECRET', 'ARM_TENANT_ID', 'ARM_SUBSCRIPTION_ID'];
+          const missing = required_envs.filter(key => !process.env[key]);
+          if (missing.length > 0) {
+            core.setFailed(`Missing required envs: ${missing.join(', ')}`);
+          }
+
+    - name: Generate customer config
+      id: config
+      run: |2
+
+        CUSTOMER_ID="${{ inputs.customer_id || 'default' }}"
+        STAGE="${{ inputs.stage || 'dev' }}"
+
+        RESOURCE_GROUP_NAME="${{ inputs.resource_group_name || vars.TF_STATE_RESOURCE_GROUP_NAME }}"
+        if [ -z "$RESOURCE_GROUP_NAME" ]; then
+          RESOURCE_GROUP_NAME="rg-${CUSTOMER_ID}-${STAGE}"
+        fi
+
+        STORAGE_ACCOUNT_NAME="${{ inputs.storage_account_name || vars.TF_STATE_STORAGE_ACCOUNT_NAME }}"
+        if [[ "${{ inputs.cloud }}" == "azure" ]]; then
+          if [ -z "$STORAGE_ACCOUNT_NAME" ]; then
+            PROJECT="${{ inputs.project }}"
+            if [ -z "$PROJECT" ]; then
+              echo "::error::Set the project input (or storage_account_name) to derive the state storage account name."
+              exit 1
+            fi
+            STORAGE_ACCOUNT_NAME="st${CUSTOMER_ID}${PROJECT}${STAGE}"
+          fi
+          # Azure storage account names: 3-24 characters, lowercase letters and digits only. Never truncate:
+          # a cut-off name could silently point two projects at the same account.
+          STORAGE_ACCOUNT_NAME=$(printf '%s' "$STORAGE_ACCOUNT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9')
+          if (( ${#STORAGE_ACCOUNT_NAME} < 3 || ${#STORAGE_ACCOUNT_NAME} > 24 )); then
+            echo "::error::State storage account name '${STORAGE_ACCOUNT_NAME}' must be 3-24 characters (derived as st<customer><project><stage>). Set storage_account_name to override."
+            exit 1
+          fi
+        fi
+
+        CONTAINER_NAME="${{ inputs.container_name }}"
+        if [ -z "$CONTAINER_NAME" ]; then
+          CONTAINER_NAME="${CUSTOMER_ID}-tfstate"
+        fi
+
+        CUSTOMER_CONFIG=$(jq -nc \
+          --arg customer_id "$CUSTOMER_ID" \
+          --arg stage "$STAGE" \
+          --arg resource_group_name "$RESOURCE_GROUP_NAME" \
+          --arg storage_account_name "$STORAGE_ACCOUNT_NAME" \
+          --arg container_name "$CONTAINER_NAME" \
+          --arg location "$LOCATION" \
+          '{
+            customer_id: $customer_id,
+            stage: $stage,
+            resource_group_name: $resource_group_name,
+            storage_account_name: $storage_account_name,
+            container_name: $container_name,
+            location: $location
+          }')
+
+        echo "DEBUG: CUSTOMER_CONFIG: $CUSTOMER_CONFIG"
+
+        # Use base64 to preserve the JSON format when passing to next step
+        CUSTOMER_CONFIG_B64=$(echo "$CUSTOMER_CONFIG" | base64 -w 0)
+        echo "customer_config=$CUSTOMER_CONFIG_B64" >> "$GITHUB_OUTPUT"
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        clean: false
+        fetch-depth: 0
+
+    - name: Resolve config
+      id: resolve-config
+      run: |2
+
+        # Read customer config from previous step (base64 encoded) and decode
+        CUSTOMER_CONFIG=$(echo "${{ steps.config.outputs.customer_config }}" | base64 -d)
+
+        # Debug output
+        echo "DEBUG: CUSTOMER_CONFIG: $CUSTOMER_CONFIG"
+
+        # Set outputs using jq to parse the JSON string
+        {
+          echo "TF_VAR_state_resource_group_name=$(echo "$CUSTOMER_CONFIG" | jq -r '.resource_group_name')";
+          echo "TF_VAR_state_storage_account_name=$(echo "$CUSTOMER_CONFIG" | jq -r '.storage_account_name')";
+          echo "TF_VAR_state_storage_container_name=$(echo "$CUSTOMER_CONFIG" | jq -r '.container_name')";
+          echo "state_location=$(echo "$CUSTOMER_CONFIG" | jq -r '.location')";
+        } >> "${GITHUB_OUTPUT}"
+
+
+    - name: Azure Login
+      run: |
+        if [ "${{ vars.OIDC_ENABLED }}" = "true" ]; then
+          TOKEN=$(curl -s -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" \
+            | jq -r .value)
+          echo "::add-mask::$TOKEN"
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::OIDC token request failed. Verify the workflow has 'permissions: id-token: write' and the job uses an environment."
+            exit 1
+          fi
+
+          echo "[OIDC] Token claims:"
+          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2 | tr '_-' '/+' | awk '{while(length%4)$0=$0"=";print}')
+          echo "$PAYLOAD" | base64 -d 2>/dev/null | jq '{sub, iss, aud, environment, ref, job_workflow_ref}' || true
+
+          AZ_ERR=$(mktemp)
+          set +e
+          az login --service-principal \
+            --username "$ARM_CLIENT_ID" \
+            --tenant "$ARM_TENANT_ID" \
+            --federated-token "$TOKEN" > /dev/null 2>"$AZ_ERR"
+          AZ_EXIT=$?
+          set -e
+
+          if [ $AZ_EXIT -ne 0 ]; then
+            echo "::error::OIDC az login failed (exit $AZ_EXIT). Client: $ARM_CLIENT_ID, Tenant: $ARM_TENANT_ID"
+            sed "s|$TOKEN|[REDACTED]|g" "$AZ_ERR" >&2
+            rm -f "$AZ_ERR"
+            exit $AZ_EXIT
+          fi
+          rm -f "$AZ_ERR"
+
+          az account set -s "$ARM_SUBSCRIPTION_ID"
+        else
+          az login --service-principal -u "$ARM_CLIENT_ID" -p "$ARM_CLIENT_SECRET" \
+            --tenant "$ARM_TENANT_ID" && az account set -s "$ARM_SUBSCRIPTION_ID"
+        fi
+
+    - name: Init-Base
+      id: init-base
+      run: |
+        storage_account="${{ steps.resolve-config.outputs.TF_VAR_state_storage_account_name }}"
+        shared_container="${{ steps.resolve-config.outputs.TF_VAR_state_storage_container_name }}"
+        resource_group="${{ steps.resolve-config.outputs.TF_VAR_state_resource_group_name }}"
+        location="${{ steps.resolve-config.outputs.state_location }}"
+
+        # Check if storage account exists (independent of resource group)
+        echo "[INFO] Checking if storage account '${storage_account}' exists..."
+
+        sa_info=$(az storage account show -n ${storage_account} --query 'name' -o tsv 2>&1 || true)
+        sa_exists=false
+        sa_resource_group=""
+        if [[ "$sa_info" == "$storage_account" ]]; then
+          sa_exists=true
+          # Get the resource group for this storage account
+          sa_resource_group=$(az storage account show -n ${storage_account} --query 'resourceGroup' -o tsv)
+          echo "[INFO] Storage account exists in resource group: ${sa_resource_group}"
+        else
+          echo "[INFO] Storage account does not exist"
+        fi
+
+        # Check if resource group exists
+        rg_exists=$(az group exists --name ${resource_group})
+        echo "[INFO] Resource group '${resource_group}' exists: ${rg_exists}"
+        echo "$rg_exists"
+
+        # Determine state based on both checks
+        if [[ "$sa_exists" == "true" && "$sa_resource_group" != "$resource_group" ]]; then
+          # Storage account exists in a different resource group - ERROR
+          echo "[ERROR] Storage account '${storage_account}' exists in resource group '${sa_resource_group}', expected '${resource_group}'"
+          echo "sa_exists=true" >> "$GITHUB_OUTPUT"
+          echo "sa_in_different_rg=true" >> "$GITHUB_OUTPUT"
+          echo "rg_exists=true" >> "$GITHUB_OUTPUT"
+          echo "sa_container_exists=false" >> "$GITHUB_OUTPUT"
+        elif [[ "$sa_exists" == "true" && "$sa_resource_group" == "$resource_group" ]]; then
+          # Storage account exists in the correct resource group
+          echo "[INFO] Use existing Storage Account ${storage_account} in resource group ${resource_group}"
+          echo "sa_exists=true" >> "$GITHUB_OUTPUT"
+          echo "sa_in_different_rg=false" >> "$GITHUB_OUTPUT"
+          echo "rg_exists=true" >> "$GITHUB_OUTPUT"
+          echo "sa_container_exists=false" >> "$GITHUB_OUTPUT"
+
+          # Get storage account key
+          echo "[INFO] Get Storage Account key"
+          key="$(az storage account keys list -g ${resource_group} -n ${storage_account} \
+            --query "[0].{value:value}" --output tsv)"
+
+          # START TLS_VERSION_FIX: Update the minimum TLS version of your Azure Storage account
+          # to 1.2 or later before 3 February 2026
+          tls_version=$(az storage account show \
+            --name ${storage_account} \
+            --resource-group ${resource_group} \
+            --query minimumTlsVersion \
+            --output tsv)
+
+          if [ "$tls_version" != "TLS1_2" ]; then
+            echo "Warning: Storage account is not using TLS 1.2"
+            az storage account update \
+              --name ${storage_account} \
+              --resource-group ${resource_group} \
+              --min-tls-version TLS1_2
+          else
+            echo "Storage account is using TLS 1.2"
+          fi
+          # END TLS_VERSION_FIX
+
+          # Check if container exists
+          sa_container_exists=$(az storage container exists --account-name ${storage_account} \
+            --account-key "${key}" --name "${shared_container}" -o tsv | tr '[:upper:]' '[:lower:]')
+          if [[ $sa_container_exists == "true" ]]; then
+            echo "[INFO] Use existing Storage Container ${shared_container}"
+            echo "sa_container_exists=true" >> "$GITHUB_OUTPUT"
+          fi
+        elif [[ "$sa_exists" == "false" && "$rg_exists" == "true" ]]; then
+          # RG exists but SA doesn't - need to create SA
+          echo "[INFO] Resource group exists, storage account will be created"
+          echo "rg_exists=true" >> "$GITHUB_OUTPUT"
+          echo "sa_exists=false" >> "$GITHUB_OUTPUT"
+          echo "sa_in_different_rg=false" >> "$GITHUB_OUTPUT"
+          echo "sa_container_exists=false" >> "$GITHUB_OUTPUT"
+        else
+          # Neither RG nor SA exists - need to create both
+          echo "[INFO] Resource group and storage account will be created"
+          echo "rg_exists=false" >> "$GITHUB_OUTPUT"
+          echo "sa_exists=false" >> "$GITHUB_OUTPUT"
+          echo "sa_in_different_rg=false" >> "$GITHUB_OUTPUT"
+          echo "sa_container_exists=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        echo "location=${location}" >> "$GITHUB_OUTPUT"
+        echo "resource_group=${resource_group}" >> "$GITHUB_OUTPUT"
+        echo "storage_account=${storage_account}" >> "$GITHUB_OUTPUT"
+        echo "storage_container=${shared_container}" >> "$GITHUB_OUTPUT"
+
+    - name: create-rg
+      if: ( steps.init-base.outputs.rg_exists == 'false' )
+      run: |
+        echo "[INFO] Create Resource Group ${{ steps.init-base.outputs.resource_group }}"
+        az group create --name ${{ steps.init-base.outputs.resource_group }} \
+          --location ${{ steps.init-base.outputs.location }} \
+          --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states
+
+    - name: create-sa
+      if: ( steps.init-base.outputs.sa_exists == 'false' && steps.init-base.outputs.sa_in_different_rg != 'true' )
+      run: |
+        storage_account="${{ steps.init-base.outputs.storage_account }}"
+        resource_group="${{ steps.init-base.outputs.resource_group }}"
+
+        echo "[INFO] Ensure Storage Account ${storage_account} in resource group ${resource_group}"
+
+        existing_rg=$(az storage account show \
+          --name "${storage_account}" \
+          --query resourceGroup \
+          --output tsv 2>/dev/null || true)
+
+        if [ -n "${existing_rg}" ]; then
+          if [ "${existing_rg}" != "${resource_group}" ]; then
+            echo "::error::Storage account '${storage_account}' already exists in resource group '${existing_rg}', expected '${resource_group}'."
+            exit 1
+          fi
+
+          echo "[INFO] Storage Account ${storage_account} already exists in ${resource_group}; updating settings."
+          az storage account update \
+            --resource-group "${resource_group}" \
+            --name "${storage_account}" \
+            --allow-blob-public-access true \
+            --min-tls-version TLS1_2 \
+            --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states
+        else
+          echo "[INFO] Create Storage Account ${storage_account}"
+          set +e
+          create_output=$(az storage account create \
+            --resource-group "${resource_group}" \
+            --name "${storage_account}" \
+            --sku Standard_LRS \
+            --encryption-services blob \
+            --allow-blob-public-access true \
+            --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states \
+            --min-tls-version TLS1_2 2>&1)
+          create_exit=$?
+          set -e
+
+          if [ "${create_exit}" -ne 0 ]; then
+            echo "${create_output}"
+            existing_rg=$(az storage account show \
+              --name "${storage_account}" \
+              --query resourceGroup \
+              --output tsv 2>/dev/null || true)
+
+            if [ -n "${existing_rg}" ] && [ "${existing_rg}" = "${resource_group}" ]; then
+              echo "[INFO] Storage Account ${storage_account} was created or already exists in ${resource_group}; continuing with update."
+              az storage account update \
+                --resource-group "${resource_group}" \
+                --name "${storage_account}" \
+                --allow-blob-public-access true \
+                --min-tls-version TLS1_2 \
+                --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states
+            else
+              echo "::error::Failed to create storage account '${storage_account}'. If the name is already taken but not visible in this subscription, choose a subscription-unique name."
+              exit "${create_exit}"
+            fi
+          fi
+        fi
+
+        echo "[INFO] Sleeping 120 sec to wait for storage account to be ready."
+        sleep 120
+
+    - name: secure-sa
+      run: |
+        az storage account blob-service-properties update \
+          --resource-group ${{ steps.init-base.outputs.resource_group }} \
+          --account-name ${{ steps.init-base.outputs.storage_account }} \
+          --enable-change-feed \
+          --enable-versioning true \
+          --enable-delete-retention true \
+          --delete-retention-days 7
+
+    - name: create-container
+      if: ( steps.init-base.outputs.sa_container_exists == 'false' )
+      run: |
+        echo "[INFO] Get key"
+        key="$(az storage account keys list -g ${{ steps.init-base.outputs.resource_group }} \
+          -n ${{ steps.init-base.outputs.storage_account}} --query "[0].{value:value}" --output tsv)"
+        echo "[INFO] Create Storage Container ${{ steps.init-base.outputs.storage_container}}"
+        az storage container create --name ${{ steps.init-base.outputs.storage_container}} \
+          --account-name ${{ steps.init-base.outputs.storage_account}} --account-key "${key}"
+
+    - name: get-ids
+      id: get-ids
+      run: |
+        shared_rg_id=$(az group show -n ${{ steps.init-base.outputs.resource_group }} | jq '.id')
+        shared_sa_id=$(az storage account show -n ${{ steps.init-base.outputs.storage_account}} \
+          -g ${{ steps.init-base.outputs.resource_group }} | jq '.id')
+        shared_sa_container_id="https://${{ steps.init-base.outputs.storage_account}}.blob.core.windows.net/"\
+        "${{ steps.init-base.outputs.storage_container}}"
+        # /-- LOGS --------------------------/
+        echo "shared_rg_id=${shared_rg_id}"
+        echo "shared_sa_id=${shared_sa_id}"
+        echo "shared_sa_container_id=${shared_sa_container_id}"
+        # /-- Out --------------------------/
+        echo "rg-id=${shared_rg_id}" >> "$GITHUB_OUTPUT"
+        echo "sa-id=${shared_sa_id}" >> "$GITHUB_OUTPUT"
+        echo "sa-container-id=${shared_sa_container_id}" >> "$GITHUB_OUTPUT"
+
+    - name: Summary
+      run: |
+        echo "## TF State Setup Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Resource | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| Resource Group: \`${{ steps.resolve-config.outputs.TF_VAR_state_resource_group_name }}\` | Exists: ${{ steps.init-base.outputs.rg_exists }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Storage Account: \`${{ steps.resolve-config.outputs.TF_VAR_state_storage_account_name }}\` | Exists: ${{ steps.init-base.outputs.sa_exists }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container: \`${{ steps.resolve-config.outputs.TF_VAR_state_storage_container_name }}\` | Exists: ${{ steps.init-base.outputs.sa_container_exists }} |" >> $GITHUB_STEP_SUMMARY
+
+  setup-aws:
+    name: "Setup TF State (AWS)"
+    needs: validate
+    if: (inputs.cloud == 'aws')
+    runs-on: ${{ vars.RUNNER || 'ubuntu-22.04' }}
+    environment: "${{ inputs.environment }}"
+    env:
+      STATIC_AWS_ACCESS_KEY_ID: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+      STATIC_AWS_SECRET_ACCESS_KEY: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+      STATIC_AWS_SESSION_TOKEN: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+      AWS_REGION: ${{ inputs.region || vars.STATE_REGION || vars.DEFAULT_LOCATION }}
+      OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
+    steps:
+    - name: Resolve config
+      id: resolve-config
+      run: |
+        set -euo pipefail
+
+        if [ -z "${AWS_REGION}" ]; then
+          echo "::error::No AWS region resolved. Pass the 'region' input or set the DEFAULT_LOCATION (or STATE_REGION) variable."
+          exit 1
+        fi
+
+        BUCKET_NAME="${{ inputs.bucket_name || vars.STATE_BUCKET_NAME }}"
+        # No derived default: deploy (a-wf-setup-ci) reads the same variable, and S3 names are global.
+        if [ -z "$BUCKET_NAME" ]; then
+          echo "::error::No S3 state bucket configured. Set the STATE_BUCKET_NAME variable on environment '${{ inputs.environment }}' (or pass the 'bucket_name' input)."
+          exit 1
+        fi
+        BUCKET_NAME=$(echo "$BUCKET_NAME" | tr '[:upper:]' '[:lower:]')
+
+        if [ "${#BUCKET_NAME}" -lt 3 ] || [ "${#BUCKET_NAME}" -gt 63 ]; then
+          echo "::error::S3 bucket name must be 3-63 characters: '${BUCKET_NAME}' (${#BUCKET_NAME})."
+          exit 1
+        fi
+        if ! [[ "$BUCKET_NAME" =~ ^[a-z0-9][a-z0-9.-]*[a-z0-9]$ ]] \
+          || [[ "$BUCKET_NAME" == *..* ]] \
+          || [[ "$BUCKET_NAME" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::Invalid S3 bucket name '${BUCKET_NAME}'. Use lowercase letters, digits, hyphens and dots; start and end with a letter or digit; no consecutive dots; not an IP address."
+          exit 1
+        fi
+
+        echo "[INFO] Bucket: ${BUCKET_NAME}"
+        echo "[INFO] Region: ${AWS_REGION}"
+
+        {
+          echo "bucket_name=${BUCKET_NAME}"
+          echo "region=${AWS_REGION}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: AWS Login
+      run: |
+        set -euo pipefail
+
+        if [ "${OIDC_ENABLED}" = "true" ]; then
+          if [ -z "${AWS_ROLE_ARN}" ]; then
+            echo "::error::AWS_ROLE_ARN is required when OIDC_ENABLED is true."
+            exit 1
+          fi
+
+          TOKEN=$(curl -s -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN:-}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL:-}&audience=sts.amazonaws.com" \
+            | jq -r .value)
+          echo "::add-mask::$TOKEN"
+
+          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
+            echo "::error::OIDC token request failed. Verify the workflow has 'permissions: id-token: write' and the job uses an environment."
+            exit 1
+          fi
+
+          TOKEN_FILE=$(mktemp)
+          printf '%s' "$TOKEN" > "$TOKEN_FILE"
+
+          STS_ERR=$(mktemp)
+          set +e
+          CREDS=$(aws sts assume-role-with-web-identity \
+            --role-arn "${AWS_ROLE_ARN}" \
+            --role-session-name "gha-tfstate-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --web-identity-token "file://${TOKEN_FILE}" \
+            --region "${AWS_REGION}" \
+            --query 'Credentials' --output json 2>"$STS_ERR")
+          STS_EXIT=$?
+          set -e
+          rm -f "$TOKEN_FILE"
+
+          if [ $STS_EXIT -ne 0 ]; then
+            echo "::error::OIDC assume-role failed (exit $STS_EXIT). Role: ${AWS_ROLE_ARN}"
+            sed "s|$TOKEN|[REDACTED]|g" "$STS_ERR" >&2
+            rm -f "$STS_ERR"
+            exit $STS_EXIT
+          fi
+          rm -f "$STS_ERR"
+
+          SECRET_ACCESS_KEY=$(echo "$CREDS" | jq -r '.SecretAccessKey')
+          SESSION_TOKEN=$(echo "$CREDS" | jq -r '.SessionToken')
+          echo "::add-mask::$SECRET_ACCESS_KEY"
+          echo "::add-mask::$SESSION_TOKEN"
+
+          {
+            echo "AWS_ACCESS_KEY_ID=$(echo "$CREDS" | jq -r '.AccessKeyId')"
+            echo "AWS_SECRET_ACCESS_KEY=${SECRET_ACCESS_KEY}"
+            echo "AWS_SESSION_TOKEN=${SESSION_TOKEN}"
+          } >> "$GITHUB_ENV"
+        else
+          if [ -z "${STATIC_AWS_ACCESS_KEY_ID}" ] || [ -z "${STATIC_AWS_SECRET_ACCESS_KEY}" ]; then
+            echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required when OIDC_ENABLED is not true."
+            exit 1
+          fi
+
+          echo "::add-mask::${STATIC_AWS_SECRET_ACCESS_KEY}"
+          {
+            echo "AWS_ACCESS_KEY_ID=${STATIC_AWS_ACCESS_KEY_ID}"
+            echo "AWS_SECRET_ACCESS_KEY=${STATIC_AWS_SECRET_ACCESS_KEY}"
+          } >> "$GITHUB_ENV"
+
+          if [ -n "${STATIC_AWS_SESSION_TOKEN}" ]; then
+            echo "::add-mask::${STATIC_AWS_SESSION_TOKEN}"
+            echo "AWS_SESSION_TOKEN=${STATIC_AWS_SESSION_TOKEN}" >> "$GITHUB_ENV"
+          fi
+        fi
+
+        echo "AWS_DEFAULT_REGION=${AWS_REGION}" >> "$GITHUB_ENV"
+
+    - name: Verify identity
+      run: aws sts get-caller-identity
+
+    - name: Ensure state bucket
+      id: ensure-bucket
+      run: |
+        set -euo pipefail
+
+        bucket="${{ steps.resolve-config.outputs.bucket_name }}"
+        region="${{ steps.resolve-config.outputs.region }}"
+
+        head_err=$(mktemp)
+        if aws s3api head-bucket --bucket "$bucket" 2>"$head_err"; then
+          echo "[INFO] Use existing bucket ${bucket}"
+          bucket_exists=true
+          rm -f "$head_err"
+        elif grep -qE '403|Forbidden' "$head_err"; then
+          echo "::error::Bucket '${bucket}' exists but is not accessible with these credentials. S3 bucket names are global across all AWS accounts: it either belongs to another account or the credentials lack access to it. Pick a different STATE_BUCKET_NAME."
+          sed 's/^/[aws] /' "$head_err" >&2
+          rm -f "$head_err"
+          exit 1
+        else
+          rm -f "$head_err"
+          echo "[INFO] Create bucket ${bucket} in ${region}"
+
+          create_err=$(mktemp)
+          set +e
+          if [ "$region" = "us-east-1" ]; then
+            aws s3api create-bucket --bucket "$bucket" --region "$region" 2>"$create_err"
+          else
+            aws s3api create-bucket --bucket "$bucket" --region "$region" \
+              --create-bucket-configuration LocationConstraint="$region" 2>"$create_err"
+          fi
+          create_exit=$?
+          set -e
+
+          if [ $create_exit -ne 0 ]; then
+            if grep -q 'BucketAlreadyExists' "$create_err"; then
+              echo "::error::Bucket name '${bucket}' is already taken in another AWS account. S3 bucket names are globally unique; pick a different STATE_BUCKET_NAME."
+            fi
+            sed 's/^/[aws] /' "$create_err" >&2
+            rm -f "$create_err"
+            exit $create_exit
+          fi
+          rm -f "$create_err"
+
+          aws s3api wait bucket-exists --bucket "$bucket"
+          bucket_exists=false
+        fi
+
+        aws s3api put-public-access-block --bucket "$bucket" \
+          --public-access-block-configuration \
+          BlockPublicAcls=true,IgnorePublicAcls=true,BlockPublicPolicy=true,RestrictPublicBuckets=true
+
+        aws s3api put-bucket-versioning --bucket "$bucket" \
+          --versioning-configuration Status=Enabled
+
+        aws s3api put-bucket-encryption --bucket "$bucket" \
+          --server-side-encryption-configuration \
+          '{"Rules":[{"ApplyServerSideEncryptionByDefault":{"SSEAlgorithm":"AES256"},"BucketKeyEnabled":true}]}'
+
+        # put-bucket-policy replaces the whole policy, so merge by Sid and keep other statements.
+        partition=$(aws sts get-caller-identity --query Arn --output text | cut -d: -f2)
+        bucket_arn="arn:${partition}:s3:::${bucket}"
+        tls_statement=$(jq -nc --arg arn "$bucket_arn" '{
+          Sid: "DenyInsecureTransport", Effect: "Deny", Principal: "*", Action: "s3:*",
+          Resource: [$arn, ($arn + "/*")],
+          Condition: {Bool: {"aws:SecureTransport": "false"}}
+        }')
+        policy_err=$(mktemp)
+        if ! current_policy=$(aws s3api get-bucket-policy --bucket "$bucket" --query Policy --output text 2>"$policy_err"); then
+          if ! grep -q 'NoSuchBucketPolicy' "$policy_err"; then
+            sed 's/^/[aws] /' "$policy_err" >&2
+            rm -f "$policy_err"
+            exit 1
+          fi
+          current_policy='{}'
+        fi
+        rm -f "$policy_err"
+        new_policy=$(jq -c --argjson stmt "$tls_statement" '
+          .Version //= "2012-10-17"
+          | .Statement = ([.Statement // [] | if type == "array" then .[] else . end
+              | select(.Sid != "DenyInsecureTransport")] + [$stmt])' <<<"$current_policy")
+        echo "[INFO] Enforce TLS-only access (bucket policy statement DenyInsecureTransport)"
+        aws s3api put-bucket-policy --bucket "$bucket" --policy "$new_policy"
+
+        # put-bucket-tagging replaces the whole tag set, so merge to keep tags set by others.
+        tag_err=$(mktemp)
+        if ! current_tags=$(aws s3api get-bucket-tagging --bucket "$bucket" --query TagSet --output json 2>"$tag_err"); then
+          if ! grep -q 'NoSuchTagSet' "$tag_err"; then
+            sed 's/^/[aws] /' "$tag_err" >&2
+            rm -f "$tag_err"
+            exit 1
+          fi
+          current_tags='[]'
+        fi
+        rm -f "$tag_err"
+        new_tags=$(jq -c --arg repo "$GITHUB_REPOSITORY" '
+          [{Key: "owner", Value: "GithubActions"}, {Key: "repository", Value: $repo},
+           {Key: "project", Value: "tf-states"}, {Key: "stage", Value: "tf-states"}] as $managed
+          | map(select(.Key as $k | $managed | map(.Key) | index($k) | not)) + $managed' <<<"$current_tags")
+        echo "[INFO] Apply managed bucket tags (other tags are kept)"
+        aws s3api put-bucket-tagging --bucket "$bucket" --tagging "{\"TagSet\":${new_tags}}"
+
+        echo "bucket_exists=${bucket_exists}" >> "$GITHUB_OUTPUT"
+
+    - name: Summary
+      run: |
+        {
+          echo "## TF State Setup Summary (AWS)"
+          echo ""
+          echo "| Resource | Status |"
+          echo "|----------|--------|"
+          echo "| Bucket: \`${{ steps.resolve-config.outputs.bucket_name }}\` | Existed: ${{ steps.ensure-bucket.outputs.bucket_exists }} |"
+          echo "| Region: \`${{ steps.resolve-config.outputs.region }}\` | - |"
+        } >> "$GITHUB_STEP_SUMMARY"
