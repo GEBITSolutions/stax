@@ -27,7 +27,7 @@ The repository's `.github/workflows/docs.yml` selects `configs/stax-docs.yaml` a
 
 Pull requests build only. Changes on `main` publish automatically; the manual workflow's `dry-run` input builds without publishing, and manual runs on other branches remain build-only. The shared action installs the locked Zensical dependencies and overrides the canonical URL from Pages metadata without changing `zensical.toml`.
 
-Enable repository Pages with **GitHub Actions** as its source before publishing. Configure the custom domain and HTTPS in repository Pages settings and protect the `github-pages` deployment environment. The `docs` environment only carries configuration/build metadata and needs no Azure credentials. See the repository README for the reusable stack's full contract and caller permissions.
+Enable repository Pages with **GitHub Actions** as its source before publishing. Configure the custom domain and HTTPS in repository Pages settings and protect the `github-pages` deployment environment. The `docs` environment only carries configuration/build metadata and needs no Azure credentials. Existing callers need `pages: write` and `id-token: write` available through the nested workflow chain; `stax init` generates the updated permissions.
 
 ## Files
 
