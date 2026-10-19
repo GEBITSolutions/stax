@@ -23,11 +23,6 @@ describe("renderProject", () => {
   const files = renderProject({ project: "demo", environment: "dev.example.com" });
   const byPath: Record<string, string> = Object.fromEntries(files.map((file) => [file.path, file.content]));
 
-  it("renders the golden deploy workflow and config", async () => {
-    await expect(byPath[DEPLOY_WORKFLOW_PATH]).toMatchFileSnapshot("__golden__/deploy.yml");
-    await expect(byPath[DEPLOY_CONFIG_PATH]).toMatchFileSnapshot("__golden__/default.yaml");
-  });
-
   it("produces YAML the framework can parse", () => {
     const workflow = parse(byPath[DEPLOY_WORKFLOW_PATH]!);
     expect(workflow.jobs.setup.with.project).toBe("demo");

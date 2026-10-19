@@ -15,6 +15,7 @@ import { evaluateRunner } from './evaluateRunner.js'
 import { mergeDeployConfigDocuments } from './mergeConfigs.js'
 import { resolveSourceVersions } from './resolveSourceVersion.js'
 import { validatePackerConfig } from './validatePackerConfig.js'
+import { validateGitHubPagesConfig } from './validateGitHubPagesConfig.js'
 
 /**
  * The main function for the action.
@@ -161,6 +162,7 @@ export async function run(): Promise<void> {
     const merged = mergeDeployConfigDocuments(documents)
     deploy_config = merged.stacks
     external_repos = merged.externalRepos
+    validateGitHubPagesConfig(deploy_config, global_vars)
 
     for (const config of deploy_config) {
       validatePackerConfig(config)

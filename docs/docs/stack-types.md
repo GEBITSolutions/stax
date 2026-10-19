@@ -26,6 +26,7 @@ Checked boxes indicate support. Unchecked boxes indicate planned support, not av
 - [x] **Azure Static Web Apps** (`swa-site-deploy`): deploy websites.
 - [x] **Azure Static Web Apps documentation** (`swa-docs-site-deploy`): deploy documentation sites.
 - [x] **Amazon S3** (`s3-site-deploy`): deploy static websites.
+- [x] **GitHub Pages** (`github-pages-site-deploy`): build MkDocs or Zensical documentation, or publish a prebuilt static site.
 
 ## Scripts
 

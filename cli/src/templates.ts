@@ -100,6 +100,7 @@ permissions:
   contents: read
   id-token: write
   packages: write
+  pages: write
 
 concurrency:
   group: \${{ github.workflow }}-\${{ inputs.dry-run && github.sha || inputs.environment }}

@@ -38,6 +38,9 @@ export interface ITerraformConfig {
   source_repo?: string
   source_version?: string
   docs_path?: string
+  site_source_type?: 'mkdocs' | 'zensical' | 'prebuilt'
+  app_location?: string
+  site_url?: string
   packer_directory?: string
   packer_template?: string
   packer_version?: string

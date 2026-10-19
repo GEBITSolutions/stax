@@ -435,4 +435,241 @@ describe('index.ts', () => {
         '"stack-b" (depends_on: ["stack-a"], unresolved: ["stack-a"])'
     )
   })
+
+  it('schedules one Pages stack alongside other stack types with its site fields intact', async () => {
+    convert_implicit_to_explicit_dependencies.mockImplementation(
+      original_convert_implicit_to_explicit_dependencies
+    )
+    prune_external_dependencies.mockImplementation(
+      original_prune_external_dependencies
+    )
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
+    generate_stackfilter.mockImplementation(original_generate_stackfilter)
+
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-configs')
+        return JSON.stringify([
+          {
+            sourceFile: 'infra.yaml',
+            stacks: [{ id: 'infra', type: 'terraform' }]
+          },
+          {
+            sourceFile: 'pages.yaml',
+            stacks: [
+              {
+                id: 'docs',
+                type: 'github-pages-site-deploy',
+                depends_on: ['infra'],
+                site_source_type: 'prebuilt',
+                docs_path: 'guide',
+                app_location: 'site',
+                site_url: 'https://example.org/docs/'
+              }
+            ]
+          }
+        ])
+      if (name === 'global-vars')
+        return JSON.stringify({ dry_run: true, destroy: false })
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    const outputCall = (core.setOutput as jest.Mock).mock.calls.find(
+      ([name]) => name === 'layer-deployments'
+    )
+    const layers = JSON.parse(outputCall![1] as string) as Array<
+      Array<Record<string, unknown>>
+    >
+    expect(layers[0]).toEqual([
+      expect.objectContaining({ id: 'infra', type: 'terraform' })
+    ])
+    expect(layers[1]).toEqual([
+      expect.objectContaining({
+        id: 'docs',
+        type: 'github-pages-site-deploy',
+        site_source_type: 'prebuilt',
+        docs_path: 'guide',
+        app_location: 'site',
+        site_url: 'https://example.org/docs/'
+      })
+    ])
+  })
+
+  it('defaults a Pages stack source type to mkdocs without modifying other stacks', async () => {
+    convert_implicit_to_explicit_dependencies.mockImplementation(
+      original_convert_implicit_to_explicit_dependencies
+    )
+    prune_external_dependencies.mockImplementation(
+      original_prune_external_dependencies
+    )
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          { id: 'docs', type: 'github-pages-site-deploy' },
+          { id: 'infra', type: 'terraform' }
+        ])
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    const outputCall = (core.setOutput as jest.Mock).mock.calls.find(
+      ([name]) => name === 'layer-deployments'
+    )
+    const stacks = (
+      JSON.parse(outputCall![1] as string) as Array<
+        Array<Record<string, unknown>>
+      >
+    ).flat()
+    expect(stacks.find((stack) => stack.id === 'docs')).toEqual(
+      expect.objectContaining({ site_source_type: 'mkdocs' })
+    )
+    expect(stacks.find((stack) => stack.id === 'infra')).toEqual(
+      expect.objectContaining({ id: 'infra', type: 'terraform', layer: 0 })
+    )
+    expect(stacks.find((stack) => stack.id === 'infra')).not.toHaveProperty(
+      'site_source_type'
+    )
+  })
+
+  it('schedules a zensical Pages stack', async () => {
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          {
+            id: 'docs',
+            type: 'github-pages-site-deploy',
+            site_source_type: 'zensical'
+          }
+        ])
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    const outputCall = (core.setOutput as jest.Mock).mock.calls.find(
+      ([name]) => name === 'layer-deployments'
+    )
+    expect(JSON.parse(outputCall![1] as string)).toEqual([
+      [expect.objectContaining({ id: 'docs', site_source_type: 'zensical' })]
+    ])
+  })
+
+  it('leaves non-Pages stacks unaffected by Pages-only rules', async () => {
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          { id: 'infra', type: 'terraform', site_source_type: 'custom' }
+        ])
+      if (name === 'global-vars') return JSON.stringify({ destroy: 'true' })
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(core.setOutput).toHaveBeenCalledWith(
+      'layer-deployments',
+      JSON.stringify([
+        [
+          {
+            id: 'infra',
+            type: 'terraform',
+            site_source_type: 'custom',
+            layer: 0
+          }
+        ]
+      ])
+    )
+  })
+
+  it('rejects two Pages stacks across merged files before scheduling', async () => {
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-configs')
+        return JSON.stringify([
+          {
+            sourceFile: 'a.yaml',
+            stacks: [{ id: 'docs-a', type: 'github-pages-site-deploy' }]
+          },
+          {
+            sourceFile: 'b.yaml',
+            stacks: [{ id: 'docs-b', type: 'github-pages-site-deploy' }]
+          }
+        ])
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'More than one github-pages-site-deploy stack is configured: "docs-a" and "docs-b"'
+      )
+    )
+    expect(generate_layerdeployment).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid Pages site source type before scheduling', async () => {
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          {
+            id: 'docs',
+            type: 'github-pages-site-deploy',
+            site_source_type: 'hugo'
+          }
+        ])
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'GitHub Pages stack "docs" has invalid site_source_type: "hugo"'
+      )
+    )
+    expect(generate_layerdeployment).not.toHaveBeenCalled()
+  })
+
+  it.each([true, 'true'])(
+    'rejects destroy=%s for Pages even when dry_run is true',
+    async (destroy) => {
+      core.getInput.mockImplementation((name) => {
+        if (name === 'deploy-config')
+          return JSON.stringify([
+            { id: 'docs', type: 'github-pages-site-deploy' }
+          ])
+        if (name === 'global-vars')
+          return JSON.stringify({ dry_run: true, destroy })
+        return ''
+      })
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'GitHub Pages stack "docs" does not support destroy=true.'
+      )
+      expect(generate_layerdeployment).not.toHaveBeenCalled()
+      expect(core.setOutput).not.toHaveBeenCalledWith(
+        'layer-deployments',
+        expect.any(String)
+      )
+    }
+  )
 })
