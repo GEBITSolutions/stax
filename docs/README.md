@@ -40,6 +40,8 @@ Enable repository Pages with **GitHub Actions** as its source before publishing.
 
 The Astro-inspired layout uses neutral charcoal surfaces, a white homepage title, muted gray text, teal links, and a neutral gray active-navigation highlight. Dark mode is the initial theme for new visitors; the theme toggle also provides a light palette. `docs/stylesheets/extra.css` controls the header, search sizing, collapsible sidebar sections, indented child links, typography, responsive hero, and feature cards. No template overrides or custom JavaScript are required.
 
+Keep the desktop sidebar height automatic so Zensical can shorten its scroll area above the footer. A viewport-based minimum height pushes the sticky navigation behind the header at the bottom of the page. When changing navigation styles, check the last section at the page bottom in a short desktop viewport and in the mobile drawer.
+
 The slim parallelogram Get started button follows the teal theme accent. The transparent project logo remains white in dark mode and black in light mode. The previous red highlights, neon gradients, title backlight, and blue-gray surface overrides have been removed.
 
 The homepage lives in `docs/index.md`; its hero and cards use semantic HTML inside the `stax-home` wrapper, with Markdown admonitions outside it. The supported technology checklist lives in `docs/stack-types.md`. Keep existing content when extending the navigation in `zensical.toml`; new sections currently use heading-only placeholder pages.

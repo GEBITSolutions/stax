@@ -291,7 +291,7 @@
 
   .md-sidebar--primary {
     width: 14rem;
-    min-height: calc(100dvh - 3.6rem);
+    height: auto;
     padding-inline: .6rem;
     border-right: 1px solid var(--md-default-fg-color--lightest);
   }
