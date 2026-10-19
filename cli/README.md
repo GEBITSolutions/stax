@@ -4,23 +4,25 @@ Scaffolds, extends and validates projects for the stax stack framework. Package 
 
 ## `stax init`
 
-Generates a deploy wrapper and an empty deploy config in a repository:
+Generates a deploy wrapper and an empty stack list in a repository:
 
 | File | Content |
 |---|---|
 | `.github/workflows/deploy.yml` | Manual `Deploy` workflow calling `a-wf-setup-ci.yml` and `a-wf-deploy-levels.yml` from `GEBITSolutions/stax@main` |
-| `configs/default.yaml` | `stacks: []` with commented `externalRepos`, `globals` and stack examples, plus a `yaml-language-server` line that links the deploy-config schema for editor completion |
+| `configs/default.yaml` | One commented `deployment` block listing every required deployment value with its GitHub variable (`deployment.project` live only when `--project` is given), `stacks: []`, commented examples and a `yaml-language-server` schema link for editor completion |
 
 ```bash
-stax init [directory] --project <name> --environment <github-environment> [--force]
+stax init [directory] [--environment <github-environment>] [--project <name>] [--force]
 ```
 
-- `--project`: lowercase letters, digits and hyphens, starting with a letter. Used for resource naming and state layout.
-- `--environment`: default GitHub Environment in the deploy form.
-- Missing values are prompted for on a terminal; without a terminal, a missing value is an error.
+`stax init` needs no input and never prompts; both options are optional.
+
+- `--environment`: default GitHub Environment preselected in the deploy form. Without it, the form has no preselection.
+- `--project`: lowercase letters, digits and hyphens, starting with a letter. Saved as `deployment.project` in `configs/default.yaml`; without it, the GitHub variable `PROJECT` supplies the value. The setup workflow does not take a `project` input.
+- Deployment values are not asked for. The generated config lists all required ones in one block, each next to its GitHub variable. Set them at least as GitHub variables (repository or Environment); a value uncommented in the config overrides the variable.
 - Existing files are never overwritten unless `--force` is given. Without it, nothing is written.
 
-Nothing is deployed until `configs/default.yaml` has at least one stack; add one with `stax add`.
+Nothing is deployed until `configs/default.yaml` has at least one stack; add one with `stax add`. Set the required Azure resource, DNS and state deployment values in YAML or the matching GitHub variables before deploying; see [deployment configuration](../docs/docs/configuration.md).
 
 The generated caller includes `pages: write` and `id-token: write` for GitHub Pages stacks. Existing callers upgrading to the Pages-enabled framework must add `pages: write` to their existing workflow permissions so nested workflow validation succeeds. A Pages-only caller can use the setup workflow's `skip-azure-credentials-validation: true`; see the repository's dedicated `configs/stax-docs.yaml` and `.github/workflows/docs.yml` example.
 
@@ -53,9 +55,10 @@ stax validate config configs/prod.yaml
 stax validate config other-dir -r --strict
 ```
 
-- `[path]` is a file or a directory; it defaults to `configs`. A named file is always validated. When scanning a directory, YAML files without `stacks`, `externalRepos` or `globals` (for example Helm values) are listed as skipped.
+- `[path]` is a file or a directory; it defaults to `configs`. A named file is always validated. When scanning a directory, YAML files without `deployment`, `stacks`, `externalRepos` or `globals` (for example Helm values) are listed as skipped.
 - Findings show `line:column`, severity and the field path, e.g. `stacks[1].type`.
 - Exit code 1 when any file has errors; warnings only fail with `--strict`.
+- `deployment` fields are optional in local validation because GitHub variables can supply them. Setup checks the required values after resolution. Unknown deployment keys fail validation because setup rejects them.
 
 | Errors (the pipeline fails or silently skips the stack) | Warnings |
 |---|---|
