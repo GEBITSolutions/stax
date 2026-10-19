@@ -38,7 +38,7 @@ jobs:
       - name: Smoke stax init, add and validate
         run: |
           target="$(mktemp -d)"
-          node dist/cli.js init "$target" --project smoke --environment dev
+          node dist/cli.js init "$target"
           test -f "$target/.github/workflows/deploy.yml"
           node dist/cli.js add "$target" --name "Network Hub" --type opentofu --yes
           node dist/cli.js add "$target" --name Docs --type github-pages-site-deploy --yes

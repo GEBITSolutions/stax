@@ -41,20 +41,24 @@ describe("stax init", () => {
       deployment: { project: "demo" },
       stacks: [],
     });
-    expect(parse(readFileSync(join(dir, DEPLOY_WORKFLOW_PATH), "utf8")).jobs.setup.with).not.toHaveProperty("project");
+    const workflow = parse(readFileSync(join(dir, DEPLOY_WORKFLOW_PATH), "utf8"));
+    expect(workflow.jobs.setup.with).not.toHaveProperty("project");
+    expect(workflow.on.workflow_dispatch.inputs.environment.default).toBe("dev");
   });
 
-  it("treats the project as optional and leaves every deployment value to GitHub variables", () => {
+  it("needs no input: without flags it neither prompts nor writes deployment values or a default Environment", () => {
     const dir = mkdtempSync(join(tmpdir(), "stax-"));
-    const result = runInit([dir, "--environment", "dev"]);
+    const result = runInit([dir]);
 
     expect(result.status).toBe(0);
     expect(parse(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8"))).toEqual({ stacks: [] });
+    const environmentInput = parse(readFileSync(join(dir, DEPLOY_WORKFLOW_PATH), "utf8")).on.workflow_dispatch.inputs.environment;
+    expect(environmentInput).toEqual({ description: "GitHub Environment to deploy to", type: "environment", required: true });
   });
 
   it("lists every required deployment value with its GitHub variable in the config", () => {
     const dir = mkdtempSync(join(tmpdir(), "stax-"));
-    runInit([dir, "--environment", "dev"]);
+    runInit([dir]);
     const config = readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8");
     const listed = [...config.matchAll(/^ {2}# ([a-z_]+): \S+ +# required[^;]*; GitHub variable ([A-Z_]+)$/gm)].map(([, field, variable]) => [field, variable]);
     const required = [
@@ -65,15 +69,6 @@ describe("stax init", () => {
     ];
 
     expect(listed).toEqual(required.map((field) => [field, field.toUpperCase()]));
-  });
-
-  it("fails instead of prompting when the environment is missing and there is no terminal", () => {
-    const dir = mkdtempSync(join(tmpdir(), "stax-"));
-    const result = runInit([dir, "--project", "demo"]);
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("missing required option --environment");
-    expect(existsSync(join(dir, DEPLOY_WORKFLOW_PATH))).toBe(false);
   });
 
   it("rejects invalid flag values before writing", () => {

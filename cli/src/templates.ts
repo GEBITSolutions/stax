@@ -12,8 +12,8 @@ export const DEPLOY_CONFIG_SCHEMA_URL =
 export interface ProjectValues {
   /** Optional deployment.project in configs/default.yaml; otherwise the GitHub variable PROJECT supplies it. */
   project?: string;
-  /** Default GitHub Environment offered by the deploy dispatch form. */
-  environment: string;
+  /** Optional default GitHub Environment of the deploy dispatch form; without it the form has no preselection. */
+  environment?: string;
 }
 
 export interface GeneratedFile {
@@ -86,7 +86,7 @@ function renderDeployConfig({ project, environment }: ProjectValues): string {
 
 # Deployment values: setup needs every value marked "required", plus those required for your cloud.
 # Set each one at least as the GitHub variable named next to it, on the repository or the
-# "${environment}" Environment. A value uncommented here overrides that variable for this config.
+# ${environment === undefined ? "GitHub Environment you deploy to" : `"${environment}" Environment`}. A value uncommented here overrides that variable for this config.
 # Setup fails while a required value is missing.
 ${renderDeploymentBlock(project)}
 
@@ -129,7 +129,7 @@ on:
         description: GitHub Environment to deploy to
         type: environment
         required: true
-        default: "${environment}"
+${environment === undefined ? "" : `        default: "${environment}"\n`}\
       stack-filter:
         description: One or more stack ids, comma separated; empty selects all stacks
         type: string
