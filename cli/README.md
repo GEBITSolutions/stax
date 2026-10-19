@@ -18,7 +18,7 @@ stax init [directory] [--environment <github-environment>] [--project <name>] [-
 `stax init` needs no input and never prompts; both options are optional.
 
 - `--environment`: default GitHub Environment preselected in the deploy form. Without it, the form has no preselection.
-- `--project`: lowercase letters, digits and hyphens, starting with a letter. Saved as `deployment.project` in `configs/default.yaml`; without it, the GitHub variable `PROJECT` supplies the value. The setup workflow does not take a `project` input.
+- `--project`: lowercase letters, digits and hyphens, starting with a letter. Saved as `deployment.project` in `configs/default.yaml`; without it, the GitHub variable `PROJECT` supplies the value.
 - Deployment values are not asked for. The generated config lists all required ones in one block, each next to its GitHub variable. Set them at least as GitHub variables (repository or Environment); a value uncommented in the config overrides the variable.
 - Existing files are never overwritten unless `--force` is given. Without it, nothing is written.
 
