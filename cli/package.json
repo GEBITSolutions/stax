@@ -1,7 +1,7 @@
 {
   "name": "@gebitsolutions/stax-cli",
   "version": "0.1.0",
-  "description": "Scaffold and validate projects for the stax stack framework",
+  "description": "Scaffold, extend and validate projects for the stax stack framework",
   "private": true,
   "type": "module",
   "bin": {

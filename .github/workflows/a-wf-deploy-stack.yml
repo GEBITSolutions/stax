@@ -848,7 +848,7 @@ jobs:
       stack-id: ${{ fromJson(inputs.data)['id'] }}
       stage: ${{ fromJson(inputs.env)['stage'] }}
       location: ${{ fromJson(inputs.data)['location'] || inputs.default-location }}
-      terraform-project: ${{ fromJson(inputs.data)['folder'] || fromJson(inputs.data)['id'] }}
+      terraform-project: ${{ fromJson(inputs.data)['folder'] }}
       local-terraform-project-base-path: ${{ fromJson(inputs.data)['stack_base_path'] || 'terraform/stacks' }}
       backend-state-key-override: "${{ !(fromJson(inputs.data)['local_backend'] || false) && format('{0}.{1}.{2}.{3}.terraform.tfstate',\
         \ fromJson(inputs.env)['customer_id'] || 'default', fromJson(inputs.env)['stage'], fromJson(inputs.data)['id'], fromJson(inputs.data)['location']\
