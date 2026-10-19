@@ -1,3 +1,4 @@
 node_modules/
 /cli/dist/
 __pycache__/
+/cli/schema/

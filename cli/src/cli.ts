@@ -1,9 +1,11 @@
 #!/usr/bin/env node
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { relative, resolve } from "node:path";
 import { input } from "@inquirer/prompts";
 import { Command } from "commander";
 import { renderProject, validateEnvironment, validateProject } from "./templates.ts";
+import { collectConfigFiles, isDeployConfigText, validateConfigText } from "./validate.ts";
 import { writeProject } from "./write.ts";
 
 const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
@@ -12,6 +14,11 @@ interface InitFlags {
   project?: string;
   environment?: string;
   force: boolean;
+}
+
+interface ValidateConfigFlags {
+  recursive: boolean;
+  strict: boolean;
 }
 
 /**
@@ -37,7 +44,7 @@ async function resolveValue(
 
 const program = new Command()
   .name("stax")
-  .description("Scaffold projects for the stax stack framework")
+  .description("Scaffold and validate projects for the stax stack framework")
   .version(version);
 
 program
@@ -64,6 +71,59 @@ Next steps:
   1. Create the GitHub Environment "${environment}" with the variables and secrets your stacks need.
   2. Add stacks to configs/default.yaml.
   3. Run the Deploy workflow with dry-run enabled.`);
+  });
+
+program
+  .command("validate")
+  .description("Validate project files against the stax framework")
+  .command("config")
+  .description(
+    "Validate deploy configs: one file, or the deploy configs among the .yaml/.yml files in a directory (default: configs)",
+  )
+  .argument("[path]", "deploy config file or directory", "configs")
+  .option("-r, --recursive", "include subdirectories", false)
+  .option("--strict", "fail on warnings too", false)
+  .action((target: string, flags: ValidateConfigFlags) => {
+    if (!existsSync(target)) throw new Error(`${target} does not exist`);
+    // A named file is always validated; directory scans skip other YAML (e.g. Helm values) next to the configs.
+    const scanning = statSync(target).isDirectory();
+    const files = collectConfigFiles(target, flags.recursive);
+    if (files.length === 0) {
+      throw new Error(`no .yaml/.yml files in ${target}${flags.recursive ? "" : " (use -r to include subdirectories)"}`);
+    }
+
+    let checked = 0;
+    let errors = 0;
+    let warnings = 0;
+    for (const file of files) {
+      const fromCwd = relative(process.cwd(), file);
+      const shown = fromCwd && !fromCwd.startsWith("..") ? fromCwd : file;
+      const text = readFileSync(file, "utf8");
+      if (scanning && !isDeployConfigText(text)) {
+        console.log(`${shown}: skipped (no stacks, externalRepos or globals)`);
+        continue;
+      }
+      checked += 1;
+      const findings = validateConfigText(text);
+      if (findings.length === 0) {
+        console.log(`${shown}: ok`);
+        continue;
+      }
+      console.log(shown);
+      for (const finding of findings) {
+        if (finding.severity === "error") errors += 1;
+        else warnings += 1;
+        console.log(`  ${`${finding.line}:${finding.column}`.padEnd(8)}${finding.severity.padEnd(9)}${finding.message}`);
+      }
+    }
+    if (checked === 0) throw new Error(`no deploy configs in ${target}`);
+
+    const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
+    const skipped = files.length - checked;
+    console.log(
+      `\n${plural(checked, "file")} checked${skipped > 0 ? `, ${skipped} skipped` : ""}: ${plural(errors, "error")}, ${plural(warnings, "warning")}`,
+    );
+    if (errors > 0 || (flags.strict && warnings > 0)) process.exitCode = 1;
   });
 
 try {

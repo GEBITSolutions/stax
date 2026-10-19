@@ -4,11 +4,15 @@ on:
   pull_request:
     paths:
       - cli/**
+      - schema/**
+      - configs/**
       - .github/workflows/cli.yml
   push:
     branches: [main]
     paths:
       - cli/**
+      - schema/**
+      - configs/**
       - .github/workflows/cli.yml
 
 permissions:
@@ -31,9 +35,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Smoke stax init
+      - name: Smoke stax init and validate
         run: |
           target="$(mktemp -d)"
           node dist/cli.js init "$target" --project smoke --environment dev
           test -f "$target/.github/workflows/deploy.yml"
-          test -f "$target/configs/default.yaml"
+          node dist/cli.js validate config "$target/configs/default.yaml"
+      - name: Validate this repository's deploy configs
+        run: node dist/cli.js validate config ../configs -r --strict
