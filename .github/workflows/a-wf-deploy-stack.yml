@@ -39,6 +39,8 @@ on:
     outputs:
       image_id:
         value: ${{ jobs.Packer.outputs.image_id }}
+      site_url:
+        value: ${{ jobs.github-pages.outputs.site-url }}
 
     secrets:
       ARM_CLIENT_SECRET:
@@ -791,6 +793,20 @@ jobs:
       uses: ./shared-code/.github/actions/pipeline-job-backlink
       with:
         job-name: "${{ format('Function Deploy: {0}', fromJson(inputs.data)['name']) }}"
+
+  github-pages:
+    if: fromJSON(inputs.data).type == 'github-pages-site-deploy'
+    name: "GitHub Pages: ${{ fromJSON(inputs.data).name || fromJSON(inputs.data).id }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-github-pages-site.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      stack-repository: ${{ fromJSON(inputs.data).source_repo || github.repository }}
+      stack-repository-version: ${{ fromJSON(inputs.data).source_version || '' }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
 
   swa:
     if: (fromJson(inputs.data)['type'] == 'swa-docs-site-deploy' || fromJson(inputs.data)['type'] == 'swa-site-deploy')

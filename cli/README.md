@@ -22,13 +22,15 @@ stax init [directory] --project <name> --environment <github-environment> [--for
 
 The Deploy workflow's setup step fails with "No stacks found" until `configs/default.yaml` has at least one stack.
 
+The generated caller includes `pages: write` and `id-token: write` for GitHub Pages stacks. Existing callers upgrading to the Pages-enabled framework must add `pages: write` to their existing workflow permissions so nested workflow validation succeeds. A Pages-only caller can use the setup workflow's `skip-azure-credentials-validation: true`; see the repository's dedicated `configs/stax-docs.yaml` and `.github/workflows/docs.yml` example.
+
 ## Development
 
 ```bash
 cd cli
 npm ci
 npm run typecheck
-npm test            # update golden files in test/__golden__ with: npx vitest run -u
+npm test
 npm run build
 node src/cli.ts init /tmp/demo   # runs from source (Node 24 type stripping)
 ```

@@ -1,22 +1,22 @@
 ---
 # yamllint disable rule:line-length
 name: "Static Site Build"
-description: "Builds a MkDocs site from the checked-out source repository (source_repo/) or verifies a prebuilt site directory."
+description: "Builds MkDocs or Zensical sites from source_repo/, or verifies a prebuilt site."
 inputs:
   source-type:
-    description: "Site source type: 'mkdocs' builds the site, 'prebuilt' only verifies that site-dir exists."
+    description: "Site source type: mkdocs, zensical, or prebuilt."
     required: false
     default: "mkdocs"
   docs-path:
-    description: "Relative path to the MkDocs project inside source_repo/."
+    description: "Relative project path inside source_repo/."
     required: false
     default: "docs"
   app-location:
-    description: "Optional site directory relative to source_repo/. Defaults to <docs-path>/site/."
+    description: "Optional output directory relative to source_repo/. Defaults to <docs-path>/site/."
     required: false
     default: ""
   site-url:
-    description: "Optional site URL, exported as SITE_URL for mkdocs build only when non-empty."
+    description: "Optional canonical site URL overriding the project configuration during the build."
     required: false
     default: ""
 outputs:
@@ -28,96 +28,19 @@ runs:
   steps:
   - name: Install Python
     uses: actions/setup-python@v5
-    if: ${{ inputs.source-type == 'mkdocs' }}
     with:
-      python-version: 3.x
+      python-version: '3.12'
 
-  - name: Validate docs path and discover MkDocs config
-    id: mkdocs-config
-    shell: bash
-    if: ${{ inputs.source-type == 'mkdocs' }}
-    env:
-      DOCS_RELATIVE_PATH: ${{ inputs.docs-path }}
-      DOCS_PATH: source_repo/${{ inputs.docs-path }}
-    run: |
-      docs_relative_path="${DOCS_RELATIVE_PATH}"
-      docs_path="${DOCS_PATH}"
+  - name: Install uv
+    uses: astral-sh/setup-uv@v10.1.0
+    if: ${{ inputs.source-type == 'mkdocs' || inputs.source-type == 'zensical' }}
 
-      if [[ "$docs_relative_path" = /* || "$docs_relative_path" == *..* ]]; then
-        echo "::error::docs_path must be a relative path without '..': ${docs_relative_path}"
-        exit 1
-      fi
-
-      if [[ -f "${docs_path}/mkdocs.yml" ]]; then
-        config_file="${docs_path}/mkdocs.yml"
-      elif [[ -f "${docs_path}/mkdocs.yaml" ]]; then
-        config_file="${docs_path}/mkdocs.yaml"
-      else
-        echo "::error::No MkDocs config found. Expected ${docs_path}/mkdocs.yml or ${docs_path}/mkdocs.yaml"
-        exit 1
-      fi
-
-      echo "Using MkDocs config: ${config_file}"
-      echo "config-file=${config_file}" >> "$GITHUB_OUTPUT"
-
-  - name: Build MkDocs site
-    shell: bash
-    if: ${{ inputs.source-type == 'mkdocs' }}
-    env:
-      DOCS_PATH: source_repo/${{ inputs.docs-path }}
-      CONFIG_FILE: ${{ steps.mkdocs-config.outputs.config-file }}
-      INPUT_SITE_URL: ${{ inputs.site-url }}
-    run: |
-      # MkDocs !ENV resolves an empty SITE_URL to None, dropping the mkdocs.yaml default.
-      if [[ -n "${INPUT_SITE_URL}" ]]; then
-        export SITE_URL="${INPUT_SITE_URL}"
-      fi
-      python3 -m venv "${DOCS_PATH}/venv"
-      . "${DOCS_PATH}/venv/bin/activate"
-      "${DOCS_PATH}/venv/bin/pip" install \
-        --upgrade --upgrade-strategy eager -r "${DOCS_PATH}/requirements.txt"
-      "${DOCS_PATH}/venv/bin/mkdocs" build \
-        -f "${CONFIG_FILE}"
-
-  # Set update cache once a week
-  - name: Cache update
-    if: ${{ inputs.source-type == 'mkdocs' }}
-    id: cache
-    shell: bash
-    run: echo "cache_id=$(date --utc '+%V')" >> "$GITHUB_ENV"
-
-  - name: Cache updates
-    uses: actions/cache@v4
-    if: ${{ inputs.source-type == 'mkdocs' }}
-    with:
-      key: mkdocs-${{ env.cache_id }}
-      path: |
-        .cache
-        source_repo/${{ inputs.docs-path }}/venv/bin
-      restore-keys: |
-        mkdocs-
-
-  - name: Resolve site directory
+  - name: Build or resolve site
     id: site-dir
     shell: bash
     env:
       SOURCE_TYPE: ${{ inputs.source-type }}
       DOCS_RELATIVE_PATH: ${{ inputs.docs-path }}
       APP_LOCATION: ${{ inputs.app-location }}
-    run: |
-      site_relative_path="${APP_LOCATION:-${DOCS_RELATIVE_PATH}/site/}"
-
-      if [[ "$site_relative_path" = /* || "$site_relative_path" == *..* ]]; then
-        echo "::error::Site directory must be a relative path inside source_repo/ without '..': ${site_relative_path}"
-        exit 1
-      fi
-
-      site_dir="source_repo/${site_relative_path}"
-
-      if [[ "${SOURCE_TYPE}" != "mkdocs" && ! -d "${site_dir}" ]]; then
-        echo "::error::Prebuilt site directory not found: ${site_dir}"
-        exit 1
-      fi
-
-      echo "Site directory: ${site_dir}"
-      echo "site-dir=${site_dir}" >> "$GITHUB_OUTPUT"
+      INPUT_SITE_URL: ${{ inputs.site-url }}
+    run: python3 "$GITHUB_ACTION_PATH/build_site.py"

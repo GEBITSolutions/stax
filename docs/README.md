@@ -21,6 +21,14 @@ uv run zensical build --clean
 
 The static website is written to `site/`.
 
+## Publish to GitHub Pages
+
+The repository's `.github/workflows/docs.yml` selects `configs/stax-docs.yaml` and deploys through STAX's reusable setup, deployment levels, and `github-pages-site-deploy` stack workflow. This is independent of infrastructure and service configurations.
+
+Pull requests build only. Changes on `main` publish automatically; the manual workflow's `dry-run` input builds without publishing, and manual runs on other branches remain build-only. The shared action installs the locked Zensical dependencies and overrides the canonical URL from Pages metadata without changing `zensical.toml`.
+
+Enable repository Pages with **GitHub Actions** as its source before publishing. Configure the custom domain and HTTPS in repository Pages settings and protect the `github-pages` deployment environment. The `docs` environment only carries configuration/build metadata and needs no Azure credentials. See the repository README for the reusable stack's full contract and caller permissions.
+
 ## Files
 
 - `zensical.toml`: site title, navigation, and light/dark themes.
