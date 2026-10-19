@@ -57,11 +57,3 @@ Precedence per field is selected YAML → GitHub variable. An empty string or `n
 | `state_resource_group_name` | `STATE_RESOURCE_GROUP_NAME` | Required for Azure |
 | `state_bucket_name` | `STATE_BUCKET_NAME` | Required for AWS |
 | `state_region` | `STATE_REGION` | Required for AWS |
-
-The setup workflow exports these values under the uppercase names in the table. You must supply required fields at least as the corresponding GitHub variable, or in YAML; setup identifies a missing field and variable instead of deriving a default. `stax init` writes no deployment values except an optional `--project`. Missing cloud-specific fields that are not required export as empty strings. Setup rejects unknown deployment keys or non-string values except the boolean flag.
-
-For a Pages-only deployment that does not need cloud infrastructure, set `skip-azure-credentials-validation: true` on the setup reusable-workflow call. Setup still requires the six common fields and validates `cloud`, but skips the Azure/AWS-specific requirements. See `.github/workflows/docs.yml` and `configs/stax-docs.yaml` for a Pages caller.
-
-Keep credentials and tokens in GitHub secrets, not in `deployment`. The existing GitHub variables `CONFIG_LOCAL`, `CONFIG_REPO` and `CONFIG_VERSION` still choose the config source and version; deployment resolution does not change them.
-
-Existing callers must remove the setup workflow's old `project` input and move its value into `deployment.project` or the GitHub `PROJECT` variable. The previous implicit defaults and derived DNS/state names no longer apply: declare those values in YAML or GitHub variables. Azure state storage account names still normalize to lowercase letters and digits and must contain 3–24 characters after normalization.
