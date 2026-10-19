@@ -6,7 +6,7 @@ import { input, select } from "@inquirer/prompts";
 import { Command } from "commander";
 import { addStackToConfig, listConfigs, slugify } from "./add.ts";
 import { schema, STACK_TYPES, requiredStackFields, stackFieldProblem } from "./schema.ts";
-import { renderProject, validateEnvironment, validateProject } from "./templates.ts";
+import { DEPLOY_CONFIG_PATH, renderProject, validateEnvironment, validateProject } from "./templates.ts";
 import { collectConfigFiles, isDeployConfigText, validateConfigText } from "./validate.ts";
 import { writeProject } from "./write.ts";
 
@@ -72,16 +72,14 @@ program
   .command("init")
   .description("Generate the deploy workflow and default deploy config in a repository")
   .argument("[directory]", "repository root to write into", ".")
-  .option("-p, --project <name>", "project name (resource naming and state layout)")
+  .option("-p, --project <name>", "optional deployment.project; otherwise the GitHub variable PROJECT supplies it")
   .option("-e, --environment <name>", "default GitHub Environment for the deploy form")
   .option("-f, --force", "overwrite existing files", false)
   .action(async (directory: string, flags: InitFlags) => {
-    const project = await resolveValue({
-      given: flags.project,
-      message: "Project name:",
-      missing: "missing required option --project",
-      validate: validateProject,
-    });
+    if (flags.project !== undefined) {
+      const error = validateProject(flags.project);
+      if (error) throw new Error(error);
+    }
     const environment = await resolveValue({
       given: flags.environment,
       message: "Default GitHub Environment:",
@@ -89,12 +87,13 @@ program
       validate: validateEnvironment,
     });
     const root = resolve(directory);
-    const files = renderProject({ project, environment });
+    const files = renderProject({ project: flags.project, environment });
     await writeProject(root, files, flags.force);
     for (const file of files) console.log(`created ${file.path}`);
     console.log(`
 Next steps:
-  1. Create the GitHub Environment "${environment}" with the variables and secrets your stacks need.
+  1. Create the GitHub Environment "${environment}". Set the required deployment values listed in
+     ${DEPLOY_CONFIG_PATH} as GitHub variables there or on the repository, plus the secrets your stacks need.
   2. Add stacks with: stax add
   3. Run the Deploy workflow with dry-run enabled.`);
   });

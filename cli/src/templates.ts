@@ -10,8 +10,8 @@ export const DEPLOY_CONFIG_SCHEMA_URL =
   "https://raw.githubusercontent.com/GEBITSolutions/stax/main/schema/deploy-config.schema.json";
 
 export interface ProjectValues {
-  /** Project name stored in configs/default.yaml deployment.project for resource naming and state layout. */
-  project: string;
+  /** Optional deployment.project in configs/default.yaml; otherwise the GitHub variable PROJECT supplies it. */
+  project?: string;
   /** Default GitHub Environment offered by the deploy dispatch form. */
   environment: string;
 }
@@ -37,30 +37,58 @@ export function validateEnvironment(value: string): string | undefined {
   return `invalid environment "${value}": use letters, digits, ".", "_" and "-"`;
 }
 
-function renderDeployConfig(project: string): string {
+/** Deployment values setup requires, with an example value; the GitHub variable is the uppercased field name. */
+const REQUIRED_DEPLOYMENT_VALUES: Record<string, Record<string, string>> = {
+  "required": {
+    project: "my-project",
+    customer_id: "default",
+    stage: "dev",
+    cloud: "azure",
+    default_location: "northeurope",
+    public_cloud_flag: "true",
+  },
+  "required for azure": {
+    resource_group_name: "my-resource-group",
+    dns_zone_name: "example.com",
+    dns_zone_resource_group_name: "my-dns-resource-group",
+    state_storage_account_name: "mystatestorage",
+    state_container_name: "tfstate",
+    state_resource_group_name: "my-state-resource-group",
+  },
+  "required for aws": {
+    state_bucket_name: "my-state-bucket",
+    state_region: "eu-north-1",
+  },
+};
+
+/** Every line stays valid YAML when the whole block is uncommented at once. */
+function renderDeploymentBlock(project: string | undefined): string {
+  const rows = Object.entries(REQUIRED_DEPLOYMENT_VALUES).flatMap(([requirement, values]) =>
+    Object.entries(values).map(([field, example]) => {
+      const live = field === "project" && project !== undefined;
+      return {
+        prefix: live ? "  " : "  # ",
+        entry: live ? `project: "${project}"` : `${field}: ${example}`,
+        note: `${requirement}; GitHub variable ${field.toUpperCase()}`,
+      };
+    }),
+  );
+  const width = Math.max(...rows.map(({ prefix, entry }) => prefix.length + entry.length));
+  const lines = rows.map(({ prefix, entry, note }) => `${(prefix + entry).padEnd(width)}  # ${note}`);
+  return [project === undefined ? "# deployment:" : "deployment:", ...lines].join("\n");
+}
+
+function renderDeployConfig({ project, environment }: ProjectValues): string {
   return `# yaml-language-server: $schema=${DEPLOY_CONFIG_SCHEMA_URL}
 # Deploy configuration read by the Deploy workflow (deploy-config input "default").
-# Required deployment values missing here are read from GitHub variables; setup fails if neither supplies them.
 # Nothing is deployed until at least one stack is defined. Add one with: stax add
 # Check the file with: stax validate config
 
-deployment:
-  project: "${project}"
-  customer_id: default
-  stage: dev
-  cloud: azure
-  default_location: northeurope
-  public_cloud_flag: true
-  # Azure deployments also require these values (or their corresponding GitHub variables):
-  # resource_group_name: my-resource-group
-  # dns_zone_name: example.com
-  # dns_zone_resource_group_name: my-dns-resource-group
-  # state_storage_account_name: mystatestorage
-  # state_container_name: tfstate
-  # state_resource_group_name: my-state-resource-group
-  # AWS deployments instead require these values (or their corresponding GitHub variables):
-  # state_bucket_name: my-state-bucket
-  # state_region: eu-north-1
+# Deployment values: setup needs every value marked "required", plus those required for your cloud.
+# Set each one at least as the GitHub variable named next to it, on the repository or the
+# "${environment}" Environment. A value uncommented here overrides that variable for this config.
+# Setup fails while a required value is missing.
+${renderDeploymentBlock(project)}
 
 # Optional: repositories providing stack sources or config files.
 # externalRepos:
@@ -89,7 +117,8 @@ stacks: []
 `;
 }
 
-export function renderProject({ project, environment }: ProjectValues): GeneratedFile[] {
+export function renderProject(values: ProjectValues): GeneratedFile[] {
+  const { environment } = values;
   const workflowPrefix = `${WORKFLOW_REPOSITORY}/.github/workflows`;
   const deployWorkflow = `name: Deploy
 
@@ -158,7 +187,7 @@ jobs:
 
   return [
     { path: DEPLOY_WORKFLOW_PATH, content: deployWorkflow },
-    { path: DEPLOY_CONFIG_PATH, content: renderDeployConfig(project) },
+    { path: DEPLOY_CONFIG_PATH, content: renderDeployConfig(values) },
   ];
 }
 

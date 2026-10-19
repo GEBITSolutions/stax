@@ -9,15 +9,16 @@ Generates a deploy wrapper and an empty stack list in a repository:
 | File | Content |
 |---|---|
 | `.github/workflows/deploy.yml` | Manual `Deploy` workflow calling `a-wf-setup-ci.yml` and `a-wf-deploy-levels.yml` from `GEBITSolutions/stax@main` |
-| `configs/default.yaml` | `deployment.project`, explicit starter deployment values, `stacks: []`, commented examples and a `yaml-language-server` schema link for editor completion |
+| `configs/default.yaml` | One commented `deployment` block listing every required deployment value with its GitHub variable (`deployment.project` live only when `--project` is given), `stacks: []`, commented examples and a `yaml-language-server` schema link for editor completion |
 
 ```bash
-stax init [directory] --project <name> --environment <github-environment> [--force]
+stax init [directory] --environment <github-environment> [--project <name>] [--force]
 ```
 
-- `--project`: lowercase letters, digits and hyphens, starting with a letter. Saved as `deployment.project` in `configs/default.yaml` for resource naming and state layout; the setup workflow does not take a `project` input.
 - `--environment`: default GitHub Environment in the deploy form.
-- Missing values are prompted for on a terminal; without a terminal, a missing value is an error.
+- `--project` (optional): lowercase letters, digits and hyphens, starting with a letter. Saved as `deployment.project` in `configs/default.yaml`; without it, the GitHub variable `PROJECT` supplies the value. The setup workflow does not take a `project` input. Never prompted for.
+- Deployment values are not asked for. The generated config lists all required ones in one block, each next to its GitHub variable. Set them at least as GitHub variables (repository or Environment); a value uncommented in the config overrides the variable.
+- A missing `--environment` is prompted for on a terminal; without a terminal, it is an error.
 - Existing files are never overwritten unless `--force` is given. Without it, nothing is written.
 
 Nothing is deployed until `configs/default.yaml` has at least one stack; add one with `stax add`. Set the required Azure resource, DNS and state deployment values in YAML or the matching GitHub variables before deploying; see [deployment configuration](../docs/docs/configuration.md).

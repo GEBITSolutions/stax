@@ -32,26 +32,42 @@ describe("value validation", () => {
 });
 
 describe("stax init", () => {
-  it("writes the scaffold from flags without prompting", () => {
+  it("writes the scaffold from flags without prompting; only the given project becomes a live deployment value", () => {
     const dir = mkdtempSync(join(tmpdir(), "stax-"));
     const result = runInit([dir, "--project", "demo", "--environment", "dev"]);
 
     expect(result.status).toBe(0);
     expect(parse(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8"))).toEqual({
-      deployment: {
-        project: "demo",
-        customer_id: "default",
-        stage: "dev",
-        cloud: "azure",
-        default_location: "northeurope",
-        public_cloud_flag: true,
-      },
+      deployment: { project: "demo" },
       stacks: [],
     });
     expect(parse(readFileSync(join(dir, DEPLOY_WORKFLOW_PATH), "utf8")).jobs.setup.with).not.toHaveProperty("project");
   });
 
-  it("fails instead of prompting when a value is missing and there is no terminal", () => {
+  it("treats the project as optional and leaves every deployment value to GitHub variables", () => {
+    const dir = mkdtempSync(join(tmpdir(), "stax-"));
+    const result = runInit([dir, "--environment", "dev"]);
+
+    expect(result.status).toBe(0);
+    expect(parse(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8"))).toEqual({ stacks: [] });
+  });
+
+  it("lists every required deployment value with its GitHub variable in the config", () => {
+    const dir = mkdtempSync(join(tmpdir(), "stax-"));
+    runInit([dir, "--environment", "dev"]);
+    const config = readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8");
+    const listed = [...config.matchAll(/^ {2}# ([a-z_]+): \S+ +# required[^;]*; GitHub variable ([A-Z_]+)$/gm)].map(([, field, variable]) => [field, variable]);
+    const required = [
+      "project", "customer_id", "stage", "cloud", "default_location", "public_cloud_flag",
+      "resource_group_name", "dns_zone_name", "dns_zone_resource_group_name",
+      "state_storage_account_name", "state_container_name", "state_resource_group_name",
+      "state_bucket_name", "state_region",
+    ];
+
+    expect(listed).toEqual(required.map((field) => [field, field.toUpperCase()]));
+  });
+
+  it("fails instead of prompting when the environment is missing and there is no terminal", () => {
     const dir = mkdtempSync(join(tmpdir(), "stax-"));
     const result = runInit([dir, "--project", "demo"]);
 
