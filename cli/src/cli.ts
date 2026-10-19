@@ -1,9 +1,11 @@
 #!/usr/bin/env node
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { relative, resolve } from "node:path";
-import { input } from "@inquirer/prompts";
+import { join, relative, resolve } from "node:path";
+import { input, select } from "@inquirer/prompts";
 import { Command } from "commander";
+import { addStackToConfig, listConfigs, slugify } from "./add.ts";
+import { schema, STACK_TYPES, requiredStackFields, stackFieldProblem } from "./schema.ts";
 import { renderProject, validateEnvironment, validateProject } from "./templates.ts";
 import { collectConfigFiles, isDeployConfigText, validateConfigText } from "./validate.ts";
 import { writeProject } from "./write.ts";
@@ -21,30 +23,49 @@ interface ValidateConfigFlags {
   strict: boolean;
 }
 
+interface AddFlags {
+  config?: string;
+  name?: string;
+  type?: string;
+  yes: boolean;
+}
+
+interface Question {
+  /** Value given on the command line; validated, never prompted for. */
+  given: string | undefined;
+  message: string;
+  /** Error shown when there is no value and no terminal to prompt on. */
+  missing: string;
+  validate: (value: string) => string | undefined;
+  /** Offered as a list instead of free text. */
+  choices?: string[];
+  fallback?: string;
+  /** Take `fallback` without prompting (--yes). */
+  acceptFallback?: boolean;
+}
+
 /**
- * Flag values win; missing values are prompted for on a terminal and are an
+ * Command-line values win; missing values are prompted for on a terminal and are an
  * error otherwise, so scripted runs never hang on a prompt.
  */
-async function resolveValue(
-  flagValue: string | undefined,
-  flag: string,
-  message: string,
-  validate: (value: string) => string | undefined,
-): Promise<string> {
-  if (flagValue !== undefined) {
-    const error = validate(flagValue);
+async function resolveValue(question: Question): Promise<string> {
+  const { given, validate, fallback } = question;
+  if (given !== undefined) {
+    const error = validate(given);
     if (error) throw new Error(error);
-    return flagValue;
+    return given;
   }
+  if (question.acceptFallback && fallback !== undefined) return fallback;
   if (!process.stdin.isTTY || !process.stdout.isTTY) {
-    throw new Error(`missing required option ${flag} (no terminal to prompt on)`);
+    throw new Error(`${question.missing} (no terminal to prompt on)`);
   }
-  return input({ message, validate: (value) => validate(value) ?? true });
+  if (question.choices) return select({ message: question.message, choices: question.choices, default: fallback });
+  return input({ message: question.message, default: fallback, validate: (value) => validate(value) ?? true });
 }
 
 const program = new Command()
   .name("stax")
-  .description("Scaffold and validate projects for the stax stack framework")
+  .description("Scaffold, extend and validate projects for the stax stack framework")
   .version(version);
 
 program
@@ -55,13 +76,18 @@ program
   .option("-e, --environment <name>", "default GitHub Environment for the deploy form")
   .option("-f, --force", "overwrite existing files", false)
   .action(async (directory: string, flags: InitFlags) => {
-    const project = await resolveValue(flags.project, "--project", "Project name:", validateProject);
-    const environment = await resolveValue(
-      flags.environment,
-      "--environment",
-      "Default GitHub Environment:",
-      validateEnvironment,
-    );
+    const project = await resolveValue({
+      given: flags.project,
+      message: "Project name:",
+      missing: "missing required option --project",
+      validate: validateProject,
+    });
+    const environment = await resolveValue({
+      given: flags.environment,
+      message: "Default GitHub Environment:",
+      missing: "missing required option --environment",
+      validate: validateEnvironment,
+    });
     const root = resolve(directory);
     const files = renderProject({ project, environment });
     await writeProject(root, files, flags.force);
@@ -69,8 +95,73 @@ program
     console.log(`
 Next steps:
   1. Create the GitHub Environment "${environment}" with the variables and secrets your stacks need.
-  2. Add stacks to configs/default.yaml.
+  2. Add stacks with: stax add
   3. Run the Deploy workflow with dry-run enabled.`);
+  });
+
+program
+  .command("add")
+  .description("Add a stack to a deploy config; the other fields its type supports are added as commented examples")
+  .argument("[directory]", "repository root containing configs/", ".")
+  .option("-c, --config <name>", "deploy config: configs/<name>.yaml")
+  .option("-n, --name <name>", "stack name; the id is derived from it")
+  .option("-t, --type <type>", "stack type")
+  .option("-y, --yes", "accept the example values of required fields instead of prompting", false)
+  .action(async (directory: string, flags: AddFlags) => {
+    const configsDir = join(directory, "configs");
+    const configs = listConfigs(resolve(configsDir));
+    if (configs.length === 0) throw new Error(`no deploy configs (.yaml) in ${configsDir}; run stax init first`);
+    const names = configs.map((config) => config.name);
+    const configName = await resolveValue({
+      given: flags.config,
+      message: "Deploy config:",
+      missing: "missing required option --config",
+      validate: (value) =>
+        names.includes(value) ? undefined : `unknown deploy config "${value}"; ${configsDir} has: ${names.join(", ")}`,
+      choices: names,
+      fallback: names.includes("default") ? "default" : names.length === 1 ? names[0] : undefined,
+      acceptFallback: flags.yes,
+    });
+    const name = await resolveValue({
+      given: flags.name,
+      message: "Stack name:",
+      missing: "missing required option --name",
+      validate: (value) => (slugify(value) === "" ? "the stack name needs at least one letter or digit" : undefined),
+    });
+    const type = await resolveValue({
+      given: flags.type,
+      message: "Stack type:",
+      missing: "missing required option --type",
+      validate: (value) =>
+        STACK_TYPES.includes(value) ? undefined : `unknown stack type "${value}"; expected one of: ${STACK_TYPES.join(", ")}`,
+      choices: STACK_TYPES,
+    });
+
+    const values: Record<string, string> = {};
+    for (const field of requiredStackFields(type)) {
+      const definition = schema.$defs.stack.properties[field];
+      const example = field === "folder" ? slugify(name) : definition?.examples?.[0];
+      const fallback = typeof example === "string" ? example : undefined;
+      values[field] = await resolveValue({
+        given: undefined,
+        message: definition?.description ? `${field} (${definition.description.replace(/\.$/, "")}):` : `${field}:`,
+        missing: `missing ${field} for the ${type} stack; pass --yes to accept "${fallback}"`,
+        validate: (value) => {
+          const problem = stackFieldProblem(field, value);
+          return problem && `${field}: ${problem}`;
+        },
+        choices: definition?.enum,
+        fallback,
+        acceptFallback: flags.yes,
+      });
+    }
+
+    const config = configs.find((candidate) => candidate.name === configName);
+    if (!config) throw new Error(`unknown deploy config "${configName}"`);
+    const { id, text } = addStackToConfig(readFileSync(config.path, "utf8"), { name, type, values });
+    writeFileSync(config.path, text);
+    console.log(`added stack "${id}" (${type}) to ${join(configsDir, `${configName}.yaml`)}
+Uncomment the example fields you need, then check the file with: stax validate config`);
   });
 
 program

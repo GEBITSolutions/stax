@@ -1,8 +1,9 @@
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
-import { Ajv2020, type ErrorObject } from "ajv/dist/2020.js";
+import type { ErrorObject } from "ajv/dist/2020.js";
 import { isMap, isScalar, LineCounter, parseDocument, type Document } from "yaml";
 import { isRecord } from "./guards.ts";
+import { schema, validateDeployConfig as validateSchema } from "./schema.ts";
 
 export type Severity = "error" | "warning";
 
@@ -17,16 +18,6 @@ type Path = (string | number)[];
 
 /** a-wf-deploy-levels runs dependency levels l0 to l13. */
 const MAX_LEVELS = 14;
-
-interface SchemaObject {
-  properties: Record<string, unknown>;
-}
-
-const schema = JSON.parse(
-  readFileSync(new URL("../schema/deploy-config.schema.json", import.meta.url), "utf8"),
-) as SchemaObject & { $defs: { stack: SchemaObject; externalRepo: SchemaObject } };
-
-const validateSchema = new Ajv2020({ allErrors: true, allowUnionTypes: true }).compile(schema);
 
 const KNOWN_KEYS = {
   root: Object.keys(schema.properties),

@@ -48987,6 +48987,19 @@ function validateGitHubPagesConfig(configs, globalVars) {
     }
 }
 
+const FOLDER_TYPES = ['terraform', 'opentofu', 'function-build-deploy'];
+/**
+ * Stack types that deploy a directory read it from folder; the id is only an
+ * identifier and never stands in for the directory.
+ */
+function validateStackFolder(config) {
+    if (config.type === undefined || !FOLDER_TYPES.includes(config.type))
+        return;
+    if (typeof config.folder !== 'string' || config.folder.trim() === '') {
+        throw new Error(`Stack "${config.id}" (${config.type}) needs folder: the stack directory, below stack_base_path for terraform/opentofu or below functions/ for function-build-deploy.`);
+    }
+}
+
 /**
  * The main function for the action.
  *
@@ -49122,6 +49135,7 @@ async function run() {
         validateGitHubPagesConfig(deploy_config, global_vars);
         for (const config of deploy_config) {
             validatePackerConfig(config);
+            validateStackFolder(config);
         }
         deploy_config = convert_implicit_to_explicit_dependencies(deploy_config);
         deploy_config = prune_external_dependencies(deploy_config);

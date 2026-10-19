@@ -39,7 +39,8 @@ export function validateEnvironment(value: string): string | undefined {
 
 const DEPLOY_CONFIG = `# yaml-language-server: $schema=${DEPLOY_CONFIG_SCHEMA_URL}
 # Deploy configuration read by the Deploy workflow (deploy-config input "default").
-# Nothing is deployed until at least one stack is defined. Check it with: stax validate config
+# Nothing is deployed until at least one stack is defined. Add one with: stax add
+# Check the file with: stax validate config
 
 # Optional: repositories providing stack sources or config files.
 # externalRepos:
@@ -57,6 +58,7 @@ stacks: []
 #  - id: "network"
 #    name: "Network"
 #    type: "opentofu"
+#    folder: "network"        # stack directory below stack_base_path
 #    opentofu_version: "1.8.1"
 #    location: "westeurope"
 #    stack_base_path: "terraform/stacks"

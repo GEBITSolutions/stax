@@ -35,11 +35,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Smoke stax init and validate
+      - name: Smoke stax init, add and validate
         run: |
           target="$(mktemp -d)"
           node dist/cli.js init "$target" --project smoke --environment dev
           test -f "$target/.github/workflows/deploy.yml"
-          node dist/cli.js validate config "$target/configs/default.yaml"
+          node dist/cli.js add "$target" --name "Network Hub" --type opentofu --yes
+          node dist/cli.js add "$target" --name Docs --type github-pages-site-deploy --yes
+          node dist/cli.js validate config "$target/configs/default.yaml" --strict
       - name: Validate this repository's deploy configs
         run: node dist/cli.js validate config ../configs -r --strict
