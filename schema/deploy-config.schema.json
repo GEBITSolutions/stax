@@ -5,6 +5,10 @@
   "description": "Deploy configuration read by a-wf-setup-ci. Stacks are deployed in dependency levels.",
   "type": "object",
   "properties": {
+    "deployment": {
+      "description": "Deployment context from this selected YAML. Missing values come directly from GitHub variables; sibling configs are not loaded.",
+      "$ref": "#/$defs/deployment"
+    },
     "externalRepos": {
       "description": "Repositories providing stack sources or config files, by alias. Stacks reference an alias with source_repo. An empty list means none.",
       "type": ["object", "array"],
@@ -26,6 +30,27 @@
     }
   },
   "$defs": {
+    "deploymentValue": { "type": ["string", "null"], "pattern": "^[^\\r\\n]*$" },
+    "deployment": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "project": { "description": "Project name; falls back to GitHub PROJECT.", "$ref": "#/$defs/deploymentValue" },
+        "customer_id": { "description": "Customer identifier; falls back to CUSTOMER_ID.", "$ref": "#/$defs/deploymentValue" },
+        "stage": { "description": "Deployment stage; falls back to STAGE.", "$ref": "#/$defs/deploymentValue" },
+        "cloud": { "description": "Azure or AWS, case-insensitive; falls back to CLOUD.", "type": ["string", "null"], "pattern": "^(?:[aA][zZ][uU][rR][eE]|[aA][wW][sS]|[^\\S\\r\\n]*)$" },
+        "default_location": { "description": "Cloud region; falls back to DEFAULT_LOCATION.", "$ref": "#/$defs/deploymentValue" },
+        "resource_group_name": { "description": "Azure resource group; falls back to RESOURCE_GROUP_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "public_cloud_flag": { "description": "Public-cloud flag; falls back to PUBLIC_CLOUD_FLAG. An explicit false overrides GitHub.", "type": ["boolean", "string", "null"], "pattern": "^(?:true|false|[^\\S\\r\\n]*)$" },
+        "dns_zone_name": { "description": "DNS zone; falls back to DNS_ZONE_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "dns_zone_resource_group_name": { "description": "Azure DNS resource group; falls back to DNS_ZONE_RESOURCE_GROUP_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "state_storage_account_name": { "description": "Azure state account; falls back to STATE_STORAGE_ACCOUNT_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "state_container_name": { "description": "Azure state container; falls back to STATE_CONTAINER_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "state_resource_group_name": { "description": "Azure state resource group; falls back to STATE_RESOURCE_GROUP_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "state_bucket_name": { "description": "AWS state bucket; falls back to STATE_BUCKET_NAME.", "$ref": "#/$defs/deploymentValue" },
+        "state_region": { "description": "AWS state region; falls back to STATE_REGION.", "$ref": "#/$defs/deploymentValue" }
+      }
+    },
     "externalRepo": {
       "type": "object",
       "properties": {

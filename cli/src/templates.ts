@@ -10,7 +10,7 @@ export const DEPLOY_CONFIG_SCHEMA_URL =
   "https://raw.githubusercontent.com/GEBITSolutions/stax/main/schema/deploy-config.schema.json";
 
 export interface ProjectValues {
-  /** Project name passed to setup-ci; used for resource naming and state layout. */
+  /** Project name stored in configs/default.yaml deployment.project for resource naming and state layout. */
   project: string;
   /** Default GitHub Environment offered by the deploy dispatch form. */
   environment: string;
@@ -37,10 +37,30 @@ export function validateEnvironment(value: string): string | undefined {
   return `invalid environment "${value}": use letters, digits, ".", "_" and "-"`;
 }
 
-const DEPLOY_CONFIG = `# yaml-language-server: $schema=${DEPLOY_CONFIG_SCHEMA_URL}
+function renderDeployConfig(project: string): string {
+  return `# yaml-language-server: $schema=${DEPLOY_CONFIG_SCHEMA_URL}
 # Deploy configuration read by the Deploy workflow (deploy-config input "default").
+# Required deployment values missing here are read from GitHub variables; setup fails if neither supplies them.
 # Nothing is deployed until at least one stack is defined. Add one with: stax add
 # Check the file with: stax validate config
+
+deployment:
+  project: "${project}"
+  customer_id: default
+  stage: dev
+  cloud: azure
+  default_location: northeurope
+  public_cloud_flag: true
+  # Azure deployments also require these values (or their corresponding GitHub variables):
+  # resource_group_name: my-resource-group
+  # dns_zone_name: example.com
+  # dns_zone_resource_group_name: my-dns-resource-group
+  # state_storage_account_name: mystatestorage
+  # state_container_name: tfstate
+  # state_resource_group_name: my-state-resource-group
+  # AWS deployments instead require these values (or their corresponding GitHub variables):
+  # state_bucket_name: my-state-bucket
+  # state_region: eu-north-1
 
 # Optional: repositories providing stack sources or config files.
 # externalRepos:
@@ -67,6 +87,7 @@ stacks: []
 #      - global.pipeline.var.project
 #      - global.pipeline.var.stage
 `;
+}
 
 export function renderProject({ project, environment }: ProjectValues): GeneratedFile[] {
   const workflowPrefix = `${WORKFLOW_REPOSITORY}/.github/workflows`;
@@ -116,7 +137,6 @@ jobs:
     uses: ${workflowPrefix}/a-wf-setup-ci.yml@${WORKFLOW_REF}
     secrets: inherit
     with:
-      project: "${project}"
       environment: \${{ inputs.environment }}
       stack_filter: \${{ inputs.stack-filter }}
       dry-run: \${{ inputs.dry-run }}
@@ -138,7 +158,7 @@ jobs:
 
   return [
     { path: DEPLOY_WORKFLOW_PATH, content: deployWorkflow },
-    { path: DEPLOY_CONFIG_PATH, content: DEPLOY_CONFIG },
+    { path: DEPLOY_CONFIG_PATH, content: renderDeployConfig(project) },
   ];
 }
 

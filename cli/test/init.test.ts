@@ -4,13 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { parse } from "yaml";
-import {
-  DEPLOY_CONFIG_PATH,
-  DEPLOY_WORKFLOW_PATH,
-  renderProject,
-  validateEnvironment,
-  validateProject,
-} from "../src/templates.ts";
+import { DEPLOY_CONFIG_PATH, DEPLOY_WORKFLOW_PATH, validateEnvironment, validateProject } from "../src/templates.ts";
 
 const CLI = join(import.meta.dirname, "../src/cli.ts");
 
@@ -18,18 +12,6 @@ function runInit(args: string[]) {
   // stdin from /dev/null: no terminal, so the CLI must not prompt.
   return spawnSync(process.execPath, [CLI, "init", ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
 }
-
-describe("renderProject", () => {
-  const files = renderProject({ project: "demo", environment: "dev.example.com" });
-  const byPath: Record<string, string> = Object.fromEntries(files.map((file) => [file.path, file.content]));
-
-  it("produces YAML the framework can parse", () => {
-    const workflow = parse(byPath[DEPLOY_WORKFLOW_PATH]!);
-    expect(workflow.jobs.setup.with.project).toBe("demo");
-    expect(workflow.on.workflow_dispatch.inputs.environment.default).toBe("dev.example.com");
-    expect(parse(byPath[DEPLOY_CONFIG_PATH]!)).toEqual({ stacks: [] });
-  });
-});
 
 describe("value validation", () => {
   it.each(["a", "shop", "shop-2"])("accepts project %j", (value) => {
@@ -55,8 +37,18 @@ describe("stax init", () => {
     const result = runInit([dir, "--project", "demo", "--environment", "dev"]);
 
     expect(result.status).toBe(0);
-    expect(readFileSync(join(dir, DEPLOY_WORKFLOW_PATH), "utf8")).toContain('project: "demo"');
-    expect(existsSync(join(dir, DEPLOY_CONFIG_PATH))).toBe(true);
+    expect(parse(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8"))).toEqual({
+      deployment: {
+        project: "demo",
+        customer_id: "default",
+        stage: "dev",
+        cloud: "azure",
+        default_location: "northeurope",
+        public_cloud_flag: true,
+      },
+      stacks: [],
+    });
+    expect(parse(readFileSync(join(dir, DEPLOY_WORKFLOW_PATH), "utf8")).jobs.setup.with).not.toHaveProperty("project");
   });
 
   it("fails instead of prompting when a value is missing and there is no terminal", () => {
@@ -90,6 +82,6 @@ describe("stax init", () => {
 
     const forced = runInit([dir, "-p", "demo", "-e", "dev", "--force"]);
     expect(forced.status).toBe(0);
-    expect(parse(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8"))).toEqual({ stacks: [] });
+    expect(parse(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8")).deployment.project).toBe("demo");
   });
 });

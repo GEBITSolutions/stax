@@ -1,3 +1,11 @@
+deployment:
+  project: stax
+  customer_id: default
+  stage: dev
+  cloud: azure
+  default_location: northeurope
+  public_cloud_flag: true
+
 stacks:
   - id: stax-docs
     name: STAX Documentation
