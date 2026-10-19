@@ -15,3 +15,7 @@ uv run zensical serve --dev-addr 127.0.0.1:8017
 ```
 
 Open <http://127.0.0.1:8017/>. To build the static site, run `uv run zensical build --clean` from `docs/`; output goes to `docs/site/`.
+
+## License
+
+[GPL-3.0-only](LICENSE), except [`.github/actions/get-next-version-typescript-action`](.github/actions/get-next-version-typescript-action): a port of the MIT-licensed [thenativeweb/get-next-version](https://github.com/thenativeweb/get-next-version) that stays under the [MIT License](.github/actions/get-next-version-typescript-action/LICENSE).

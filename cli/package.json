@@ -4,6 +4,7 @@
   "description": "Scaffold, extend and validate projects for the stax stack framework",
   "private": true,
   "type": "module",
+  "license": "GPL-3.0-only",
   "bin": {
     "stax": "dist/cli.js"
   },
