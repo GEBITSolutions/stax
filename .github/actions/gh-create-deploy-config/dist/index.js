@@ -48690,7 +48690,7 @@ function apply_stack_filter(deploy_config, expanded_stack_filter) {
 }
 
 function generate_layerdeployment(deploy_config, layer, global_tf_vars, layer_deployments) {
-    let layer_deployment = [];
+    let layer_deployment;
     if (layer === 0) {
         layer_deployment = deploy_config
             .filter((config) => (config.depends_on?.length || 0) === 0)
@@ -49023,7 +49023,7 @@ async function run() {
                 }
             }
             catch (_e) {
-                throw new Error(`Cannot parse deploy-depth to integer.`);
+                throw new Error(`Cannot parse deploy-depth to integer.`, { cause: _e });
             }
         }
         let deploy_config = [];
@@ -49042,7 +49042,7 @@ async function run() {
 
     with:
           deploy-config: \${{ toJSON(steps.read-deploy-config.outputs.deploy-config) }}
-    `);
+    `, { cause: _e });
         }
         let global_vars = {};
         try {
@@ -49053,7 +49053,6 @@ async function run() {
             else {
                 global_vars = JSON.parse(global_vars_JSON);
             }
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
         }
         catch (e) {
             throw new Error(`Cannot parse JSON global-vars.
@@ -49061,7 +49060,7 @@ async function run() {
 
     with:
           global-vars: \${{ toJSON(inputs.global-vars) }}
-    `);
+    `, { cause: e });
         }
         const external_repos_JSON = coreExports.getInput('external-repos', {
             required: false
@@ -49077,7 +49076,6 @@ async function run() {
             else {
                 external_repos = JSON.parse(external_repos_JSON);
             }
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
         }
         catch (e) {
             throw new Error(`Cannot parse JSON external-repos.
@@ -49085,7 +49083,7 @@ async function run() {
 
     with:
           external-repos: \${{ steps.read-deploy-config.outputs.external-repos }}
-    `);
+    `, { cause: e });
         }
         let deploy_configs = [];
         let use_deploy_configs = false;
@@ -49104,7 +49102,7 @@ async function run() {
 
     with:
           deploy-configs: \${{ steps.read-deploy-config.outputs.deploy-configs }}
-    `);
+    `, { cause: _e });
         }
         // Unify both inputs onto a single merge path (D2/D8): the new multi-document
         // input wins when present; otherwise the legacy scalar inputs are wrapped in

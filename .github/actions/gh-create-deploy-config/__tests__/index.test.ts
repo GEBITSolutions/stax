@@ -1,14 +1,18 @@
 import { jest } from '@jest/globals'
 import * as core from '../__fixtures__/core.js'
-import {
-  apply_stack_filter as original_apply_stack_filter,
-  generate_stackfilter as original_generate_stackfilter
-} from '../src/stackFilterN.js'
-import { generate_layerdeployment as original_generate_layerdeployment } from '../src/layerDeploymentN.js'
-import {
-  convert_implicit_to_explicit_dependencies as original_convert_implicit_to_explicit_dependencies,
-  prune_external_dependencies as original_prune_external_dependencies
-} from '../src/stackDependencyN.js'
+jest.unstable_mockModule('@actions/core', () => core)
+
+const {
+  apply_stack_filter: original_apply_stack_filter,
+  generate_stackfilter: original_generate_stackfilter
+} = await import('../src/stackFilterN.js')
+const { generate_layerdeployment: original_generate_layerdeployment } =
+  await import('../src/layerDeploymentN.js')
+const {
+  convert_implicit_to_explicit_dependencies:
+    original_convert_implicit_to_explicit_dependencies,
+  prune_external_dependencies: original_prune_external_dependencies
+} = await import('../src/stackDependencyN.js')
 
 const apply_stack_filter = jest.fn(original_apply_stack_filter)
 const generate_stackfilter = jest.fn(original_generate_stackfilter)
@@ -20,7 +24,6 @@ const prune_external_dependencies = jest.fn(
   original_prune_external_dependencies
 )
 
-jest.unstable_mockModule('@actions/core', () => core)
 jest.unstable_mockModule('../src/stackFilterN.js', () => ({
   apply_stack_filter,
   generate_stackfilter
@@ -170,6 +173,15 @@ describe('index.ts', () => {
     await run()
 
     expect(core.setFailed).not.toHaveBeenCalled()
+    expect(core.warning).toHaveBeenCalledTimes(2)
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'Dependency ext-bootstrap of stack platform not found'
+      )
+    )
+    expect(core.warning).toHaveBeenCalledWith(
+      expect.stringContaining('Dependency ext-shared of stack app not found')
+    )
     const outputCall = (core.setOutput as jest.Mock).mock.calls.find(
       ([name]) => name === 'layer-deployments'
     )
@@ -234,7 +246,6 @@ describe('index.ts', () => {
     generate_layerdeployment.mockImplementation(
       original_generate_layerdeployment
     )
-    core.warning.mockImplementation(() => undefined)
 
     core.getInput.mockImplementation((name) => {
       if (name === 'deploy-depth') return '5'

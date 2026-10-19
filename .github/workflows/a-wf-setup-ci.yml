@@ -135,7 +135,7 @@ jobs:
       CONFIG_VERSION: "${{ vars.CONFIG_VERSION || 'main' }}"
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Prepare artifact prefix
       id: prefix
@@ -196,7 +196,7 @@ jobs:
 
     - name: Checkout External Configs
       if: env.CONFIG_LOCAL == 'false'
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         path: ext_configs
         repository: ${{ env.CONFIG_REPO }}
@@ -491,7 +491,7 @@ jobs:
         } >> "$GITHUB_OUTPUT"
 
     - name: Checkout Shared Code Actions
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
         ref: ${{ inputs.actions-version || 'main' }}
@@ -525,7 +525,7 @@ jobs:
         echo "ci-config=${ci_config}" >> "$GITHUB_OUTPUT"
 
     - name: Upload Layer Deployment Artifact
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ steps.prefix.outputs.value }}layer-deployment-json
         path: ${{ steps.prefix.outputs.value }}layer_deployments.json
