@@ -1,6 +1,6 @@
 # stax CLI
 
-Scaffolds and validates projects for the stax stack framework. Package `@gebitsolutions/stax-cli`, binary `stax`. Requires Node.js 24 or later.
+Scaffolds, extends and validates projects for the stax stack framework. Package `@gebitsolutions/stax-cli`, binary `stax`. Requires Node.js 24 or later.
 
 ## `stax init`
 
@@ -20,9 +20,27 @@ stax init [directory] --project <name> --environment <github-environment> [--for
 - Missing values are prompted for on a terminal; without a terminal, a missing value is an error.
 - Existing files are never overwritten unless `--force` is given. Without it, nothing is written.
 
-Nothing is deployed until `configs/default.yaml` has at least one stack.
+Nothing is deployed until `configs/default.yaml` has at least one stack; add one with `stax add`.
 
 The generated caller includes `pages: write` and `id-token: write` for GitHub Pages stacks. Existing callers upgrading to the Pages-enabled framework must add `pages: write` to their existing workflow permissions so nested workflow validation succeeds. A Pages-only caller can use the setup workflow's `skip-azure-credentials-validation: true`; see the repository's dedicated `configs/stax-docs.yaml` and `.github/workflows/docs.yml` example.
+
+## `stax add`
+
+Adds a stack to a deploy config in `configs/`:
+
+```bash
+stax add [directory] [--config <name>] [--name <stack name>] [--type <type>] [--yes]
+```
+
+- `--config`: `configs/<name>.yaml`, the name the Deploy workflow takes. Without it, the existing configs are offered. With `--yes`, `default` (or the only config) is used.
+- `--name`: display name. The id is derived from it: lowercase letters and digits joined by dashes, plus six random digits, e.g. `Network Hub` → `network-hub-482913`. The id is only an identifier; nothing derives paths from it.
+- `--type`: one of the stack types in the schema; offered as a list when missing.
+- Fields the type requires are prompted for, with the schema example as default (`folder` defaults to the name's slug). `--yes` accepts the defaults.
+- Every other field the type reads is added as a commented example with its description. Uncomment the ones you need.
+- The stack is appended after the last stack; the rest of the file stays byte for byte. A stack that would make the config invalid (e.g. a second `github-pages-site-deploy` stack) is not written.
+- Without a terminal, a missing value is an error.
+
+The field list and examples come from the schema: each stack property lists the types that read it in `x-stax-types` (`"all"` for every type) and its example in `examples`.
 
 ## `stax validate config`
 
@@ -43,10 +61,14 @@ stax validate config other-dir -r --strict
 |---|---|
 | Invalid YAML; wrong field types (e.g. `local_backend: "false"` instead of a boolean) | Fields the schema does not know (often typos such as `depend_on`) |
 | Missing `id` or `type`; unknown `type`; more than one `github-pages-site-deploy` stack or `destroy` on it | `depends_on` or `stack.<id>.var.<key>` pointing to a stack in another config |
-| Type-specific required fields: Packer `packer_directory`/`packer_version`, `s3-site-deploy` `location`, `script` `script`, `bizep` `template`, `function-build-deploy` `runtime` | `source_repo` alias not defined in this file (configs deployed together share `externalRepos`) |
+| Type-specific required fields: `folder` for `terraform`/`opentofu`/`function-build-deploy`, Packer `packer_directory`/`packer_version`, `s3-site-deploy` `location`, `script` `script`, `bizep` `template`, `function-build-deploy` `runtime` | `source_repo` alias not defined in this file (configs deployed together share `externalRepos`) |
 | Packer paths that are absolute, contain `..`, backslashes, empty segments or control characters; non-exact `packer_version` | No stacks defined |
 | Duplicate stack ids; malformed `stack.<id>.var.<key>` references | |
 | Dependency cycles (including through `stack.<id>...` inputs); dependency chains deeper than 14 levels | |
+
+### `folder` is required
+
+`terraform`, `opentofu` and `function-build-deploy` stacks must set `folder`: the stack directory below `stack_base_path` (default `terraform/stacks`) or below `functions/`. The pipeline no longer falls back to the stack id, and setup fails for a stack without `folder`. To migrate a stack that relied on the fallback, add `folder: <its id>`.
 
 ## Development
 

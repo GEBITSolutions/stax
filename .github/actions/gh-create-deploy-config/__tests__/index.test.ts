@@ -464,7 +464,7 @@ describe('index.ts', () => {
         return JSON.stringify([
           {
             sourceFile: 'infra.yaml',
-            stacks: [{ id: 'infra', type: 'terraform' }]
+            stacks: [{ id: 'infra', type: 'terraform', folder: 'infra' }]
           },
           {
             sourceFile: 'pages.yaml',
@@ -524,7 +524,7 @@ describe('index.ts', () => {
       if (name === 'deploy-config')
         return JSON.stringify([
           { id: 'docs', type: 'github-pages-site-deploy' },
-          { id: 'infra', type: 'terraform' }
+          { id: 'infra', type: 'terraform', folder: 'infra' }
         ])
       return ''
     })
@@ -585,7 +585,12 @@ describe('index.ts', () => {
     core.getInput.mockImplementation((name) => {
       if (name === 'deploy-config')
         return JSON.stringify([
-          { id: 'infra', type: 'terraform', site_source_type: 'custom' }
+          {
+            id: 'infra',
+            type: 'terraform',
+            folder: 'infra',
+            site_source_type: 'custom'
+          }
         ])
       if (name === 'global-vars') return JSON.stringify({ destroy: 'true' })
       return ''
@@ -601,6 +606,7 @@ describe('index.ts', () => {
           {
             id: 'infra',
             type: 'terraform',
+            folder: 'infra',
             site_source_type: 'custom',
             layer: 0
           }

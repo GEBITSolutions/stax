@@ -16,6 +16,7 @@ import { mergeDeployConfigDocuments } from './mergeConfigs.js'
 import { resolveSourceVersions } from './resolveSourceVersion.js'
 import { validatePackerConfig } from './validatePackerConfig.js'
 import { validateGitHubPagesConfig } from './validateGitHubPagesConfig.js'
+import { validateStackFolder } from './validateStackFolder.js'
 
 /**
  * The main function for the action.
@@ -176,6 +177,7 @@ export async function run(): Promise<void> {
 
     for (const config of deploy_config) {
       validatePackerConfig(config)
+      validateStackFolder(config)
     }
 
     deploy_config = convert_implicit_to_explicit_dependencies(deploy_config)
