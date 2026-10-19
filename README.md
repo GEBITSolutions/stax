@@ -18,4 +18,4 @@ Open <http://127.0.0.1:8017/>. To build the static site, run `uv run zensical bu
 
 ## License
 
-[GPL-3.0-only](LICENSE). `.github/actions/gh-data-transfer/v2/LICENSE` keeps the MIT notice of the GitHub action template that action is based on.
+[GPL-3.0-only](LICENSE), except [`.github/actions/get-next-version-typescript-action`](.github/actions/get-next-version-typescript-action): a port of the MIT-licensed [thenativeweb/get-next-version](https://github.com/thenativeweb/get-next-version) that stays under the [MIT License](.github/actions/get-next-version-typescript-action/LICENSE).

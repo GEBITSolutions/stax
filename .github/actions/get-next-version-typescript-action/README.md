@@ -6,6 +6,8 @@ title: 'get-next-version (TypeScript action)'
 
 Calculates the next semantic version based on conventional commits and git tags.
 
+A TypeScript port of [thenativeweb/get-next-version](https://github.com/thenativeweb/get-next-version) (Go). Like the original, it is licensed under the [MIT License](LICENSE).
+
 ## Inputs
 
 - `prefix`: Optional version prefix (e.g. `v`).
