@@ -2,7 +2,7 @@
 
 ## Deployment context
 
-Put deployment values under the top-level `deployment` mapping in `configs/<name>.yaml`, or set them as GitHub variables. The setup workflow reads this mapping to build the deployment environment. `stax init` lists every required value, each next to its GitHub variable, in one commented `deployment` block of `configs/default.yaml`. `stax init --project shop` additionally writes `deployment.project: shop` live; it does not pass `project` as a reusable-workflow input.
+Put deployment values under the top-level `deployment` mapping in `configs/<name>.yaml`, or set them as GitHub variables. The setup workflow reads this mapping to build the deployment environment. `stax init` lists every required value, each next to its GitHub variable, in one commented `deployment` block of `configs/default.yaml`. `stax init --project shop` additionally writes `deployment.project: shop` live.
 
 ```yaml
 # configs/default.yaml
