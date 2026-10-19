@@ -15,3 +15,7 @@ uv run zensical serve --dev-addr 127.0.0.1:8017
 ```
 
 Open <http://127.0.0.1:8017/>. To build the static site, run `uv run zensical build --clean` from `docs/`; output goes to `docs/site/`.
+
+## License
+
+[GPL-3.0-only](LICENSE). `.github/actions/gh-data-transfer/v2/LICENSE` keeps the MIT notice of the GitHub action template that action is based on.
