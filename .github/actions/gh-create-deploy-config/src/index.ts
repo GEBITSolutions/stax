@@ -15,6 +15,7 @@ import { evaluateRunner } from './evaluateRunner.js'
 import { mergeDeployConfigDocuments } from './mergeConfigs.js'
 import { resolveSourceVersions } from './resolveSourceVersion.js'
 import { validatePackerConfig } from './validatePackerConfig.js'
+import { validateGitHubPagesConfig } from './validateGitHubPagesConfig.js'
 
 /**
  * The main function for the action.
@@ -56,7 +57,7 @@ export async function run(): Promise<void> {
           throw new Error('Deploy-depth is not a number.')
         }
       } catch (_e) {
-        throw new Error(`Cannot parse deploy-depth to integer.`)
+        throw new Error(`Cannot parse deploy-depth to integer.`, { cause: _e })
       }
     }
     let deploy_config: Array<ITerraformConfig> = []
@@ -69,12 +70,15 @@ export async function run(): Promise<void> {
         deploy_config = JSON.parse(deploy_config_json)
       }
     } catch (_e) {
-      throw new Error(`Cannot parse JSON deploy-config.
+      throw new Error(
+        `Cannot parse JSON deploy-config.
     Make sure you add the following to this action:
 
     with:
           deploy-config: \${{ toJSON(steps.read-deploy-config.outputs.deploy-config) }}
-    `)
+    `,
+        { cause: _e }
+      )
     }
 
     let global_vars: Record<string, string | boolean> = {}
@@ -88,14 +92,16 @@ export async function run(): Promise<void> {
           string | boolean
         >
       }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      throw new Error(`Cannot parse JSON global-vars.
+      throw new Error(
+        `Cannot parse JSON global-vars.
     Make sure you add the following to this action:
 
     with:
           global-vars: \${{ toJSON(inputs.global-vars) }}
-    `)
+    `,
+        { cause: e }
+      )
     }
 
     const external_repos_JSON: string = core.getInput('external-repos', {
@@ -116,14 +122,16 @@ export async function run(): Promise<void> {
       } else {
         external_repos = JSON.parse(external_repos_JSON) as IExternalRepos
       }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
     } catch (e) {
-      throw new Error(`Cannot parse JSON external-repos.
+      throw new Error(
+        `Cannot parse JSON external-repos.
     Make sure you add the following to this action:
 
     with:
           external-repos: \${{ steps.read-deploy-config.outputs.external-repos }}
-    `)
+    `,
+        { cause: e }
+      )
     }
 
     let deploy_configs: IDeployConfigDocument[] = []
@@ -137,12 +145,15 @@ export async function run(): Promise<void> {
         }
       }
     } catch (_e) {
-      throw new Error(`Cannot parse JSON deploy-configs.
+      throw new Error(
+        `Cannot parse JSON deploy-configs.
     Make sure you add the following to this action:
 
     with:
           deploy-configs: \${{ steps.read-deploy-config.outputs.deploy-configs }}
-    `)
+    `,
+        { cause: _e }
+      )
     }
 
     // Unify both inputs onto a single merge path (D2/D8): the new multi-document
@@ -161,6 +172,7 @@ export async function run(): Promise<void> {
     const merged = mergeDeployConfigDocuments(documents)
     deploy_config = merged.stacks
     external_repos = merged.externalRepos
+    validateGitHubPagesConfig(deploy_config, global_vars)
 
     for (const config of deploy_config) {
       validatePackerConfig(config)
@@ -231,8 +243,7 @@ export async function run(): Promise<void> {
     layer_deployments = layer_deployments.filter((layer) => layer.length > 0)
 
     const environment: string | undefined = global_vars['environment'] as
-      | string
-      | undefined
+      string | undefined
     if (environment !== undefined) {
       for (let i = 0; i < layer_deployments.length; i++) {
         for (let j = 0; j < layer_deployments[i].length; j++) {

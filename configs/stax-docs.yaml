@@ -1,0 +1,7 @@
+stacks:
+  - id: stax-docs
+    name: STAX Documentation
+    type: github-pages-site-deploy
+    site_source_type: zensical
+    docs_path: docs
+    depends_on: []

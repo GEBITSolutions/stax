@@ -48690,7 +48690,7 @@ function apply_stack_filter(deploy_config, expanded_stack_filter) {
 }
 
 function generate_layerdeployment(deploy_config, layer, global_tf_vars, layer_deployments) {
-    let layer_deployment = [];
+    let layer_deployment;
     if (layer === 0) {
         layer_deployment = deploy_config
             .filter((config) => (config.depends_on?.length || 0) === 0)
@@ -48963,6 +48963,30 @@ function validatePackerConfig(config) {
     }
 }
 
+function validateGitHubPagesConfig(configs, globalVars) {
+    let pagesStack;
+    for (const config of configs) {
+        if (config.type !== 'github-pages-site-deploy')
+            continue;
+        if (pagesStack !== undefined) {
+            throw new Error(`More than one github-pages-site-deploy stack is configured: "${pagesStack.id}" and "${config.id}".`);
+        }
+        pagesStack = config;
+        if (config.site_source_type === undefined) {
+            config.site_source_type = 'mkdocs';
+        }
+        else if (config.site_source_type !== 'mkdocs' &&
+            config.site_source_type !== 'zensical' &&
+            config.site_source_type !== 'prebuilt') {
+            throw new Error(`GitHub Pages stack "${config.id}" has invalid site_source_type: ${JSON.stringify(config.site_source_type)}. Expected mkdocs, zensical, or prebuilt.`);
+        }
+    }
+    if (pagesStack !== undefined &&
+        (globalVars['destroy'] === true || globalVars['destroy'] === 'true')) {
+        throw new Error(`GitHub Pages stack "${pagesStack.id}" does not support destroy=true.`);
+    }
+}
+
 /**
  * The main function for the action.
  *
@@ -48999,7 +49023,7 @@ async function run() {
                 }
             }
             catch (_e) {
-                throw new Error(`Cannot parse deploy-depth to integer.`);
+                throw new Error(`Cannot parse deploy-depth to integer.`, { cause: _e });
             }
         }
         let deploy_config = [];
@@ -49018,7 +49042,7 @@ async function run() {
 
     with:
           deploy-config: \${{ toJSON(steps.read-deploy-config.outputs.deploy-config) }}
-    `);
+    `, { cause: _e });
         }
         let global_vars = {};
         try {
@@ -49029,7 +49053,6 @@ async function run() {
             else {
                 global_vars = JSON.parse(global_vars_JSON);
             }
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
         }
         catch (e) {
             throw new Error(`Cannot parse JSON global-vars.
@@ -49037,7 +49060,7 @@ async function run() {
 
     with:
           global-vars: \${{ toJSON(inputs.global-vars) }}
-    `);
+    `, { cause: e });
         }
         const external_repos_JSON = coreExports.getInput('external-repos', {
             required: false
@@ -49053,7 +49076,6 @@ async function run() {
             else {
                 external_repos = JSON.parse(external_repos_JSON);
             }
-            // eslint-disable-next-line @typescript-eslint/no-unused-vars
         }
         catch (e) {
             throw new Error(`Cannot parse JSON external-repos.
@@ -49061,7 +49083,7 @@ async function run() {
 
     with:
           external-repos: \${{ steps.read-deploy-config.outputs.external-repos }}
-    `);
+    `, { cause: e });
         }
         let deploy_configs = [];
         let use_deploy_configs = false;
@@ -49080,7 +49102,7 @@ async function run() {
 
     with:
           deploy-configs: \${{ steps.read-deploy-config.outputs.deploy-configs }}
-    `);
+    `, { cause: _e });
         }
         // Unify both inputs onto a single merge path (D2/D8): the new multi-document
         // input wins when present; otherwise the legacy scalar inputs are wrapped in
@@ -49097,6 +49119,7 @@ async function run() {
         const merged = mergeDeployConfigDocuments(documents);
         deploy_config = merged.stacks;
         external_repos = merged.externalRepos;
+        validateGitHubPagesConfig(deploy_config, global_vars);
         for (const config of deploy_config) {
             validatePackerConfig(config);
         }

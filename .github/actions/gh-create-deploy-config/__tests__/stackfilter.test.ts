@@ -1,5 +1,10 @@
-import { generate_stackfilter } from '../src/stackFilterN.js'
+import { jest } from '@jest/globals'
+import * as core from '../__fixtures__/core.js'
 import { ITerraformConfig } from '../src/types.js'
+
+jest.unstable_mockModule('@actions/core', () => core)
+
+const { generate_stackfilter } = await import('../src/stackFilterN.js')
 
 describe('generate_stackfilter', () => {
   const mockConfig: ITerraformConfig[] = [
@@ -121,5 +126,8 @@ describe('generate_stackfilter', () => {
     )
     // Should still return the stack id even though it's not found (warning is issued)
     expect(result).toContain('non-existent-stack')
+    expect(core.warning).toHaveBeenCalledWith(
+      'Stack non-existent-stack not found in config'
+    )
   })
 })

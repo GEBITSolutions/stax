@@ -23,7 +23,8 @@ export default {
   moduleFileExtensions: ['ts', 'js'],
   preset: 'ts-jest',
   reporters: ['default'],
-  resolver: 'ts-jest-resolver',
+  // Resolve NodeNext .js import specifiers to their TypeScript sources.
+  moduleNameMapper: { '^(\\.{1,2}/.*)\\.js$': '$1' },
   testEnvironment: 'node',
   testMatch: ['**/*.test.ts'],
   testPathIgnorePatterns: ['/dist/', '/node_modules/'],

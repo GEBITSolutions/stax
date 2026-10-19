@@ -6,7 +6,7 @@ export function generate_layerdeployment(
   global_tf_vars: Record<string, string | boolean>,
   layer_deployments: readonly ITerraformLayerConfig[][]
 ): ITerraformLayerConfig[] {
-  let layer_deployment: Array<ITerraformLayerConfig> = []
+  let layer_deployment: Array<ITerraformLayerConfig>
   if (layer === 0) {
     layer_deployment = deploy_config
       .filter(

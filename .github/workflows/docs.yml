@@ -1,0 +1,95 @@
+---
+name: Documentation
+on:
+  pull_request:
+    paths:
+      - docs/**
+      - configs/stax-docs.yaml
+      - .github/workflows/docs.yml
+      - .github/workflows/a-wf-setup-ci.yml
+      - .github/workflows/a-wf-deploy-levels.yml
+      - .github/workflows/a-wf-deploy-stack.yml
+      - .github/workflows/a-wf-deploy-stack-github-pages-site.yml
+      - .github/actions/static-site-build/**
+      - .github/actions/gh-create-deploy-config/**
+      - .github/scripts/github-pages-config*.mjs
+  push:
+    branches: [main]
+    paths:
+      - docs/**
+      - configs/stax-docs.yaml
+      - .github/workflows/docs.yml
+      - .github/workflows/a-wf-setup-ci.yml
+      - .github/workflows/a-wf-deploy-levels.yml
+      - .github/workflows/a-wf-deploy-stack.yml
+      - .github/workflows/a-wf-deploy-stack-github-pages-site.yml
+      - .github/actions/static-site-build/**
+      - .github/actions/gh-create-deploy-config/**
+      - .github/scripts/github-pages-config*.mjs
+  workflow_dispatch:
+    inputs:
+      dry-run:
+        description: Build only, without publishing
+        type: boolean
+        default: false
+
+# The nested stack dispatcher also calls existing package-producing workflows.
+# These permissions must be available through the whole reusable-workflow chain.
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: stax-docs-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  validate:
+    name: Validate Pages configuration
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .github/actions/gh-create-deploy-config/package-lock.json
+      - run: node --test .github/scripts/github-pages-config.test.mjs
+      - run: npm ci
+        working-directory: .github/actions/gh-create-deploy-config
+      - run: npm test -- --runInBand
+        working-directory: .github/actions/gh-create-deploy-config
+
+  setup:
+    name: Resolve documentation stack
+    needs: validate
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      project: stax
+      # Configuration/build metadata must not require production Pages approval.
+      environment: docs
+      stack_filter: ""
+      release_config_filepath: configs/stax-docs.yaml
+      skip-azure-credentials-validation: true
+      dry-run: >-
+        ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' ||
+            (github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  deploy-levels:
+    name: Documentation stack
+    needs: setup
+    uses: ./.github/workflows/a-wf-deploy-levels.yml
+    with:
+      ci_config: ${{ needs.setup.outputs.ci-config }}
+      env: ${{ needs.setup.outputs.env }}
+      default_location: ${{ needs.setup.outputs.default-location }}
+      external_repos: ${{ needs.setup.outputs.external-repos }}
+      actions-version: ${{ github.sha }}
+      actions-repository: ${{ github.repository }}

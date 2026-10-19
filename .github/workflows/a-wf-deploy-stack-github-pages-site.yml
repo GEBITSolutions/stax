@@ -1,0 +1,171 @@
+---
+name: ".Deploy GitHub Pages Site Workflow (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      data:
+        type: string
+        required: true
+      env:
+        type: string
+        required: true
+      external-repos:
+        type: string
+        default: "{}"
+      stack-repository:
+        type: string
+        default: ""
+      stack-repository-version:
+        type: string
+        default: ""
+      actions-repository:
+        type: string
+        default: "GEBITSolutions/stax"
+      actions-version:
+        type: string
+        default: "main"
+    secrets:
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+    outputs:
+      site-url:
+        description: "Published URL, or the canonical build URL during dry run."
+        value: ${{ jobs.deploy.outputs.site-url || jobs.build.outputs.site-url }}
+
+jobs:
+  build:
+    name: "Build Pages: ${{ fromJSON(inputs.data).id }}"
+    runs-on: ${{ fromJSON(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      pages: read
+    outputs:
+      publish: ${{ steps.config.outputs.publish }}
+      artifact-name: ${{ steps.config.outputs.artifact-name }}
+      site-url: ${{ steps.site-url.outputs.value }}
+    steps:
+      - name: Checkout framework actions
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ inputs.actions-repository }}
+          ref: ${{ inputs.actions-version }}
+          persist-credentials: false
+
+      - name: Resolve Pages stack
+        id: config
+        uses: actions/github-script@v8
+        env:
+          STACK_DATA: ${{ inputs.data }}
+          STACK_ENV: ${{ inputs.env }}
+          EXTERNAL_REPOS: ${{ inputs.external-repos }}
+          STACK_REPOSITORY: ${{ inputs.stack-repository }}
+          STACK_VERSION: ${{ inputs.stack-repository-version }}
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { resolvePagesConfig } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/github-pages-config.mjs`).href);
+            const values = resolvePagesConfig({
+              data: JSON.parse(process.env.STACK_DATA),
+              env: JSON.parse(process.env.STACK_ENV),
+              externalRepos: JSON.parse(process.env.EXTERNAL_REPOS),
+              repository: process.env.GITHUB_REPOSITORY,
+              sha: process.env.GITHUB_SHA,
+              eventName: process.env.GITHUB_EVENT_NAME,
+              runId: process.env.GITHUB_RUN_ID,
+              runAttempt: process.env.GITHUB_RUN_ATTEMPT,
+              stackRepository: process.env.STACK_REPOSITORY,
+              stackVersion: process.env.STACK_VERSION,
+            });
+            for (const [key, value] of Object.entries(values)) core.setOutput(key, value);
+
+      - name: Generate source repository token
+        id: app-token
+        if: >-
+          steps.config.outputs.source-repository != github.repository &&
+          steps.config.outputs.source-owner == github.repository_owner &&
+          (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '')
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+          owner: ${{ steps.config.outputs.source-owner }}
+          repositories: ${{ steps.config.outputs.source-name }}
+
+      - name: Check configured source token
+        if: steps.config.outputs.token-secret != ''
+        shell: bash
+        env:
+          SOURCE_TOKEN: ${{ secrets[steps.config.outputs.token-secret] }}
+        run: |
+          if [[ -z "$SOURCE_TOKEN" ]]; then
+            echo "::error::The source repository token secret is not available to the called workflow."
+            exit 1
+          fi
+
+      - name: Checkout site source
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ steps.config.outputs.source-repository }}
+          ref: ${{ steps.config.outputs.source-version }}
+          path: source_repo
+          token: ${{ secrets[steps.config.outputs.token-secret] || steps.app-token.outputs.token || github.token }}
+          persist-credentials: false
+
+      - name: Read Pages metadata
+        id: pages
+        if: steps.config.outputs.publish == 'true'
+        uses: actions/configure-pages@v6
+
+      - name: Resolve canonical URL
+        id: site-url
+        uses: actions/github-script@v8
+        env:
+          STACK_DATA: ${{ inputs.data }}
+          PAGES_BASE_URL: ${{ steps.pages.outputs.base_url }}
+          FALLBACK_URL: ${{ steps.config.outputs.site-url }}
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { normalizeSiteUrl } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/github-pages-config.mjs`).href);
+            const data = JSON.parse(process.env.STACK_DATA);
+            core.setOutput('value', normalizeSiteUrl(data.site_url || process.env.PAGES_BASE_URL || process.env.FALLBACK_URL));
+
+      - name: Build static site
+        id: build
+        uses: ./.github/actions/static-site-build
+        with:
+          source-type: ${{ steps.config.outputs.source-type }}
+          docs-path: ${{ fromJSON(inputs.data).docs_path || 'docs' }}
+          app-location: ${{ fromJSON(inputs.data).app_location || '' }}
+          site-url: ${{ steps.site-url.outputs.value }}
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v5
+        with:
+          name: ${{ steps.config.outputs.artifact-name }}
+          path: ${{ steps.build.outputs.site-dir }}
+
+  deploy:
+    name: "Publish Pages: ${{ fromJSON(inputs.data).id }}"
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    concurrency:
+      group: github-pages-${{ github.repository }}
+      cancel-in-progress: false
+    outputs:
+      site-url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v5
+        with:
+          artifact_name: ${{ needs.build.outputs.artifact-name }}
