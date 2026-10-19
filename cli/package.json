@@ -1,14 +1,15 @@
 {
   "name": "@gebitsolutions/stax-cli",
   "version": "0.1.0",
-  "description": "Scaffold projects for the stax stack framework",
+  "description": "Scaffold and validate projects for the stax stack framework",
   "private": true,
   "type": "module",
   "bin": {
     "stax": "dist/cli.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "schema"
   ],
   "engines": {
     "node": ">=24"
@@ -16,16 +17,20 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "sync-schema": "node -e \"require('node:fs').cpSync('../schema', 'schema', { recursive: true })\"",
+    "prebuild": "npm run sync-schema",
+    "pretest": "npm run sync-schema"
   },
   "dependencies": {
     "@inquirer/prompts": "^8.7.3",
-    "commander": "^15.0.0"
+    "ajv": "^8.20.0",
+    "commander": "^15.0.0",
+    "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
     "typescript": "^7.0.2",
-    "vitest": "^5.0.5",
-    "yaml": "^2.9.1"
+    "vitest": "^5.0.5"
   }
 }

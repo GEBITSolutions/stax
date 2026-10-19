@@ -1,0 +1,148 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/GEBITSolutions/stax/main/schema/deploy-config.schema.json",
+  "title": "stax deploy config",
+  "description": "Deploy configuration read by a-wf-setup-ci. Stacks are deployed in dependency levels.",
+  "type": "object",
+  "properties": {
+    "externalRepos": {
+      "description": "Repositories providing stack sources or config files, by alias. Stacks reference an alias with source_repo. An empty list means none.",
+      "type": ["object", "array"],
+      "maxItems": 0,
+      "additionalProperties": {
+        "type": "array",
+        "minItems": 1,
+        "items": { "$ref": "#/$defs/externalRepo" }
+      }
+    },
+    "globals": {
+      "description": "Values readable by every stack in this file as global.config.var.<key>.",
+      "type": "object"
+    },
+    "stacks": {
+      "description": "Stacks deployed by this config.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/stack" }
+    }
+  },
+  "$defs": {
+    "externalRepo": {
+      "type": "object",
+      "properties": {
+        "repoURL": { "description": "Git URL, e.g. github.com/<org>/<repo>.git.", "type": "string", "minLength": 1 },
+        "targetRevision": { "description": "Default branch, tag or commit.", "type": "string", "minLength": 1 },
+        "token": { "description": "Name of the GitHub secret holding a read token.", "type": "string", "minLength": 1 },
+        "use_app_token": { "description": "Use the GitHub App token; only works for repositories in the caller's org.", "type": "boolean" }
+      },
+      "required": ["repoURL", "targetRevision"]
+    },
+    "stringList": { "type": "array", "items": { "type": "string" } },
+    "relativePath": { "type": "string", "minLength": 1 },
+    "stack": {
+      "type": "object",
+      "properties": {
+        "id": { "description": "Unique stack id; other stacks reference it in depends_on and stack.<id>.var.<key> inputs.", "type": "string", "minLength": 1 },
+        "name": { "description": "Display name.", "type": "string" },
+        "type": {
+          "description": "Executor that deploys the stack.",
+          "enum": [
+            "terraform",
+            "opentofu",
+            "packer",
+            "docker-build-push",
+            "function-build-deploy",
+            "rpmbuild",
+            "swa-site-deploy",
+            "swa-docs-site-deploy",
+            "s3-site-deploy",
+            "script",
+            "bizep",
+            "github-pages-site-deploy"
+          ]
+        },
+        "if": { "description": "Condition evaluated against pipeline globals.", "type": "string" },
+        "depends_on": { "description": "Stack ids deployed before this one.", "$ref": "#/$defs/stringList" },
+        "input": {
+          "description": "Inputs: reference strings (global.pipeline.var.<key>, stack.<id>.var.<key>, ...) or key/value maps.",
+          "type": "array",
+          "items": { "type": ["string", "object"] }
+        },
+        "tf-vars": { "type": "object", "additionalProperties": { "type": "string" } },
+        "stack-groups": { "$ref": "#/$defs/stringList" },
+        "output-var": { "description": "Outputs exported as variables.", "$ref": "#/$defs/stringList" },
+        "output-secret": { "description": "Outputs exported as secrets.", "$ref": "#/$defs/stringList" },
+        "globals": { "type": "object" },
+        "runs-on": { "description": "Runner label.", "type": "string" },
+        "location": { "description": "Cloud region.", "type": "string" },
+        "source_repo": { "description": "externalRepos alias holding the stack source.", "type": "string" },
+        "source_version": { "description": "Branch, tag or commit; overrides the alias targetRevision.", "type": "string" },
+        "destroy": { "type": ["boolean", "string"] },
+
+        "folder": { "description": "Stack folder below stack_base_path; defaults to id.", "type": "string" },
+        "stack_base_path": { "description": "Defaults to terraform/stacks.", "type": "string" },
+        "cloud": { "enum": ["azure", "aws"] },
+        "terraform_version": { "type": "string" },
+        "opentofu_version": { "type": "string" },
+        "local_backend": { "description": "Use local state instead of the remote backend.", "type": "boolean" },
+        "local_terraform_state": { "description": "Alias of local_backend.", "type": "boolean" },
+        "upload_plan_artifact": { "type": "boolean" },
+        "checkov_skip_checks": { "$ref": "#/$defs/stringList" },
+
+        "packer_directory": { "description": "Packer project path, relative to the source repository.", "$ref": "#/$defs/relativePath" },
+        "packer_template": { "description": "Template file or directory relative to packer_directory; defaults to '.'.", "$ref": "#/$defs/relativePath" },
+        "packer_version": { "description": "Exact Packer version, e.g. 1.11.2.", "type": "string", "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$" },
+
+        "image_name": { "type": "string" },
+        "dockerfile_folder": { "type": "string" },
+        "no_cache": { "type": "boolean" },
+        "registry": { "type": "string" },
+        "registy": { "description": "Deprecated misspelling of registry; still read and wins over registry.", "type": "string" },
+        "input-gh-secrets": { "type": "object", "additionalProperties": { "type": "string" } },
+        "output-gh-vars": { "type": "object", "additionalProperties": { "type": "string" } },
+
+        "runtime": { "enum": ["python", "node"] },
+        "version": { "description": "Runtime version for function-build-deploy.", "type": "string" },
+
+        "rpm_repo_baseurl": { "type": "string" },
+        "pulp_rpm_repository": { "type": "string" },
+        "rpm_gpg_name": { "type": "string" },
+
+        "swa_source_type": { "type": "string" },
+        "site_source_type": { "description": "Static site source; defaults to mkdocs.", "enum": ["mkdocs", "zensical", "prebuilt"] },
+        "site_url": { "description": "Public site URL for github-pages-site-deploy.", "type": "string", "pattern": "^https?://" },
+        "docs_path": { "$ref": "#/$defs/relativePath" },
+        "site_source": { "type": "string" },
+        "app_location": { "type": "string" },
+        "config_file": { "type": "string" },
+        "config_file_location": { "type": "string" },
+
+        "script": { "description": "Script path relative to the source checkout.", "type": "string", "minLength": 1 },
+        "resource_prefix": { "type": "string" },
+        "template": { "description": "Bicep template path for bizep stacks.", "type": "string", "minLength": 1 }
+      },
+      "required": ["id", "type"],
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "packer" } }, "required": ["type"] },
+          "then": { "required": ["packer_directory", "packer_version"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "s3-site-deploy" } }, "required": ["type"] },
+          "then": { "required": ["location"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "script" } }, "required": ["type"] },
+          "then": { "required": ["script"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "bizep" } }, "required": ["type"] },
+          "then": { "required": ["template"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "function-build-deploy" } }, "required": ["type"] },
+          "then": { "required": ["runtime"] }
+        }
+      ]
+    }
+  }
+}

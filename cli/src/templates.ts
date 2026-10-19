@@ -1,12 +1,13 @@
 /**
- * Reusable workflows the generated wrapper calls. Unpinned while the
- * framework workflows move into GEBITSolutions/stax.
+ * Reusable workflows the generated wrapper calls. Unpinned until stax publishes releases.
  */
 export const WORKFLOW_REPOSITORY = "GEBITSolutions/stax";
 export const WORKFLOW_REF = "main";
 
 export const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
 export const DEPLOY_CONFIG_PATH = "configs/default.yaml";
+export const DEPLOY_CONFIG_SCHEMA_URL =
+  "https://raw.githubusercontent.com/GEBITSolutions/stax/main/schema/deploy-config.schema.json";
 
 export interface ProjectValues {
   /** Project name passed to setup-ci; used for resource naming and state layout. */
@@ -36,8 +37,9 @@ export function validateEnvironment(value: string): string | undefined {
   return `invalid environment "${value}": use letters, digits, ".", "_" and "-"`;
 }
 
-const DEPLOY_CONFIG = `# Deploy configuration read by the Deploy workflow (deploy-config input "default").
-# Setup fails with "No stacks found" until at least one stack is defined.
+const DEPLOY_CONFIG = `# yaml-language-server: $schema=${DEPLOY_CONFIG_SCHEMA_URL}
+# Deploy configuration read by the Deploy workflow (deploy-config input "default").
+# Nothing is deployed until at least one stack is defined. Check it with: stax validate config
 
 # Optional: repositories providing stack sources or config files.
 # externalRepos:
