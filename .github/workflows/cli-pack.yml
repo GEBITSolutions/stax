@@ -1,0 +1,44 @@
+name: CLI pack
+
+# Builds and tests @gebit/stax-cli at the release version and uploads the npm tarball as the
+# stax-cli artifact. release.yml attaches it to the pre-release and later publishes it to npm.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version written into package.json
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pack:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cli
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          package-manager-cache: false # no caches in release builds
+      - name: Set the package version to the release version
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm pack
+      - uses: actions/upload-artifact@v7
+        with:
+          name: stax-cli
+          path: cli/gebit-stax-cli-${{ inputs.version }}.tgz
+          if-no-files-found: error

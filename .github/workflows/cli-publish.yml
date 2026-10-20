@@ -1,0 +1,38 @@
+name: CLI publish
+
+# Publishes the tarball packed by cli-pack.yml (the file attached to the release) to npm.
+# npm trusted publishing (OIDC) identifies the top-level workflow, so the package's
+# trusted publisher names release.yml, which must grant id-token: write.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version of the packed tarball
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-publish
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # npm trusted publishing accepts GitHub-hosted runners only.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC) and provenance
+    steps:
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: stax-cli
+      - run: npm publish "./gebit-stax-cli-${{ inputs.version }}.tgz" --access public

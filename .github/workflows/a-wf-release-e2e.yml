@@ -1,0 +1,52 @@
+---
+name: ". Release Phase: E2E Dispatch"
+
+# Dispatches the given workflows on the release tag.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version; the dispatched workflows run on this tag."
+        required: true
+        type: string
+      workflows:
+        description: "JSON array of workflow filenames to dispatch."
+        required: true
+        type: string
+
+permissions:
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Dispatch Terraform E2E workflows
+      uses: actions/github-script@v8
+      env:
+        E2E_REF: ${{ inputs.version }}
+        E2E_WORKFLOWS: ${{ inputs.workflows }}
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const owner = context.repo.owner;
+          const repo = context.repo.repo;
+          const ref = process.env.E2E_REF;
+          const workflows = JSON.parse(process.env.E2E_WORKFLOWS || '[]');
+
+          if (!Array.isArray(workflows) || workflows.length === 0) {
+            console.log('No E2E workflows configured for dispatch.');
+            return;
+          }
+
+          for (const workflowId of workflows) {
+            await github.rest.actions.createWorkflowDispatch({
+              owner,
+              repo,
+              workflow_id: workflowId,
+              ref
+            });
+
+            console.log(`Dispatched ${workflowId} on ${ref}`);
+          }

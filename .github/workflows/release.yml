@@ -1,6 +1,10 @@
 ---
 name: "\U0001F4E6 Release"
 
+# Releases the workflows and the CLI under one version. Composes the a-wf-release-*
+# phases directly so the CLI is packed once the version is known, attached to the
+# pre-release, and published to npm only after the release is approved and published.
+
 on:
   workflow_dispatch:
   push:
@@ -8,23 +12,49 @@ on:
     - main
 
 permissions:
-  contents: write
-  pull-requests: write
-  actions: write
-  id-token: write # cli-release.yml: npm trusted publishing checks this workflow file
+  contents: read
 
 jobs:
-  release:
-    name: "Create Release"
-    uses: ./.github/workflows/a-wf-release.yml
+  version:
+    name: "Version"
+    uses: ./.github/workflows/a-wf-release-version.yml
+    secrets: inherit
+
+  cli-pack:
+    name: "Pack CLI"
+    needs: version
+    if: ${{ needs.version.outputs.has-next-version == 'true' }}
+    uses: ./.github/workflows/cli-pack.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+
+  prepare:
+    name: "Pre-release"
+    needs: [version, cli-pack]
+    uses: ./.github/workflows/a-wf-release-prepare.yml
+    secrets: inherit
+    permissions:
+      contents: read
+      actions: read
+    with:
+      version: ${{ needs.version.outputs.version }}
+      fix-actions-and-workflow-versions: ${{ 'true' }}
+      assets-artifact: stax-cli
+
+  publish:
+    name: "Publish"
+    needs: [version, prepare]
+    uses: ./.github/workflows/a-wf-release-publish.yml
     secrets: inherit
     with:
-      fix-actions-and-workflow-versions: ${{ 'true' }}
+      version: ${{ needs.version.outputs.version }}
 
-  cli:
+  cli-publish:
     name: "Publish CLI to npm"
-    needs: release
-    if: ${{ needs.release.outputs.has-next-version == 'true' }}
-    uses: ./.github/workflows/cli-release.yml
+    needs: [version, publish]
+    uses: ./.github/workflows/cli-publish.yml
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing checks this workflow file (release.yml)
     with:
-      version: ${{ needs.release.outputs.version }}
+      version: ${{ needs.version.outputs.version }}
