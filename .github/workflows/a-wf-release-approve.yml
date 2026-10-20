@@ -1,0 +1,26 @@
+---
+name: ". Release Phase: Approval"
+
+# Waits for approval through an environment with required reviewers. Callers put it in
+# front of steps that must only run once a release is approved, e.g. a-wf-release-publish.yml.
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: "Environment whose protection rules gate the release."
+        required: false
+        type: string
+        default: "publish-release"
+
+permissions: {}
+
+jobs:
+  approve:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment }}
+    steps:
+    - name: Release approved
+      run: echo "Approved through environment ${ENVIRONMENT}"
+      env:
+        ENVIRONMENT: ${{ inputs.environment }}

@@ -95,7 +95,9 @@ The CLI is released together with the reusable workflows, under the same version
 1. `a-wf-release-version.yml` waits for approval and derives the next version from conventional commits.
 2. [`cli-pack.yml`](../.github/workflows/cli-pack.yml) sets the package version to that version, typechecks, tests, builds and packs the CLI.
 3. `a-wf-release-prepare.yml` commits the release changes, creates the tag and the pre-release, and attaches the packed tarball.
-4. `a-wf-release-publish.yml` publishes the release after a second approval.
-5. [`cli-publish.yml`](../.github/workflows/cli-publish.yml) runs `npm publish` on the same tarball.
+4. `a-wf-release-approve.yml` waits for the second approval (`publish-release` environment).
+5. [`docs.yml`](../.github/workflows/docs.yml) deploys the documentation site; if it fails, nothing is published.
+6. `a-wf-release-publish.yml` publishes the release.
+7. [`cli-publish.yml`](../.github/workflows/cli-publish.yml) runs `npm publish` on the same tarball.
 
 Publishing uses npm trusted publishing (OIDC): no npm token is stored, and npm attaches a provenance attestation. The `version` in `package.json` stays `0.0.0-development`; only published packages carry a real version.

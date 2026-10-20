@@ -82,8 +82,12 @@ jobs:
       prev-version: ${{ needs.version.outputs.prev-version }}
       release-status: pre-release
 
+  approve:
+    needs: prepare
+    uses: ./.github/workflows/a-wf-release-approve.yml
+
   publish:
-    needs: [version, prepare]
+    needs: [version, approve]
     uses: ./.github/workflows/a-wf-release-publish.yml
     secrets: inherit
     with:

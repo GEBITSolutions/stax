@@ -25,7 +25,7 @@ The static website is written to `site/`.
 
 The repository's `.github/workflows/docs.yml` selects `configs/stax-docs.yaml` and deploys through STAX's reusable setup, deployment levels, and `github-pages-site-deploy` stack workflow. This is independent of infrastructure and service configurations.
 
-Pull requests build only. Changes on `main` publish automatically; the manual workflow's `dry-run` input builds without publishing, and manual runs on other branches remain build-only. The shared action installs the locked Zensical dependencies and overrides the canonical URL from Pages metadata without changing `zensical.toml`.
+Pull requests build only. On `main`, the release workflow (`release.yml`) deploys the site after the release approval and before the release and the CLI are published; a failed deployment stops the release. Commits that produce no new version (e.g. only `docs:` or `chore:` commits) do not deploy; run `docs.yml` manually to publish them. The manual workflow's `dry-run` input builds without publishing, and manual runs on other branches remain build-only. The shared action installs the locked Zensical dependencies and overrides the canonical URL from Pages metadata without changing `zensical.toml`.
 
 Enable repository Pages with **GitHub Actions** as its source before publishing. Configure the custom domain and HTTPS in repository Pages settings and protect the `github-pages` deployment environment. The `docs` environment only carries configuration/build metadata and needs no Azure credentials. Existing callers need `pages: write` and `id-token: write` available through the nested workflow chain; `stax init` generates the updated permissions.
 

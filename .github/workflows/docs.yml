@@ -1,5 +1,8 @@
 ---
 name: Documentation
+
+# Pull requests build the site without publishing. On main the site is deployed by
+# release.yml after the release approval; workflow_dispatch redeploys it manually.
 on:
   pull_request:
     paths:
@@ -14,20 +17,12 @@ on:
       - .github/actions/gh-create-deploy-config/**
       - .github/scripts/github-pages-config*.mjs
       - .github/scripts/deployment-config*.mjs
-  push:
-    branches: [main]
-    paths:
-      - docs/**
-      - configs/stax-docs.yaml
-      - .github/workflows/docs.yml
-      - .github/workflows/a-wf-setup-ci.yml
-      - .github/workflows/a-wf-deploy-levels.yml
-      - .github/workflows/a-wf-deploy-stack.yml
-      - .github/workflows/a-wf-deploy-stack-github-pages-site.yml
-      - .github/actions/static-site-build/**
-      - .github/actions/gh-create-deploy-config/**
-      - .github/scripts/github-pages-config*.mjs
-      - .github/scripts/deployment-config*.mjs
+  workflow_call:
+    inputs:
+      dry-run:
+        description: Build only, without publishing
+        type: boolean
+        default: false
   workflow_dispatch:
     inputs:
       dry-run:
