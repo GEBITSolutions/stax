@@ -21,7 +21,7 @@ on:
       actions-version:
         type: string
         required: false
-        default: "main"
+        default: "1.0.0"
     outputs:
       image_id:
         description: "Full Azure Compute Gallery image version resource ID after replication is complete"

@@ -56,7 +56,7 @@ on:
       actions-version:
         required: false
         type: string
-        default: "main"
+        default: "1.0.0"
         description: "Github ref (branch/tag/sha) for shared actions."
     outputs:
       default-location:
