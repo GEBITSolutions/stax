@@ -1,6 +1,10 @@
 # stax CLI
 
-Scaffolds, extends and validates projects for the stax stack framework. Package `@gebitsolutions/stax-cli`, binary `stax`. Requires Node.js 24 or later.
+Scaffolds, extends and validates projects for the stax stack framework. Package [`@gebit/stax-cli`](https://www.npmjs.com/package/@gebit/stax-cli), binary `stax`. Requires Node.js 24 or later.
+
+```bash
+npm install -g @gebit/stax-cli
+```
 
 ## `stax init`
 
@@ -83,3 +87,12 @@ npm test            # copies ../schema first
 npm run build
 npm run sync-schema && node src/cli.ts validate config ../path/to/configs   # runs from source (Node 24 type stripping)
 ```
+
+## Releasing
+
+The CLI is released together with the reusable workflows, under the same version. [`release.yml`](../.github/workflows/release.yml) runs on every push to `main`:
+
+1. `a-wf-release.yml` derives the next version from conventional commits, waits for approval, creates the pre-release and tag, and publishes the release after a second approval.
+2. Once that has finished, [`cli-release.yml`](../.github/workflows/cli-release.yml) builds the CLI from the release tag. It sets the package version to the release version, then typechecks, tests and runs `npm publish`.
+
+Publishing uses npm trusted publishing (OIDC): no npm token is stored, and npm attaches a provenance attestation. The `version` in `package.json` stays `0.0.0-development`; only published packages carry a real version.

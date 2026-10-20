@@ -29,6 +29,13 @@ on:
         required: false
         type: string
         default: "false"
+    outputs:
+      has-next-version:
+        description: "'true' when commits since the last release produced a new version."
+        value: ${{ jobs.get-next-version.outputs.hasNextVersion }}
+      version:
+        description: "The new version; also the Git tag of the release."
+        value: ${{ jobs.get-next-version.outputs.version }}
 
 permissions:
   contents: write

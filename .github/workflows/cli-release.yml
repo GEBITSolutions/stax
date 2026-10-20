@@ -1,0 +1,50 @@
+name: CLI release
+
+# Publishes @gebit/stax-cli to npm. Called by release.yml after a-wf-release.yml has
+# published a release, so the CLI carries the repository's release version.
+# npm trusted publishing (OIDC) identifies the top-level workflow, so the package's
+# trusted publisher names release.yml, which must grant id-token: write.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: Release version, also the Git tag to build from
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cli-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # npm trusted publishing accepts GitHub-hosted runners only.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm trusted publishing (OIDC) and provenance
+    defaults:
+      run:
+        working-directory: cli
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.version }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false # no caches in release builds
+      - name: Set the package version to the release version
+        run: npm version "$VERSION" --no-git-tag-version --allow-same-version
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - run: npm publish
