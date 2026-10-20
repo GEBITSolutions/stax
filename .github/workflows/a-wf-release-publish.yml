@@ -1,8 +1,8 @@
 ---
 name: ". Release Phase: Publish"
 
-# Promotes the pre-release to a release after the publish-release environment approval,
-# then deletes older pre-releases and their release branches.
+# Promotes the pre-release to a release, then deletes older pre-releases and their release
+# branches. Gate it behind a-wf-release-approve.yml.
 
 on:
   workflow_call:
@@ -55,7 +55,6 @@ jobs:
     needs:
     - get-pre-release
     runs-on: ubuntu-latest
-    environment: "publish-release"
     steps:
     - name: Generate GitHub App Token
       id: app-token
