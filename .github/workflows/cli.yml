@@ -1,14 +1,8 @@
 name: CLI
 
+# Pull requests only: on main, release.yml's cli-pack job typechecks, tests and builds the CLI.
 on:
   pull_request:
-    paths:
-      - cli/**
-      - schema/**
-      - configs/**
-      - .github/workflows/cli.yml
-  push:
-    branches: [main]
     paths:
       - cli/**
       - schema/**
