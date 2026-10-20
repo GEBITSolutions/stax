@@ -1,6 +1,10 @@
 # stax CLI
 
-Scaffolds, extends and validates projects for the stax stack framework. Package `@gebitsolutions/stax-cli`, binary `stax`. Requires Node.js 24 or later.
+Scaffolds, extends and validates projects for the stax stack framework. Package [`@gebit/stax-cli`](https://www.npmjs.com/package/@gebit/stax-cli), binary `stax`. Requires Node.js 24 or later.
+
+```bash
+npm install -g @gebit/stax-cli
+```
 
 ## `stax init`
 
@@ -83,3 +87,15 @@ npm test            # copies ../schema first
 npm run build
 npm run sync-schema && node src/cli.ts validate config ../path/to/configs   # runs from source (Node 24 type stripping)
 ```
+
+## Releasing
+
+[`.github/workflows/cli-release.yml`](../.github/workflows/cli-release.yml) publishes the package to npm when a `cli-v<version>` tag is pushed. It authenticates through npm trusted publishing (OIDC), so no npm token is stored, and npm attaches a provenance attestation. The job fails if the tag does not match the `version` in `package.json`.
+
+1. In a pull request, bump the version: `npm version <x.y.z> --no-git-tag-version` in `cli/`. Merge it.
+2. Tag the merge commit on `main` and push the tag:
+
+   ```bash
+   git tag cli-v<x.y.z> origin/main
+   git push origin cli-v<x.y.z>
+   ```

@@ -18,7 +18,13 @@
 
 ## Install
 
-The `stax` CLI needs Node.js 24 or later. Until it is published to npm, install it from this repository:
+The `stax` CLI needs Node.js 24 or later:
+
+```bash
+npm install -g @gebit/stax-cli
+```
+
+To run it from a checkout instead:
 
 ```bash
 git clone https://github.com/GEBITSolutions/stax.git
@@ -58,7 +64,7 @@ Having trouble? Open an [issue](https://github.com/GEBITSolutions/stax/issues).
 
 | Path | Contents |
 | --- | --- |
-| [cli](cli) | `@gebitsolutions/stax-cli`: the `stax` command (`init`, `add`, `validate config`) |
+| [cli](cli) | `@gebit/stax-cli`: the `stax` command (`init`, `add`, `validate config`) |
 | [schema](schema) | JSON Schema for deploy configs, used by the CLI and by editors for completion |
 | [.github/workflows](.github/workflows) | Reusable workflows: `a-wf-setup-ci.yml` reads the deploy config, `a-wf-deploy-levels.yml` deploys stacks level by level |
 | [.github/actions](.github/actions) | Actions the workflows build on: deploy-config generation, stack inputs, versioning, static sites, Terraform |
