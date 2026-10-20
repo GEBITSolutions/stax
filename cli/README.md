@@ -90,12 +90,9 @@ npm run sync-schema && node src/cli.ts validate config ../path/to/configs   # ru
 
 ## Releasing
 
-[`.github/workflows/cli-release.yml`](../.github/workflows/cli-release.yml) publishes the package to npm when a `cli-v<version>` tag is pushed. It authenticates through npm trusted publishing (OIDC), so no npm token is stored, and npm attaches a provenance attestation. The job fails if the tag does not match the `version` in `package.json`.
+The CLI is released together with the reusable workflows, under the same version. [`release.yml`](../.github/workflows/release.yml) runs on every push to `main`:
 
-1. In a pull request, bump the version: `npm version <x.y.z> --no-git-tag-version` in `cli/`. Merge it.
-2. Tag the merge commit on `main` and push the tag:
+1. `a-wf-release.yml` derives the next version from conventional commits, waits for approval, creates the pre-release and tag, and publishes the release after a second approval.
+2. Once that has finished, [`cli-release.yml`](../.github/workflows/cli-release.yml) builds the CLI from the release tag. It sets the package version to the release version, then typechecks, tests and runs `npm publish`.
 
-   ```bash
-   git tag cli-v<x.y.z> origin/main
-   git push origin cli-v<x.y.z>
-   ```
+Publishing uses npm trusted publishing (OIDC): no npm token is stored, and npm attaches a provenance attestation. The `version` in `package.json` stays `0.0.0-development`; only published packages carry a real version.

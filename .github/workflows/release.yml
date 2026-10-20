@@ -1,0 +1,30 @@
+---
+name: "\U0001F4E6 Release"
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+    - main
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+  id-token: write # cli-release.yml: npm trusted publishing checks this workflow file
+
+jobs:
+  release:
+    name: "Create Release"
+    uses: ./.github/workflows/a-wf-release.yml
+    secrets: inherit
+    with:
+      fix-actions-and-workflow-versions: ${{ 'true' }}
+
+  cli:
+    name: "Publish CLI to npm"
+    needs: release
+    if: ${{ needs.release.outputs.has-next-version == 'true' }}
+    uses: ./.github/workflows/cli-release.yml
+    with:
+      version: ${{ needs.release.outputs.version }}

@@ -1,6 +1,6 @@
 {
   "name": "@gebit/stax-cli",
-  "version": "0.1.0",
+  "version": "0.0.0-development",
   "description": "Scaffold, extend and validate projects for the stax stack framework",
   "type": "module",
   "license": "GPL-3.0-only",
