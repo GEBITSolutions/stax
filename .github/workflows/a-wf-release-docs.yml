@@ -1,0 +1,107 @@
+---
+name: ". Release Phase: MkDocs"
+
+# Deploys versioned MkDocs documentation to GitHub Pages with mike. Call it with
+# release-status pre-release after the pre-release exists, and with stable after publishing.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Release version to deploy."
+        required: true
+        type: string
+      prev-version:
+        description: "Previous release version; redeployed without the latest alias (pre-release only)."
+        required: false
+        type: string
+        default: ""
+      release-status:
+        description: "'pre-release' deploys the version as latest; 'stable' rebuilds it after publishing."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-docs:
+    name: "Deploy MkDocs (${{ inputs.release-status }})"
+    runs-on: ubuntu-latest
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token || github.token }}
+
+    - name: Configure git for mike
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: "3.12"
+
+    - name: Install mike and mkdocs dependencies
+      run: |
+        pip install mike
+        pip install -r mkdocs/requirements.txt
+
+    - name: Deploy docs with mike
+      if: inputs.release-status == 'pre-release'
+      env:
+        VERSION: ${{ inputs.version }}
+        MIKE_VERSION: ${{ inputs.version }}
+        MIKE_ALIAS: "latest"
+        RELEASE_STATUS: pre-release
+      working-directory: mkdocs
+      run: |
+        mike deploy --push --update-aliases "${VERSION}" latest
+        mike set-default --push latest
+
+    - name: Redeploy previous version without latest alias
+      if: inputs.release-status == 'pre-release' && inputs.prev-version != ''
+      env:
+        PREV_VERSION: ${{ inputs.prev-version }}
+      run: |
+        echo "Redeploying ${PREV_VERSION} without 'latest' alias so static content is correct..."
+
+        # Restore mkdocs source exactly as it was at the previous release tag
+        git checkout "tags/${PREV_VERSION}" -- mkdocs/ || \
+          echo "Warning: tag ${PREV_VERSION} not found, deploying with current source"
+
+        # MIKE_ALIAS is intentionally unset — is_latest_version() returns false
+        # so the 'Newer Version Available' warning is baked into the static HTML
+        cd mkdocs
+        MIKE_VERSION="${PREV_VERSION}" mike deploy --push "${PREV_VERSION}"
+
+        # Restore current mkdocs source so nothing leaks into subsequent steps
+        cd ..
+        git checkout HEAD -- mkdocs/
+
+    - name: Rebuild published version docs so the badge flips to stable
+      if: inputs.release-status == 'stable'
+      env:
+        VERSION: ${{ inputs.version }}
+        MIKE_VERSION: ${{ inputs.version }}
+        MIKE_ALIAS: "latest"
+        RELEASE_STATUS: stable
+      working-directory: mkdocs
+      run: |
+        # publish-release has now flipped the GitHub release from pre-release to
+        # stable; rebuilding this version re-renders release_status_badge() so the
+        # badge reflects the promotion immediately instead of next release cycle.
+        mike deploy --push --update-aliases "${VERSION}" latest

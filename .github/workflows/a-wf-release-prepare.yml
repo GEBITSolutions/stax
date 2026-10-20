@@ -1,0 +1,558 @@
+---
+name: ". Release Phase: Pre-release"
+
+# Commits the release changes to the default branch (workflow version pins, VERSION.txt,
+# CHANGELOG.md), creates the release branch and tag, and creates the pre-release.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to release; also the Git tag. Use the output of a-wf-release-version.yml."
+        required: true
+        type: string
+      fix-actions-and-workflow-versions:
+        description: "If set to 'true', the action will update the versions of actions and workflows in the repository to\
+          \ match the new release version."
+        required: false
+        type: string
+        default: "false"
+      shared-code-workflow-files-to-pin:
+        description: >-
+          JSON array of caller .github/workflows files whose stax reusable-workflow refs are pinned to
+          the latest published shared-code-lib release.
+        required: false
+        type: string
+        default: "[]"
+      assets-artifact:
+        description: "Name of an artifact uploaded earlier in this workflow run; its files are attached to the pre-release."
+        required: false
+        type: string
+        default: ""
+    outputs:
+      release-commit:
+        description: "SHA of the release commit the tag points to."
+        value: ${{ jobs.create-pre-release.outputs.release-commit }}
+
+permissions:
+  contents: read
+  actions: read # download-artifact
+
+jobs:
+  create-pre-release:
+    runs-on: ubuntu-latest
+    outputs:
+      release-commit: ${{ steps.commit-release-changes.outputs.last_commit_sha }}
+    env:
+      NEW_VERSION: "${{ inputs.version }}"
+      DEFAULT_BRANCH: "${{ github.event.repository.default_branch }}"
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token || github.token }}
+
+    - name: Initialize mandatory git config
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        # Work-arround because github actions are just stupid and do not support dynamic workflow and actions version
+    - name: Fix Actions and Workflow Versions
+      if: inputs.fix-actions-and-workflow-versions != 'false'
+      id: fix-versions
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          const branch = process.env.DEFAULT_BRANCH;
+
+          // Get the current HEAD commit SHA
+          const { data: refData } = await github.rest.git.getRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`
+          });
+          const parentSha = refData.object.sha;
+
+          const workflowsDir = '.github/workflows';
+          const forceWorkflowFiles = new Set(
+            fs
+              .readdirSync(workflowsDir)
+              .filter((name) => name.startsWith('a-wf') && (name.endsWith('.yml')))
+          );
+          const files = fs
+            .readdirSync(workflowsDir)
+            .filter((name) => name.endsWith('.yml') || name.endsWith('.yaml'))
+            .filter((name) => name !== 'a-wf-release.yml' && name !== 'mirror-release.yaml')
+            .concat([...forceWorkflowFiles])
+            .filter((name, index, list) => list.indexOf(name) === index)
+            .map((name) => path.join(workflowsDir, name))
+            .filter((filePath) => fs.existsSync(filePath));
+
+          const newVersion = process.env.NEW_VERSION;
+          const treeItems = [];
+
+          for (const filePath of files) {
+            let content = fs.readFileSync(filePath, 'utf8');
+            const originalContent = content;
+
+            // Replace hardcoded shared workflow/action refs with current release version.
+            content = content.replace(
+              /(GEBITSolutions\/stax\/\.github\/(?:workflows|actions)\/[^@\s]+@)[^\s"']+/g,
+              `$1${newVersion}`
+            );
+
+            // Replace only the default value of actions-version input declarations.
+            // Input declarations have `actions-version:` with no value on the line,
+            // followed by properties (type, required, description), then `default:`.
+            {
+              const lines = content.split('\n');
+              let lookingForDefault = false;
+              let inputIndent = 0;
+              for (let i = 0; i < lines.length; i++) {
+                const actionsKeyMatch = lines[i].match(/^([ \t]*)actions-version:\s*$/);
+                if (actionsKeyMatch) {
+                  lookingForDefault = true;
+                  inputIndent = actionsKeyMatch[1].length;
+                  continue;
+                }
+                if (lookingForDefault) {
+                  const lineIndent = (lines[i].match(/^([ \t]*)/) || ['',''])[1].length;
+                  if (lineIndent <= inputIndent && lines[i].trim() !== '') {
+                    lookingForDefault = false;
+                    continue;
+                  }
+                  let m;
+                  if ((m = lines[i].match(/^([ \t]+default:[ \t]*)"[^"\n]*"([ \t]*(?:#.*)?)$/))) {
+                    lines[i] = `${m[1]}"${newVersion}"${m[2]}`;
+                    lookingForDefault = false;
+                  } else if ((m = lines[i].match(/^([ \t]+default:[ \t]*)'[^'\n]*'([ \t]*(?:#.*)?)$/))) {
+                    lines[i] = `${m[1]}"${newVersion}"${m[2]}`;
+                    lookingForDefault = false;
+                  } else if ((m = lines[i].match(/^([ \t]+default:[ \t]*)([^"'\s#][^\s#]*)([ \t]*(?:#.*)?)$/))) {
+                    lines[i] = `${m[1]}"${newVersion}"${m[3]}`;
+                    lookingForDefault = false;
+                  }
+                }
+              }
+              content = lines.join('\n');
+            }
+
+            if (content === originalContent) {
+              continue;
+            }
+
+            fs.writeFileSync(filePath, content);
+
+            // Create blob for each file
+            const { data: blob } = await github.rest.git.createBlob({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: Buffer.from(content).toString('base64'),
+              encoding: 'base64'
+            });
+
+            treeItems.push({
+              path: filePath,
+              mode: '100644',
+              type: 'blob',
+              sha: blob.sha
+            });
+          }
+
+          if (treeItems.length === 0) {
+            console.log('No workflow version replacements were needed.');
+            return;
+          }
+
+          // Create tree and commit
+          const { data: tree } = await github.rest.git.createTree({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            base_tree: parentSha,
+            tree: treeItems
+          });
+
+          const { data: commit } = await github.rest.git.createCommit({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            message: "chore: update action and workflow versions to " + newVersion + " [skip ci]",
+            tree: tree.sha,
+            parents: [parentSha]
+          });
+
+          await github.rest.git.updateRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`,
+            sha: commit.sha,
+            force: true
+          });
+
+          console.log("Updated versions and pushed commit:", commit.sha);
+
+    - name: Resolve Latest Shared Code Release
+      if: inputs.shared-code-workflow-files-to-pin != '[]'
+      id: latest-shared-code-release
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ github.token }}
+        script: |
+          const release = await github.rest.repos.getLatestRelease({
+            owner: 'GEBITSolutions',
+            repo: 'stax'
+          });
+          if (!release.data.tag_name) {
+            throw new Error('Latest published stax release has no tag_name.');
+          }
+          core.setOutput('tag', release.data.tag_name);
+
+    - name: Checkout Shared Workflow Pinning Action
+      if: inputs.shared-code-workflow-files-to-pin != '[]'
+      uses: actions/checkout@v4
+      with:
+        repository: GEBITSolutions/stax
+        ref: main
+        path: _shared_actions
+        sparse-checkout: .github/actions/pin-shared-workflow-refs
+        clean: false
+
+    - name: Pin Shared Workflow Refs
+      if: inputs.shared-code-workflow-files-to-pin != '[]'
+      id: pin-shared-workflows
+      uses: ./_shared_actions/.github/actions/pin-shared-workflow-refs
+      with:
+        workflow-files-json: ${{ inputs.shared-code-workflow-files-to-pin }}
+        version: ${{ steps.latest-shared-code-release.outputs.tag }}
+
+    - name: Commit Pinned Shared Workflow Refs
+      if: >-
+        inputs.shared-code-workflow-files-to-pin != '[]' &&
+        steps.pin-shared-workflows.outputs.changed-files-json != '[]'
+      env:
+        CHANGED_FILES_JSON: ${{ steps.pin-shared-workflows.outputs.changed-files-json }}
+        SHARED_CODE_VERSION: ${{ steps.latest-shared-code-release.outputs.tag }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const fs = require('fs');
+          const branch = process.env.DEFAULT_BRANCH;
+          const version = process.env.SHARED_CODE_VERSION;
+          const changedFiles = JSON.parse(process.env.CHANGED_FILES_JSON);
+
+          const { data: refData } = await github.rest.git.getRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`
+          });
+          const parentSha = refData.object.sha;
+          const treeItems = [];
+
+          for (const filePath of changedFiles) {
+            const content = fs.readFileSync(filePath, 'utf8');
+            const { data: blob } = await github.rest.git.createBlob({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              content: Buffer.from(content).toString('base64'),
+              encoding: 'base64'
+            });
+            treeItems.push({
+              path: filePath,
+              mode: '100644',
+              type: 'blob',
+              sha: blob.sha
+            });
+          }
+
+          const { data: tree } = await github.rest.git.createTree({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            base_tree: parentSha,
+            tree: treeItems
+          });
+          const { data: commit } = await github.rest.git.createCommit({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            message: `chore: pin shared workflow versions to ${version} [skip ci]`,
+            tree: tree.sha,
+            parents: [parentSha]
+          });
+          await github.rest.git.updateRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`,
+            sha: commit.sha,
+            force: true
+          });
+          console.log('Pinned shared workflow refs and pushed commit:', commit.sha);
+    - name: Save Tag to File
+      run: echo "${{ inputs.version }}" > VERSION.txt
+
+    - name: Create release notes and clear release-ready folder
+        # Requires format of: release-ready/release-notes/pr-<PR_NUMBER>.json
+        # JSON schema: { "pr": <number>, "feature": [...], "bugfixes": [...], "maintenance": [...], "breaking": [...], "docs": [...] }
+      run: |2
+
+        echo "Collecting release notes for version: ${NEW_VERSION}"
+
+        mapfile -t json_files < <(find ./release-ready/release-notes -maxdepth 1 -name 'pr-*.json' -type f | sort)
+
+        if [ ${#json_files[@]} -gt 0 ]; then
+          echo "Found ${#json_files[@]} release note file(s)"
+
+          jq -rs --arg version "${NEW_VERSION}" '
+            {
+              prs: [.[].pr] | sort,
+              feature: [.[] | (.feature // [])[]],
+              bugfixes: [.[] | (.bugfixes // [])[]],
+              maintenance: [.[] | (.maintenance // [])[]],
+              breaking: [.[] | (.breaking // [])[]],
+              docs: [.[] | (.docs // [])[]]
+            } |
+            [
+              "# RELEASE-NOTES",
+              "",
+              "## Release \($version)",
+              "",
+              "Merged PRs: \(.prs | map(tostring) | join(", "))",
+              ""
+            ] +
+            (if (.feature | length) > 0 then ["### 🚀 New Features"] + [.feature[] | "  - \(.)"] + [""] else [] end) +
+            (if (.bugfixes | length) > 0 then ["### 🐞 Bugfixes"] + [.bugfixes[] | "  - \(.)"] + [""] else [] end) +
+            (if (.maintenance | length) > 0 then ["### 🔧 Maintenance"] + [.maintenance[] | "  - \(.)"] + [""] else [] end) +
+            (if (.breaking | length) > 0 then ["### 💥 Breaking Changes"] + [.breaking[] | "  - \(.)"] + [""] else [] end) +
+            (if (.docs | length) > 0 then ["### 📝 Documentation"] + [.docs[] | "  - \(.)"] + [""] else [] end) |
+            join("\n")
+          ' "${json_files[@]}" > NEW-RELEASE.md
+
+          # Per-version body for the GitHub release (strip sentinel + heading)
+          sed -e 's/# RELEASE-NOTES//' -e '/^## Release /d' NEW-RELEASE.md | sed -e '/./,$!d' > RELEASE_NOTES.md
+
+          if [ -f "CHANGELOG.md" ]; then
+            sed -e 's/# RELEASE-NOTES//g' -i CHANGELOG.md
+            cat CHANGELOG.md >> NEW-RELEASE.md
+          fi
+          mv NEW-RELEASE.md CHANGELOG.md
+          rm -f ./release-ready/release-notes/*.json
+        fi
+
+        # Ensure a release body exists even when no PR notes were collected
+        if [ ! -s RELEASE_NOTES.md ]; then
+          printf '_No release notes recorded for %s._\n' "${NEW_VERSION}" > RELEASE_NOTES.md
+        fi
+
+    - name: Commit and push release notes
+      id: commit-release-changes
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const fs = require('fs');
+          const path = require('path');
+          const newVersion = process.env.NEW_VERSION;
+          const branch = process.env.DEFAULT_BRANCH;
+
+          // Get the current HEAD commit SHA
+          const { data: refData } = await github.rest.git.getRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`
+          });
+          const parentSha = refData.object.sha;
+
+          // Read files from the runner workspace (they were created by previous steps)
+          const treeItems = [];
+
+          // Add VERSION.txt
+          const versionContent = newVersion;
+          const { data: versionBlob } = await github.rest.git.createBlob({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            content: versionContent,
+            encoding: 'utf-8'
+          });
+          treeItems.push({
+            path: 'VERSION.txt',
+            mode: '100644',
+            type: 'blob',
+            sha: versionBlob.sha
+          });
+
+          // Check if CHANGELOG.md exists locally, create if not
+          let releaseMdContent = "# RELEASE-NOTES\n\n";
+          if (fs.existsSync('CHANGELOG.md')) {
+            releaseMdContent = fs.readFileSync('CHANGELOG.md', 'utf8');
+            // Remove existing # RELEASE-NOTES header if present
+            releaseMdContent = releaseMdContent.replace(/# RELEASE-NOTES/g, '').trim();
+          }
+
+          const { data: releaseMdBlob } = await github.rest.git.createBlob({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            content: releaseMdContent,
+            encoding: 'utf-8'
+          });
+          treeItems.push({
+            path: 'CHANGELOG.md',
+            mode: '100644',
+            type: 'blob',
+            sha: releaseMdBlob.sha
+          });
+
+          const { data: parentCommit } = await github.rest.git.getCommit({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            commit_sha: parentSha
+          });
+
+          const { data: baseTree } = await github.rest.git.getTree({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            tree_sha: parentCommit.tree.sha,
+            recursive: 'true'
+          });
+
+          // Add release-ready/release-notes files if they exist
+          const releaseNotesDir = 'release-ready/release-notes';
+          const localReleaseNotePaths = new Set();
+          if (fs.existsSync(releaseNotesDir)) {
+            const files = fs.readdirSync(releaseNotesDir).filter(f => f.endsWith('.json'));
+            for (const file of files) {
+              const filePath = path.join(releaseNotesDir, file);
+              localReleaseNotePaths.add(filePath);
+              const content = fs.readFileSync(filePath, 'utf8');
+              const { data: blob } = await github.rest.git.createBlob({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                content: Buffer.from(content).toString('base64'),
+                encoding: 'base64'
+              });
+              treeItems.push({
+                path: filePath,
+                mode: '100644',
+                type: 'blob',
+                sha: blob.sha
+              });
+            }
+          }
+
+          for (const item of (baseTree.tree || [])) {
+            if (
+              item.type === 'blob' &&
+              item.path &&
+              item.path.startsWith(`${releaseNotesDir}/`) &&
+              item.path.endsWith('.json') &&
+              !localReleaseNotePaths.has(item.path)
+            ) {
+              treeItems.push({
+                path: item.path,
+                mode: '100644',
+                type: 'blob',
+                sha: null
+              });
+            }
+          }
+
+          // Create tree and commit
+          const { data: tree } = await github.rest.git.createTree({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            base_tree: parentSha,
+            tree: treeItems
+          });
+
+          const { data: commit } = await github.rest.git.createCommit({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            message: `chore: prepare release ${newVersion} [skip ci]`,
+            tree: tree.sha,
+            parents: [parentSha]
+          });
+
+          // Update branch reference
+          await github.rest.git.updateRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `heads/${branch}`,
+            sha: commit.sha,
+            force: true
+          });
+
+          console.log("Created commit:", commit.sha);
+          core.setOutput('last_commit_sha', commit.sha);
+
+    - name: Create release branch
+      env:
+        LAST_COMMIT_SHA: ${{ steps.commit-release-changes.outputs.last_commit_sha }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const newVersion = process.env.NEW_VERSION;
+          const branchName = `release/${newVersion}`;
+          const commitSha = process.env.LAST_COMMIT_SHA;
+
+          // Create the release branch from the commit
+          await github.rest.git.createRef({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            ref: `refs/heads/${branchName}`,
+            sha: commitSha
+          });
+
+          console.log("Created branch:", branchName, "from commit:", commitSha);
+
+    - name: Download release assets
+      if: inputs.assets-artifact != ''
+      uses: actions/download-artifact@v8
+      with:
+        name: ${{ inputs.assets-artifact }}
+        path: ${{ runner.temp }}/release-assets
+
+    - name: Create Pre-Release
+      uses: ncipollo/release-action@v1
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+        tag: ${{ inputs.version }}
+        name: ${{ inputs.version }}
+        commit: ${{ steps.commit-release-changes.outputs.last_commit_sha }}
+        bodyFile: RELEASE_NOTES.md
+        draft: false
+        prerelease: true
+        artifacts: ${{ inputs.assets-artifact != '' && format('{0}/release-assets/*', runner.temp) || '' }}
+        artifactErrorsFailBuild: true
+
+    - name: Generate release summary
+      run: |
+        echo "## 🚀 Release Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Release Type:** Pre-release" >> $GITHUB_STEP_SUMMARY
+        echo "**Branch:** ${{ github.ref_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit SHA:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📋 Actions Performed" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Version calculated and saved to VERSION.txt" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Changelog updated in CHANGELOG.md" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Release branch created: \`release/${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- ✅ Pre-release created with tag: \`${{ inputs.version }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🔗 Links" >> $GITHUB_STEP_SUMMARY
+        echo "- [View Release](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ inputs.version }})" >> $GITHUB_STEP_SUMMARY
+        echo "- [View Release Branch](${{ github.server_url }}/${{ github.repository }}/tree/release/${{ inputs.version }})" >> $GITHUB_STEP_SUMMARY
+        echo "- [View Workflow Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})" >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,165 @@
+---
+name: ". Release Phase: Publish"
+
+# Promotes the pre-release to a release after the publish-release environment approval,
+# then deletes older pre-releases and their release branches.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: "Version of the pre-release to publish."
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  get-pre-release:
+    runs-on: ubuntu-latest
+    outputs:
+      result: ${{ steps.get-old-releases.outputs.releases }}
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token || github.token }}
+
+    - name: Get old pre-releases
+      env:
+        GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+        RELEASE_VERSION: ${{ inputs.version }}
+      id: get-old-releases
+      run: |
+        releases=$(gh release list -L 999 | grep -B100 -m1 -e "Latest" | \
+          grep Pre-release | awk '{print $1}' | \
+          while read v; do
+            if [[ "$v" != "${RELEASE_VERSION}" && "$(printf '%s\n' "$v" "${RELEASE_VERSION}" | sort -V | head -n1)" == "$v" ]]; then
+              echo "$v"
+            fi
+          done | paste -sd, -)
+        echo "Releases found: $releases"
+        echo "releases=$releases" >> "$GITHUB_OUTPUT"
+
+  publish-release:
+    needs:
+    - get-pre-release
+    runs-on: ubuntu-latest
+    environment: "publish-release"
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        ref: ${{ github.event.repository.default_branch }}
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token || github.token }}
+
+    - name: Publish release
+      uses: ncipollo/release-action@v1
+      with:
+        token: ${{ steps.app-token.outputs.token }}
+        allowUpdates: true
+        updateOnlyUnreleased: true
+        tag: ${{ inputs.version }}
+        name: ${{ inputs.version }}
+        omitBodyDuringUpdate: true
+
+  cleanup-pre-releases:
+    runs-on: ubuntu-latest
+    needs:
+    - get-pre-release
+    - publish-release
+    strategy:
+      fail-fast: false
+      matrix:
+        job: [branches, releases] # removed: tags
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Cleanup old branches
+      if: matrix.job == 'branches'
+      env:
+        RELEASE_STRING: ${{ needs.get-pre-release.outputs.result }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const releaseString = process.env.RELEASE_STRING;
+          const releaseArray = releaseString ? releaseString.split(',').filter(r => r.trim()) : [];
+          console.log("Releases to process:", releaseString);
+          console.log("Job: branches");
+
+          for (const release of releaseArray) {
+            const branchName = `release/${release}`;
+            console.log("Processing branch:", branchName);
+            try {
+              await github.rest.git.deleteRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `heads/${branchName}`
+              });
+              console.log("Deleted branch:", branchName);
+            } catch (e) {
+              console.log("Failed to delete branch:", branchName, e.message);
+            }
+          }
+
+    - name: Cleanup old releases
+      if: matrix.job == 'releases'
+      env:
+        RELEASE_STRING: ${{ needs.get-pre-release.outputs.result }}
+      uses: actions/github-script@v8
+      with:
+        github-token: ${{ steps.app-token.outputs.token }}
+        script: |
+          const releaseString = process.env.RELEASE_STRING;
+          const releaseArray = releaseString ? releaseString.split(',').filter(r => r.trim()) : [];
+          console.log("Releases to process:", releaseString);
+          console.log("Job: releases");
+
+          for (const release of releaseArray) {
+            console.log("Processing release:", release);
+            try {
+              // Get the release by tag name to get the release ID
+              const { data: releaseData } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: release
+              });
+              // Delete the release
+              await github.rest.repos.deleteRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: releaseData.id
+              });
+              console.log("Deleted release:", release);
+            } catch (e) {
+              console.log("Failed to delete release:", release, e.message);
+            }
+          }

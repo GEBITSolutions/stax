@@ -1,0 +1,68 @@
+---
+name: ". Release Phase: Version"
+
+# Waits for the release approval, then derives the next version from conventional commits.
+
+on:
+  workflow_call:
+    outputs:
+      has-next-version:
+        description: "'true' when commits since the last release produced a new version."
+        value: ${{ jobs.get-next-version.outputs.hasNextVersion }}
+      version:
+        description: "The new version; also the Git tag of the release."
+        value: ${{ jobs.get-next-version.outputs.version }}
+      prev-version:
+        description: "The previous release version, empty for the first release."
+        value: ${{ jobs.get-next-version.outputs.prevVersion }}
+
+permissions:
+  contents: read
+
+jobs:
+  wait-for-release:
+    runs-on: ubuntu-latest
+    environment: "wait-for-release"
+    steps:
+    - name: Wait for Release Approval
+      run: echo "Waiting for Environment Approval..."
+  get-next-version:
+    needs:
+    - wait-for-release
+    runs-on: ubuntu-latest
+    outputs:
+      hasNextVersion: ${{ steps.next_version.outputs.hasNextVersion }}
+      version: ${{ steps.next_version.outputs.version }}
+      prevVersion: ${{ steps.next_version.outputs.prevVersion }}
+    steps:
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ github.event.repository.name }}
+
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        token: ${{ steps.app-token.outputs.token || github.token }}
+
+    - name: Checkout Shared Actions
+      uses: actions/checkout@v4
+      with:
+        repository: GEBITSolutions/stax
+        ref: main
+        path: shared-code
+
+    - name: Get next version
+      id: next_version
+      uses: ./shared-code/.github/actions/get-next-version-typescript-action
+      with:
+        log_order: topological
+    - name: Show the next version
+      run: echo ${{ steps.next_version.outputs.version }}
