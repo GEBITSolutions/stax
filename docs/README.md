@@ -25,9 +25,24 @@ The static website is written to `site/`.
 
 The repository's `.github/workflows/docs.yml` selects `configs/stax-docs.yaml` and deploys through STAX's reusable setup, deployment levels, and `github-pages-site-deploy` stack workflow. This is independent of infrastructure and service configurations.
 
-Pull requests build only. On `main`, the release workflow (`release.yml`) deploys the site after the release approval and before the release and the CLI are published; a failed deployment stops the release. Commits that produce no new version (e.g. only `docs:` or `chore:` commits) do not deploy; run `docs.yml` manually to publish them. The manual workflow's `dry-run` input builds without publishing, and manual runs on other branches remain build-only. The shared action installs the locked Zensical dependencies and overrides the canonical URL from Pages metadata without changing `zensical.toml`.
+Pull requests build a `preview` version without pushing archive history or publishing Pages. On `main`, `release.yml` supplies the release version and prepared release-commit SHA after approval; documentation deployment still gates release and CLI publication. The shared action installs locked dependencies and overrides the canonical URL without changing `zensical.toml`.
 
-Enable repository Pages with **GitHub Actions** as its source before publishing. Configure the custom domain and HTTPS in repository Pages settings and protect the `github-pages` deployment environment. The `docs` environment only carries configuration/build metadata and needs no Azure credentials. Existing callers need `pages: write` and `id-token: write` available through the nested workflow chain; `stax init` generates the updated permissions.
+Commits without a new release do not deploy automatically. Manual `docs.yml` runs default to rebuilding the latest published release tag, not the current `main` source. Supply `release-version` and `source-ref` to select another version and source commit explicitly. `dry-run` prevents publication for both reusable and manual calls; non-main runs always build only.
+
+Enable repository Pages with **GitHub Actions** as its source, configure the custom domain and HTTPS, and protect the `github-pages` deployment environment. The `docs` environment needs no Azure credentials. Versioned publication uses the existing release GitHub App credentials with repository Contents write access to maintain `gh-pages`; PR builds use read-only checkout credentials. The nested workflow chain still needs `pages: write` and `id-token: write`, without expanding its `GITHUB_TOKEN` Contents permission.
+
+### Versioned releases
+
+The Zensical-compatible [mike fork](https://github.com/squidfunk/mike) is pinned by commit in `pyproject.toml` and `uv.lock`. The build fetches the complete generated archive from `gh-pages`, adds the selected version, and uploads the complete tree through the existing Pages stack. Archive publication and Pages deployment share a concurrency group so competing releases cannot build from the same stale history.
+
+- Release pages live at `/<version>/`; `/latest/` and the site root redirect to the newest version.
+- The native selector retains the current page when switching versions and marks the current release with `LATEST`.
+- New releases preserve older generated pages. Rebuilding an older version does not move `latest` backward.
+- PRs and dry runs can read existing versions but never push archive changes. A missing archive branch is a first deployment; a failed history fetch stops the build.
+
+The first versioned deployment starts the archive; it does not reconstruct earlier unversioned releases. A source tag must contain the pinned mike dependency and selector configuration to rebuild it with this workflow. Do not delete `gh-pages`: GitHub Pages serves the uploaded artifact, but this branch preserves the history needed for the next deployment.
+
+For a local single-version content preview, continue using `zensical serve` above. The selector needs a generated `versions.json`, so verify version switching against a complete archive rather than the single-version development server.
 
 ## Files
 

@@ -19,6 +19,14 @@ inputs:
     description: "Optional canonical site URL overriding the project configuration during the build."
     required: false
     default: ""
+  docs-version:
+    description: "Optional safe version identifier for Zensical archive builds."
+    required: false
+    default: ""
+  publish-version:
+    description: "Push the versioned archive to origin only when true."
+    required: false
+    default: "false"
 outputs:
   site-dir:
     description: "Built site directory, prefixed with source_repo/."
@@ -43,4 +51,6 @@ runs:
       DOCS_RELATIVE_PATH: ${{ inputs.docs-path }}
       APP_LOCATION: ${{ inputs.app-location }}
       INPUT_SITE_URL: ${{ inputs.site-url }}
+      DOCS_VERSION: ${{ inputs.docs-version }}
+      PUBLISH_VERSION: ${{ inputs.publish-version }}
     run: python3 "$GITHUB_ACTION_PATH/build_site.py"

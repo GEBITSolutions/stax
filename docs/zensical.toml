@@ -22,6 +22,11 @@ nav = [
   ] },
 ]
 
+[project.extra.version]
+provider = "mike"
+default = "latest"
+alias = true
+
 [project.theme]
 language = "en"
 logo = "assets/stax-logo.png"

@@ -34,6 +34,10 @@ on:
         description: "Published URL, or the canonical build URL during dry run."
         value: ${{ jobs.deploy.outputs.site-url || jobs.build.outputs.site-url }}
 
+concurrency:
+  group: ${{ fromJSON(inputs.data).docs_version != '' && format('pages-versions-{0}', github.repository) || format('pages-build-{0}-{1}-{2}', github.run_id, github.run_attempt, fromJSON(inputs.data).id) }}
+  cancel-in-progress: false
+
 jobs:
   build:
     name: "Build Pages: ${{ fromJSON(inputs.data).id }}"
@@ -83,15 +87,17 @@ jobs:
       - name: Generate source repository token
         id: app-token
         if: >-
-          steps.config.outputs.source-repository != github.repository &&
-          steps.config.outputs.source-owner == github.repository_owner &&
-          (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '')
+          (steps.config.outputs.source-repository != github.repository &&
+           steps.config.outputs.source-owner == github.repository_owner &&
+           (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '')) ||
+          (steps.config.outputs.docs-version != '' && steps.config.outputs.publish == 'true')
         uses: actions/create-github-app-token@v2
         with:
           app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
           owner: ${{ steps.config.outputs.source-owner }}
           repositories: ${{ steps.config.outputs.source-name }}
+          permission-contents: ${{ steps.config.outputs.docs-version != '' && steps.config.outputs.publish == 'true' && 'write' || 'read' }}
 
       - name: Check configured source token
         if: steps.config.outputs.token-secret != ''
@@ -111,7 +117,7 @@ jobs:
           ref: ${{ steps.config.outputs.source-version }}
           path: source_repo
           token: ${{ secrets[steps.config.outputs.token-secret] || steps.app-token.outputs.token || github.token }}
-          persist-credentials: false
+          persist-credentials: ${{ steps.config.outputs.docs-version != '' }}
 
       - name: Read Pages metadata
         id: pages
@@ -140,6 +146,8 @@ jobs:
           docs-path: ${{ fromJSON(inputs.data).docs_path || 'docs' }}
           app-location: ${{ fromJSON(inputs.data).app_location || '' }}
           site-url: ${{ steps.site-url.outputs.value }}
+          docs-version: ${{ steps.config.outputs.docs-version }}
+          publish-version: ${{ steps.config.outputs.docs-version != '' && steps.config.outputs.publish == 'true' }}
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5

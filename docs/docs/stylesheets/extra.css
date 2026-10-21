@@ -16,12 +16,19 @@
   max-width: 96rem;
 }
 
+/* The mike alias marks the current release in Zensical's version menu. */
+.md-version__alias {
+  margin-inline-start: .35em;
+  text-transform: uppercase;
+}
+
 .md-header__inner {
   min-height: 3.6rem;
   padding-inline: 1rem;
 }
 
 .md-header__title {
+  min-width: 0;
   font-size: 1rem;
   font-weight: 750;
   letter-spacing: -.035em;
