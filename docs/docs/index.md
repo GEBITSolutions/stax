@@ -47,5 +47,3 @@ hide:
 </div>
 </div>
 
-!!! note "Documentation proof of concept"
-    This site demonstrates [Zensical](https://zensical.org/). The framework interfaces and examples are illustrative; this folder contains no deployment implementation.
