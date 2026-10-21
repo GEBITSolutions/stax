@@ -31,6 +31,8 @@ Commits without a new release do not deploy automatically. Manual `docs.yml` run
 
 Enable repository Pages with **GitHub Actions** as its source, configure the custom domain and HTTPS, and protect the `github-pages` deployment environment. The `docs` environment needs no Azure credentials. Versioned publication uses the existing release GitHub App credentials with repository Contents write access to maintain `gh-pages`; PR builds use read-only checkout credentials. The nested workflow chain still needs `pages: write` and `id-token: write`, without expanding its `GITHUB_TOKEN` Contents permission.
 
+Forward release App secrets at every reusable-workflow boundary with `secrets: inherit`, including `docs.yml` → deployment levels → stack → Pages. Without forwarding, a downstream job can see the repository App ID variable but receives no private key.
+
 ### Versioned releases
 
 The Zensical-compatible [mike fork](https://github.com/squidfunk/mike) is pinned by commit in `pyproject.toml` and `uv.lock`. The build fetches the complete generated archive from `gh-pages`, adds the selected version, and uploads the complete tree through the existing Pages stack. Archive publication and Pages deployment share a concurrency group so competing releases cannot build from the same stale history.
