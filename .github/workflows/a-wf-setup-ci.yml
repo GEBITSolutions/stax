@@ -145,7 +145,7 @@ jobs:
 
     - name: Generate GitHub App Token
       id: app-token
-      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      if: ${{ env.CONFIG_LOCAL == 'false' && (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '') }}
       continue-on-error: true
       uses: actions/create-github-app-token@v2
       with:
