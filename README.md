@@ -73,7 +73,8 @@ Having trouble? Open an [issue](https://github.com/GEBITSolutions/stax/issues).
 
 ## Links
 
-- [License (GPL-3.0-only)](LICENSE), except [`.github/actions/get-next-version-typescript-action`](.github/actions/get-next-version-typescript-action): a port of the MIT-licensed [thenativeweb/get-next-version](https://github.com/thenativeweb/get-next-version) that stays under the [MIT License](.github/actions/get-next-version-typescript-action/LICENSE).
+- **STAX framework and CLI:** [GPL-3.0-only](LICENSE).
+- **`get-next-version-typescript-action`:** [MIT](.github/actions/get-next-version-typescript-action/LICENSE). This TypeScript port of [thenativeweb/get-next-version](https://github.com/thenativeweb/get-next-version) is licensed separately; the MIT license applies to this action only.
 - [Documentation](docs/README.md)
 - [CLI reference](cli/README.md)
 - [Deploy config schema](schema/deploy-config.schema.json)
