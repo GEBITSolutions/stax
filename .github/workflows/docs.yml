@@ -16,6 +16,8 @@ on:
       - .github/actions/static-site-build/**
       - .github/actions/gh-create-deploy-config/**
       - .github/scripts/github-pages-config*.mjs
+      - .github/scripts/docs-release-config*.mjs
+      - .github/workflows/release.yml
       - .github/scripts/deployment-config*.mjs
   workflow_call:
     inputs:
@@ -23,12 +25,28 @@ on:
         description: Build only, without publishing
         type: boolean
         default: false
+      release-version:
+        description: Published documentation version; defaults to latest release on manual runs
+        type: string
+        default: ""
+      source-ref:
+        description: Source commit or tag; defaults to the latest release tag on manual runs
+        type: string
+        default: ""
   workflow_dispatch:
     inputs:
       dry-run:
         description: Build only, without publishing
         type: boolean
         default: false
+      release-version:
+        description: Published documentation version; defaults to latest release
+        type: string
+        default: ""
+      source-ref:
+        description: Source commit or tag; defaults to the latest release tag
+        type: string
+        default: ""
 
 # The nested stack dispatcher also calls existing package-producing workflows.
 # These permissions must be available through the whole reusable-workflow chain.
@@ -56,11 +74,15 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: .github/actions/gh-create-deploy-config/package-lock.json
-      - run: node --test .github/scripts/deployment-config.test.mjs .github/scripts/github-pages-config.test.mjs
+      - run: node --test .github/scripts/deployment-config.test.mjs .github/scripts/github-pages-config.test.mjs .github/scripts/docs-release-config.test.mjs
       - run: npm ci
         working-directory: .github/actions/gh-create-deploy-config
       - run: npm test -- --runInBand
         working-directory: .github/actions/gh-create-deploy-config
+      - uses: astral-sh/setup-uv@v10.1.0
+      - run: >-
+          uv run --no-project --python 3.12 python -m unittest discover
+          -s .github/actions/static-site-build -p 'test_versioned_site.py'
 
   setup:
     name: Resolve documentation stack
@@ -73,17 +95,58 @@ jobs:
       release_config_filepath: configs/stax-docs.yaml
       skip-azure-credentials-validation: true
       dry-run: >-
-        ${{ github.event_name == 'pull_request' || github.ref != 'refs/heads/main' ||
-            (github.event_name == 'workflow_dispatch' && inputs.dry-run) }}
+        ${{ github.event_name == 'pull_request' || github.event_name == 'pull_request_target' ||
+            github.ref != 'refs/heads/main' || inputs.dry-run == true }}
       actions-repository: ${{ github.repository }}
       actions-version: ${{ github.sha }}
 
+  configure:
+    name: Resolve documentation release
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      ci-config: ${{ steps.config.outputs.ci-config }}
+    steps:
+      - name: Checkout framework configuration
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+      - name: Configure documentation version
+        id: config
+        uses: actions/github-script@v8
+        env:
+          CI_CONFIG: ${{ needs.setup.outputs.ci-config }}
+          RELEASE_VERSION: ${{ inputs.release-version }}
+          SOURCE_REF: ${{ inputs.source-ref }}
+        with:
+          script: |
+            const { pathToFileURL } = await import('node:url');
+            const { configureDocsDeployment } = await import(pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/docs-release-config.mjs`).href);
+            const releaseVersion = process.env.RELEASE_VERSION;
+            const sourceRef = process.env.SOURCE_REF;
+            let latestRelease;
+            if (!['pull_request', 'pull_request_target'].includes(process.env.GITHUB_EVENT_NAME) && !releaseVersion && !sourceRef) {
+              const result = await github.rest.repos.getLatestRelease(context.repo);
+              latestRelease = result.data;
+            }
+            const layers = configureDocsDeployment({
+              layers: JSON.parse(process.env.CI_CONFIG),
+              releaseVersion,
+              sourceRef,
+              sha: process.env.GITHUB_SHA,
+              eventName: process.env.GITHUB_EVENT_NAME,
+              latestRelease,
+            });
+            core.setOutput('ci-config', JSON.stringify(layers));
+
   deploy-levels:
     name: Documentation stack
-    needs: setup
+    needs: [setup, configure]
     uses: ./.github/workflows/a-wf-deploy-levels.yml
     with:
-      ci_config: ${{ needs.setup.outputs.ci-config }}
+      ci_config: ${{ needs.configure.outputs.ci-config }}
       env: ${{ needs.setup.outputs.env }}
       default_location: ${{ needs.setup.outputs.default-location }}
       external_repos: ${{ needs.setup.outputs.external-repos }}

@@ -76,3 +76,23 @@ test('uses the root URL for organization sites and normalizes custom canonical U
 test('rejects unsupported build targets instead of treating them as prebuilt content', () => {
   assert.throws(() => resolvePagesConfig({ ...base, data: { ...base.data, site_source_type: 'typo' } }), /Unsupported site_source_type/);
 });
+
+test('keeps archive versions confined to safe release paths in the destination repository', () => {
+  for (const docs_version of ['latest', '../1.0.0', '1.0.0/extra', '1.0.0\n', 42, {}]) {
+    assert.throws(() => resolvePagesConfig({ ...base, data: { ...base.data, docs_version } }), /docs_version/);
+  }
+  assert.throws(() => resolvePagesConfig({
+    ...base,
+    data: { ...base.data, docs_version: '1.0.0', source_repo: 'example/other', source_version: 'main' },
+  }), /destination repository/);
+  assert.throws(() => resolvePagesConfig({
+    ...base,
+    data: { ...base.data, docs_version: '1.0.0', site_source_type: 'prebuilt' },
+  }), /requires Zensical/);
+});
+
+test('preview versions cannot be published even with publication explicitly enabled', () => {
+  const options = { ...base, data: { ...base.data, docs_version: 'preview' } };
+  assert.throws(() => resolvePagesConfig(options), /Preview documentation cannot be published/);
+  assert.equal(resolvePagesConfig({ ...options, eventName: 'pull_request' }).publish, 'false');
+});

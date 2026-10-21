@@ -154,10 +154,22 @@ def main() -> None:
     if source_type != 'prebuilt' and not project.is_dir():
         raise ValueError(f"Documentation project directory not found: {project}")
     site_url = os.environ.get('INPUT_SITE_URL', '')
+    version = os.environ.get('DOCS_VERSION', '')
+    publish = os.environ.get('PUBLISH_VERSION', 'false')
+    if publish not in {'true', 'false'}:
+        raise ValueError(f"publish-version must be 'true' or 'false': {publish!r}")
+    if (version or publish == 'true') and source_type != 'zensical':
+        raise ValueError('docs-version and publish-version require a Zensical source')
+    if publish == 'true' and not version:
+        raise ValueError('publish-version requires docs-version')
     if source_type == 'mkdocs':
         build_mkdocs(project, source, output, site_url)
     elif source_type == 'zensical':
-        build_zensical(project, source, output, site_url)
+        if version:
+            from versioned_site import build_versioned
+            build_versioned(project, source, output, site_url, version, publish == 'true')
+        else:
+            build_zensical(project, source, output, site_url)
     if not output.is_dir() or not inside_source(output, source, 'site directory').is_dir():
         raise ValueError(f"Site directory not found: {output}")
     result = f"source_repo/{site_relative.as_posix()}"

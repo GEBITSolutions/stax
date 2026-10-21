@@ -11,6 +11,13 @@ export function normalizeSiteUrl(value) {
   return url.href;
 }
 
+export function validateDocsVersion(version) {
+  if (typeof version !== 'string' || version !== version.trim() || !/^(?:preview|v?\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)$/.test(version)) {
+    throw new Error('docs_version must be a release version or preview, not an alias or path');
+  }
+  return version;
+}
+
 export function resolvePagesConfig({ data, env, externalRepos = {}, repository, sha, eventName, runId, runAttempt, stackRepository = '', stackVersion = '' }) {
   if (data.type !== 'github-pages-site-deploy') {
     throw new Error('Expected stack type github-pages-site-deploy');
@@ -46,6 +53,13 @@ export function resolvePagesConfig({ data, env, externalRepos = {}, repository, 
   }
   const revision = stackVersion || data.source_version || sourceRevision || (sourceRepository === repository ? sha : '');
   if (!revision) throw new Error('An external source repository requires source_version or externalRepos.targetRevision');
+  const docsVersion = data.docs_version ?? '';
+  if (docsVersion !== '') {
+    validateDocsVersion(docsVersion);
+    if (sourceType !== 'zensical' || sourceRepository !== repository) {
+      throw new Error('Versioned Pages documentation requires Zensical source in the destination repository');
+    }
+  }
 
   const [owner, name] = repository.split('/');
   const basePath = name.toLowerCase() === `${owner.toLowerCase()}.github.io` ? '' : `${name}/`;
@@ -53,6 +67,7 @@ export function resolvePagesConfig({ data, env, externalRepos = {}, repository, 
   const dryRun = env.dry_run ?? true;
   if (![true, false, 'true', 'false'].includes(dryRun)) throw new Error('dry_run must be a boolean or true/false string');
   const publish = !enabled(dryRun) && !['pull_request', 'pull_request_target'].includes(eventName);
+  if (publish && docsVersion === 'preview') throw new Error('Preview documentation cannot be published as a release');
   return {
     'source-repository': sourceRepository,
     'source-version': revision,
@@ -60,6 +75,7 @@ export function resolvePagesConfig({ data, env, externalRepos = {}, repository, 
     'source-name': sourceRepository.split('/')[1],
     'token-secret': tokenSecret,
     'source-type': sourceType,
+    'docs-version': docsVersion,
     'site-url': siteUrl,
     'artifact-name': `github-pages-${data.id}-${runId}-${runAttempt}`,
     publish: String(publish),

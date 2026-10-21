@@ -49,7 +49,7 @@ jobs:
 
   docs:
     name: "Documentation"
-    needs: approve
+    needs: [version, prepare, approve]
     uses: ./.github/workflows/docs.yml
     secrets: inherit
     permissions:
@@ -58,6 +58,9 @@ jobs:
       packages: write
       pages: write
       id-token: write
+    with:
+      release-version: ${{ needs.version.outputs.version }}
+      source-ref: ${{ needs.prepare.outputs.release-commit }}
 
   publish:
     name: "Publish"
