@@ -24,7 +24,7 @@ The `stax` CLI needs Node.js 24 or later:
 npm install -g @gebit/stax-cli
 ```
 
-To run it from a checkout instead:
+For local development builds run:
 
 ```bash
 git clone https://github.com/GEBITSolutions/stax.git
