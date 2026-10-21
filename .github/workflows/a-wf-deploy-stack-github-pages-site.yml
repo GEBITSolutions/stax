@@ -84,6 +84,16 @@ jobs:
             });
             for (const [key, value] of Object.entries(values)) core.setOutput(key, value);
 
+      - name: Verify inherited release credential (temporary)
+        if: github.event_name == 'workflow_dispatch' && steps.config.outputs.publish == 'false'
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: read
+
       - name: Generate source repository token
         id: app-token
         if: >-
