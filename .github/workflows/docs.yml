@@ -145,6 +145,7 @@ jobs:
     name: Documentation stack
     needs: [setup, configure]
     uses: ./.github/workflows/a-wf-deploy-levels.yml
+    secrets: inherit
     with:
       ci_config: ${{ needs.configure.outputs.ci-config }}
       env: ${{ needs.setup.outputs.env }}
