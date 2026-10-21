@@ -155,7 +155,7 @@ on:
         type: string
       actions-version:
         required: false
-        default: "1.2.0"
+        default: "1.2.1"
         description: "Github Repo branch for shared actions."
         type: string
       tfvars-file:
