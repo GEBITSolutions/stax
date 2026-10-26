@@ -24,15 +24,18 @@ The `stax` CLI needs Node.js 24 or later:
 npm install -g @gebit/stax-cli
 ```
 
-For local development builds run:
+For a local development build, choose a framework ref explicitly when running `init`:
 
 ```bash
 git clone https://github.com/GEBITSolutions/stax.git
 cd stax/cli
 npm install && npm run build && npm link
+stax init /path/to/project --framework-ref main
 ```
 
-Then scaffold a repository, add a stack and check the result:
+You can use a tag, commit SHA or branch instead of `main`. Development builds require `--framework-ref`; published CLI releases reject it.
+
+With a published CLI, scaffold a repository, add a stack and check the result:
 
 ```bash
 stax init
@@ -40,7 +43,7 @@ stax add
 stax validate config
 ```
 
-`stax init` writes a Deploy workflow that calls the reusable workflows in this repository, plus `configs/default.yaml` with every required deployment value listed next to its GitHub variable. See the [CLI reference](cli/README.md) for all commands and options.
+`stax init` writes a Deploy workflow and `configs/default.yaml` with every required deployment value listed next to its GitHub variable. The installed CLI version sets the workflow refs, `actions-version` inputs and editor schema URL for both global and project-local installs. Match the installed CLI to the framework version you deploy; existing files are not auto-upgraded. `stax add` and `stax validate config` use the bundled schema offline rather than following the editor URL. See the [CLI reference](cli/README.md) for commands and options.
 
 ## Documentation
 

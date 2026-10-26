@@ -35,9 +35,11 @@ jobs:
     - run: npm ci
     - run: npm run build
     - name: Create a project with stax init and stax add
+      env:
+        FRAMEWORK_REF: ${{ github.event.pull_request.head.sha || github.sha }}
       run: |
         project="${RUNNER_TEMP}/project"
-        node dist/cli.js init "${project}"
+        node dist/cli.js init "${project}" --framework-ref "$FRAMEWORK_REF"
         node dist/cli.js add "${project}" --name "Network Hub" --type opentofu --yes
         node dist/cli.js add "${project}" --name "Post Deploy" --type script --yes
         node dist/cli.js add "${project}" --name Docs --type github-pages-site-deploy --yes

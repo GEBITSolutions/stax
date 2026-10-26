@@ -12,14 +12,18 @@ Generates a deploy wrapper and an empty stack list in a repository:
 
 | File | Content |
 |---|---|
-| `.github/workflows/deploy.yml` | Manual `Deploy` workflow calling `a-wf-setup-ci.yml` and `a-wf-deploy-levels.yml` from `GEBITSolutions/stax@main` |
-| `configs/default.yaml` | One commented `deployment` block listing every required deployment value with its GitHub variable (`deployment.project` live only when `--project` is given), `stacks: []`, commented examples and a `yaml-language-server` schema link for editor completion |
+| `.github/workflows/deploy.yml` | Manual `Deploy` workflow calling `a-wf-setup-ci.yml` and `a-wf-deploy-levels.yml` from `GEBITSolutions/stax` at the installed CLI version, with matching `actions-version` inputs |
+| `configs/default.yaml` | One commented `deployment` block listing every required deployment value with its GitHub variable (`deployment.project` live only when `--project` is given), `stacks: []`, commented examples and a `yaml-language-server` schema link for editor completion at the same version |
 
 ```bash
-stax init [directory] [--environment <github-environment>] [--project <name>] [--force]
+stax init [directory] [--environment <github-environment>] [--project <name>] [--force] [--framework-ref <tag-or-commit-sha>]
 ```
 
-`stax init` needs no input and never prompts; both options are optional.
+`stax init` never prompts. `--environment` and `--project` are optional.
+
+The installed CLI version sets both reusable workflow refs, both `actions-version` inputs and the editor schema URL. Global and project-local installs use the same rule. Use a CLI release that matches the framework version you deploy; `init` does not update existing configs or workflows.
+
+`--framework-ref` is required only for a development build (`0.0.0-development`). Give it a tag, commit SHA or branch, including `main` if you choose to track it explicitly. Development builds do not default to `main`. Published CLI releases reject `--framework-ref` and use their own exact version.
 
 - `--environment`: default GitHub Environment preselected in the deploy form. Without it, the form has no preselection.
 - `--project`: lowercase letters, digits and hyphens, starting with a letter. Saved as `deployment.project` in `configs/default.yaml`; without it, the GitHub variable `PROJECT` supplies the value.
@@ -48,9 +52,13 @@ stax add [directory] [--config <name>] [--name <stack name>] [--type <type>] [--
 
 The field list and examples come from the schema: each stack property lists the types that read it in `x-stax-types` (`"all"` for every type) and its example in `examples`.
 
+`stax add` reads the schema bundled with the installed CLI. It works offline and does not fetch the editor schema URL in `configs/default.yaml`.
+
 ## `stax validate config`
 
 Checks deploy configs against the schema in [`schema/deploy-config.schema.json`](../schema/deploy-config.schema.json) and against the rules the pipeline enforces.
+
+Validation reads the schema bundled with the installed CLI, not the editor schema URL. It works offline; match your installed CLI to the framework version you deploy.
 
 ```bash
 stax validate config                 # deploy configs directly in configs/
@@ -87,6 +95,8 @@ npm test            # copies ../schema first
 npm run build
 npm run sync-schema && node src/cli.ts validate config ../path/to/configs   # runs from source (Node 24 type stripping)
 ```
+
+For a development build, choose a framework ref when initializing a project, for example `node src/cli.ts init ../my-project --framework-ref main` (or `stax init ../my-project --framework-ref main` after `npm link`). A released CLI needs no ref and rejects this option.
 
 ## Releasing
 

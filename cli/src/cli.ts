@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { createRequire } from "node:module";
 import { join, relative, resolve } from "node:path";
 import { input, select } from "@inquirer/prompts";
 import { Command } from "commander";
@@ -9,12 +8,12 @@ import { schema, STACK_TYPES, requiredStackFields, stackFieldProblem } from "./s
 import { DEPLOY_CONFIG_PATH, renderProject, validateEnvironment, validateProject } from "./templates.ts";
 import { collectConfigFiles, isDeployConfigText, validateConfigText } from "./validate.ts";
 import { writeProject } from "./write.ts";
-
-const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
+import { packageVersion, resolveFrameworkRef } from "./version.ts";
 
 interface InitFlags {
   project?: string;
   environment?: string;
+  frameworkRef?: string;
   force: boolean;
 }
 
@@ -66,7 +65,7 @@ async function resolveValue(question: Question): Promise<string> {
 const program = new Command()
   .name("stax")
   .description("Scaffold, extend and validate projects for the stax stack framework")
-  .version(version);
+  .version(packageVersion);
 
 program
   .command("init")
@@ -74,6 +73,7 @@ program
   .argument("[directory]", "repository root to write into", ".")
   .option("-p, --project <name>", "optional deployment.project; otherwise the GitHub variable PROJECT supplies it")
   .option("-e, --environment <name>", "optional default GitHub Environment of the deploy form")
+  .option("--framework-ref <ref>", "framework tag, commit SHA or branch (required for development builds only)")
   .option("-f, --force", "overwrite existing files", false)
   .action(async (directory: string, flags: InitFlags) => {
     const problems = [
@@ -83,7 +83,8 @@ program
     if (problems.length > 0) throw new Error(problems.join("\n"));
     const { environment } = flags;
     const root = resolve(directory);
-    const files = renderProject({ project: flags.project, environment });
+    const frameworkRef = resolveFrameworkRef(packageVersion, flags.frameworkRef);
+    const files = renderProject({ project: flags.project, environment }, frameworkRef);
     await writeProject(root, files, flags.force);
     for (const file of files) console.log(`created ${file.path}`);
     console.log(`

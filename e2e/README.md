@@ -12,6 +12,8 @@ Each scenario covers one part of the framework with the most common setup, not e
 | Site and image builds | `e2e-sites.yml` | `sites.yaml` | a GitHub Pages MkDocs site and a Docker image are built; nothing is published or pushed |
 | Deploy and destroy | `e2e-deploy.yml` | `deploy.yaml` | an OpenTofu apply stores its output in the GitHub Environment `e2e`; a script stack receives it and stores a derived value; the OpenTofu stack is destroyed |
 
+The CLI scenario builds the development package and passes the PR head SHA (or dispatch commit SHA) explicitly through `init --framework-ref`. It checks generated workflow inputs against the current checkout rather than assuming a published release.
+
 ## Requirements
 
 - **GitHub Environment `e2e`:** no protection rules or secrets. The deploy scenario writes `E2E_TOFU__MESSAGE` and `E2E_CONSUMER__DERIVED` to it and deletes them before and after each run. Runs of that scenario are serialized.
