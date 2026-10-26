@@ -1,0 +1,29 @@
+deployment:
+  project: stax-e2e
+  customer_id: e2e
+  stage: e2e
+  cloud: azure
+  default_location: westeurope
+  public_cloud_flag: false
+
+stacks:
+  - id: e2e-tofu
+    name: E2E Deploy OpenTofu
+    type: opentofu
+    folder: echo
+    stack_base_path: e2e/stacks
+    local_backend: true
+    local_terraform_state: true
+    opentofu_version: "1.13.2"
+    input:
+      - example_input: global.pipeline.var.release_tag_name
+
+  # Consumes the OpenTofu output, which makes it depend on e2e-tofu, and exports its
+  # own output to the GitHub Environment.
+  - id: e2e-consumer
+    name: E2E Deploy Consumer
+    type: script
+    script: e2e/scripts/consume.sh
+    input:
+      - tofu_message: stack.e2e-tofu.var.message
+      - expected: global.pipeline.var.release_tag_name

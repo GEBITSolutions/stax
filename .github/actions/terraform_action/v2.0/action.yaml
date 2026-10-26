@@ -709,7 +709,7 @@ runs:
     if: (inputs.plan == 'true')
     uses: actions/setup-python@v7
     with:
-      python-version: '3.x'
+      python-version: '3.12' # Checkov does not support the newest Python releases
       cache: 'pip'
       cache-dependency-path: |
         **/requirements*.txt

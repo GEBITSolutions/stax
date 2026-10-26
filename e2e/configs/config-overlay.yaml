@@ -1,0 +1,12 @@
+deployment:
+  default_location: northeurope
+
+globals:
+  app_name: stax-e2e-overlay
+
+stacks:
+  - id: e2e-cluster
+    name: E2E Cluster
+    type: script
+    script: e2e/scripts/check-inputs.sh
+    depends_on: [e2e-network]

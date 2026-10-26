@@ -1,0 +1,45 @@
+deployment:
+  project: stax-e2e
+  customer_id: e2e
+  stage: e2e
+  cloud: azure
+  default_location: westeurope
+  public_cloud_flag: false
+
+globals:
+  app_name: stax-e2e
+
+stacks:
+  - id: e2e-tofu-plan
+    name: E2E Plan OpenTofu
+    type: opentofu
+    folder: echo
+    stack_base_path: e2e/stacks
+    local_backend: true
+    local_terraform_state: true
+    opentofu_version: "1.13.2"
+    input:
+      - example_input: global.config.var.app_name
+
+  - id: e2e-terraform-plan
+    name: E2E Plan Terraform
+    type: terraform
+    folder: echo
+    stack_base_path: e2e/stacks
+    local_backend: true
+    local_terraform_state: true
+    terraform_version: "1.17.0"
+    input:
+      - example_input: global.pipeline.var.stage
+
+  - id: e2e-script-plan
+    name: E2E Plan Script
+    type: script
+    script: e2e/scripts/check-inputs.sh
+    depends_on: [e2e-tofu-plan, e2e-terraform-plan]
+    input:
+      - app_name: global.config.var.app_name
+      - expect_app_name: stax-e2e
+      - stage: global.pipeline.var.stage
+      - expect_stage: e2e
+      - expect_DRY_RUN: "true"
