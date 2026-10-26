@@ -1,0 +1,67 @@
+---
+name: ".E2E: Site and image builds"
+
+# Dry run of a GitHub Pages MkDocs site and a Docker image. Checks the built site
+# content and that neither the site nor the image is published.
+
+on:
+  workflow_call:
+
+# The stack dispatcher declares these for other stack types; nested workflows need them.
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+jobs:
+  setup:
+    name: Setup
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: ""
+      release_config_filepath: e2e/configs/sites.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-sites
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  build:
+    name: Build
+    needs: setup
+    uses: ./.github/workflows/a-wf-deploy-levels.yml
+    secrets: inherit
+    with:
+      ci_config: ${{ needs.setup.outputs.ci-config }}
+      env: ${{ needs.setup.outputs.env }}
+      default_location: ${{ needs.setup.outputs.default-location }}
+      external_repos: ${{ needs.setup.outputs.external-repos }}
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  check:
+    name: Check builds
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - name: Site and image were built, nothing was published
+      run: |
+        e2e/assert/run.sh jobs 'Build Pages: e2e-mkdocs$' success 1
+        e2e/assert/run.sh jobs 'Docker: E2E Image$' success 1
+        e2e/assert/run.sh not-run 'Publish Pages: e2e-mkdocs'
+    - name: The site artifact contains the page
+      run: |
+        e2e/assert/run.sh artifact "^github-pages-e2e-mkdocs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}$" site
+        mkdir page && tar -xf site/artifact.tar -C page
+        grep -q 'stax-e2e-mkdocs-marker' page/index.html

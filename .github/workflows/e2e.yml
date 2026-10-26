@@ -1,0 +1,98 @@
+---
+name: E2E
+
+# End-to-end tests of the framework through its reusable workflows, with the code of
+# this commit (see e2e/README.md). The "E2E" job is the required check for main; it
+# runs for every pull request, so it never stays pending.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# The stack dispatcher declares these for other stack types; nested workflows need them.
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cli:
+    name: CLI new project
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        cache: npm
+        cache-dependency-path: cli/package-lock.json
+    - run: npm ci
+    - run: npm run build
+    - name: Create a project with stax init and stax add
+      run: |
+        project="${RUNNER_TEMP}/project"
+        node dist/cli.js init "${project}"
+        node dist/cli.js add "${project}" --name "Network Hub" --type opentofu --yes
+        node dist/cli.js add "${project}" --name "Post Deploy" --type script --yes
+        node dist/cli.js add "${project}" --name Docs --type github-pages-site-deploy --yes
+        node dist/cli.js validate config "${project}/configs/default.yaml" --strict
+    - name: Validate the E2E fixture configs
+      run: node dist/cli.js validate config ../e2e/configs -r
+    - name: Generated workflow matches the reusable workflow interfaces
+      working-directory: .
+      run: |
+        # Point the generated deploy.yml at this commit's reusable workflows, so actionlint
+        # checks its inputs and secrets against them.
+        sed -E 's#GEBITSolutions/stax/\.github/workflows/(a-wf-[a-z-]+\.yml)@[^[:space:]]+#./.github/workflows/\1#' \
+          "${RUNNER_TEMP}/project/.github/workflows/deploy.yml" > .github/workflows/e2e-generated-deploy.yml
+        bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "${RUNNER_TEMP}"
+        "${RUNNER_TEMP}/actionlint" -shellcheck= -pyflakes= .github/workflows/e2e-generated-deploy.yml
+
+  config:
+    name: Config resolution
+    uses: ./.github/workflows/e2e-config.yml
+
+  iac-plan:
+    name: Infrastructure plan
+    uses: ./.github/workflows/e2e-iac-plan.yml
+    secrets: inherit
+
+  sites:
+    name: Site and image builds
+    uses: ./.github/workflows/e2e-sites.yml
+    secrets: inherit
+
+  deploy:
+    name: Deploy and destroy
+    uses: ./.github/workflows/e2e-deploy.yml
+    secrets: inherit
+    concurrency:
+      group: stax-e2e-deploy
+      cancel-in-progress: false
+
+  e2e:
+    name: E2E
+    needs: [cli, config, iac-plan, sites, deploy]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: All scenarios passed
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
+        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null

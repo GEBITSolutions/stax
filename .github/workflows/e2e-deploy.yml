@@ -1,0 +1,165 @@
+---
+name: ".E2E: Deploy, pass values, destroy"
+
+# Applies an OpenTofu stack (local state, no cloud provider) and a script stack that
+# consumes its output, as a project's deploy workflow would. Values between stacks are
+# stored as variables of the GitHub Environment "e2e" through the release GitHub App.
+# Then runs a destroy. Stored variables are deleted before and after the run.
+# Callers must pass secrets: inherit and serialize runs, because all runs share the
+# same Environment variables.
+
+on:
+  workflow_call:
+
+# The stack dispatcher declares these for other stack types; nested workflows need them.
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+env:
+  ENVIRONMENT: e2e
+  STORED_VARIABLES: E2E_TOFU__MESSAGE E2E_CONSUMER__DERIVED
+
+jobs:
+  reset:
+    name: Delete stored outputs
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+        repositories: ${{ github.event.repository.name }}
+    - run: |
+        read -ra names <<<"${STORED_VARIABLES}"
+        e2e/assert/run.sh delete-variables "${ENVIRONMENT}" "${names[@]}"
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  setup:
+    name: Setup
+    needs: reset
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: ""
+      dry-run: false
+      release_config_filepath: e2e/configs/deploy.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-deploy
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  apply:
+    name: Apply
+    needs: setup
+    uses: ./.github/workflows/a-wf-deploy-levels.yml
+    secrets: inherit
+    with:
+      ci_config: ${{ needs.setup.outputs.ci-config }}
+      env: ${{ needs.setup.outputs.env }}
+      default_location: ${{ needs.setup.outputs.default-location }}
+      external_repos: ${{ needs.setup.outputs.external-repos }}
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  verify:
+    name: Check stored outputs
+    needs: [setup, apply]
+    runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ fromJSON(needs.setup.outputs.env).release_tag_name }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+        repositories: ${{ github.event.repository.name }}
+    - name: OpenTofu output and the consumer's derived value were stored
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}
+      run: |
+        e2e/assert/run.sh variable "${ENVIRONMENT}" E2E_TOFU__MESSAGE "${RELEASE_TAG}"
+        e2e/assert/run.sh variable "${ENVIRONMENT}" E2E_CONSUMER__DERIVED "${RELEASE_TAG}-derived"
+
+  destroy-setup:
+    name: Setup destroy
+    needs: verify
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: e2e-tofu
+      dry-run: false
+      destroy: true
+      release_config_filepath: e2e/configs/deploy.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-destroy
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  destroy:
+    name: Destroy
+    needs: destroy-setup
+    uses: ./.github/workflows/a-wf-deploy-levels.yml
+    secrets: inherit
+    with:
+      ci_config: ${{ needs.destroy-setup.outputs.ci-config }}
+      env: ${{ needs.destroy-setup.outputs.env }}
+      default_location: ${{ needs.destroy-setup.outputs.default-location }}
+      external_repos: ${{ needs.destroy-setup.outputs.external-repos }}
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  check-destroy:
+    name: Check apply and destroy jobs
+    needs: destroy
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - run: |
+        e2e/assert/run.sh jobs 'E2E Deploy OpenTofu.*TF Apply echo$' success 1
+        e2e/assert/run.sh jobs 'Script GH Action E2E Deploy Consumer$' success 1
+        e2e/assert/run.sh jobs 'E2E Deploy OpenTofu.*TF Destroy echo$' success 1
+
+  cleanup:
+    name: Delete stored outputs
+    needs: [reset, setup, apply, verify, destroy-setup, destroy, check-destroy]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - id: app-token
+      uses: actions/create-github-app-token@v2
+      with:
+        app-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+        repositories: ${{ github.event.repository.name }}
+    - run: |
+        read -ra names <<<"${STORED_VARIABLES}"
+        e2e/assert/run.sh delete-variables "${ENVIRONMENT}" "${names[@]}"
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token }}

@@ -1,0 +1,34 @@
+deployment:
+  project: stax-e2e
+  customer_id: e2e
+  stage: e2e
+  cloud: azure
+  default_location: westeurope
+  public_cloud_flag: false
+
+globals:
+  app_name: stax-e2e
+
+stacks:
+  - id: e2e-network
+    name: E2E Network
+    type: script
+    script: e2e/scripts/check-inputs.sh
+    stack-groups: [group-core]
+    input:
+      - app_name: global.config.var.app_name
+
+  # Depends on e2e-cluster from config-overlay.yaml only through this reference.
+  - id: e2e-app
+    name: E2E App
+    type: script
+    script: e2e/scripts/check-inputs.sh
+    input:
+      - endpoint: stack.e2e-cluster.var.endpoint
+
+  - id: e2e-prod-only
+    name: E2E Prod Only
+    type: script
+    script: e2e/scripts/check-inputs.sh
+    if: "'{stage}' === 'prod'"
+    stack-groups: [group-core]

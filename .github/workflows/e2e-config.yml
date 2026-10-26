@@ -1,0 +1,74 @@
+---
+name: ".E2E: Config resolution"
+
+# Resolves two deploy config files through a-wf-setup-ci.yml (setup only, nothing is
+# deployed) and checks deployment value precedence, per-file globals, explicit and
+# implicit dependencies across files, stack filters and if conditions.
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  all:
+    name: Base + overlay
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: ""
+      release_config_filepath: e2e/configs/config-base.yaml,e2e/configs/config-overlay.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-config-all
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  group:
+    name: Overlay + base, stack group
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: group-core
+      release_config_filepath: e2e/configs/config-overlay.yaml,e2e/configs/config-base.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-config-group
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  upstream:
+    name: Overlay + base, stack with dependencies
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: ">e2e-app"
+      release_config_filepath: e2e/configs/config-overlay.yaml,e2e/configs/config-base.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-config-upstream
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  check:
+    name: Check resolved configs
+    needs: [all, group, upstream]
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+        package-manager-cache: false
+    - run: node e2e/assert/config.mjs
+      env:
+        RUN_ALL_CONFIG: ${{ needs.all.outputs.ci-config }}
+        RUN_ALL_ENV: ${{ needs.all.outputs.env }}
+        RUN_ALL_LOCATION: ${{ needs.all.outputs.default-location }}
+        RUN_GROUP_CONFIG: ${{ needs.group.outputs.ci-config }}
+        RUN_GROUP_ENV: ${{ needs.group.outputs.env }}
+        RUN_GROUP_LOCATION: ${{ needs.group.outputs.default-location }}
+        RUN_UPSTREAM_CONFIG: ${{ needs.upstream.outputs.ci-config }}
+        RUN_UPSTREAM_ENV: ${{ needs.upstream.outputs.env }}
+        RUN_UPSTREAM_LOCATION: ${{ needs.upstream.outputs.default-location }}
