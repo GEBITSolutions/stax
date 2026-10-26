@@ -64,10 +64,10 @@ jobs:
         persist-credentials: false
     - name: Both plans and the script ran, nothing was applied
       run: |
-        e2e/assert/run.sh jobs 'E2E Plan OpenTofu.*TF Plan echo$' success 1
-        e2e/assert/run.sh jobs 'E2E Plan Terraform.*TF Plan echo$' success 1
+        e2e/assert/run.sh jobs 'Terraform: E2E Plan OpenTofu / TF Plan echo$' success 1
+        e2e/assert/run.sh jobs 'Terraform: E2E Plan Terraform / TF Plan echo$' success 1
         e2e/assert/run.sh jobs 'Script GH Action E2E Plan Script$' success 1
-        e2e/assert/run.sh not-run 'E2E Plan (OpenTofu|Terraform).*TF (Apply|Destroy)'
+        e2e/assert/run.sh not-run 'Terraform: E2E Plan (OpenTofu|Terraform) / TF (Apply|Destroy)'
     - name: Plans contain the resolved inputs
       run: |
         e2e/assert/run.sh artifact '^opentofu-plan-e2e-tofu-plan-.*-as-text$' tofu

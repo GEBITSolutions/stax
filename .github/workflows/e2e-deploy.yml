@@ -144,9 +144,9 @@ jobs:
         sparse-checkout: e2e/assert
         persist-credentials: false
     - run: |
-        e2e/assert/run.sh jobs 'E2E Deploy OpenTofu.*TF Apply echo$' success 1
+        e2e/assert/run.sh jobs 'Terraform: E2E Deploy OpenTofu / TF Apply echo$' success 1
         e2e/assert/run.sh jobs 'Script GH Action E2E Deploy Consumer$' success 1
-        e2e/assert/run.sh jobs 'E2E Deploy OpenTofu.*TF Destroy echo$' success 1
+        e2e/assert/run.sh jobs 'Terraform: E2E Deploy OpenTofu / TF Destroy echo$' success 1
 
   cleanup:
     name: Delete stored outputs
