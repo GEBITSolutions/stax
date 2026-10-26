@@ -145,6 +145,89 @@ describe('index.ts', () => {
     ])
     expect(apply_stack_filter).not.toHaveBeenCalled()
   })
+  it('excludes false conditions without a stack filter and rewires surviving dependencies', async () => {
+    generate_stackfilter.mockImplementation(original_generate_stackfilter)
+    apply_stack_filter.mockImplementation(original_apply_stack_filter)
+    generate_layerdeployment.mockImplementation(original_generate_layerdeployment)
+
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          { id: 'base' },
+          { id: 'prod-only', if: "'{stage}' === 'prod'", depends_on: ['base'] },
+          { id: 'consumer', depends_on: ['prod-only'] }
+        ])
+      if (name === 'global-vars') return JSON.stringify({ stage: 'dev' })
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(core.setOutput).toHaveBeenCalledWith(
+      'layer-deployments',
+      JSON.stringify([
+        [{ id: 'base', depends_on: [], layer: 0 }],
+        [{ id: 'consumer', depends_on: ['base'], layer: 1 }]
+      ])
+    )
+  })
+
+  it('emits an empty deployment when all stack conditions are false without a filter', async () => {
+    generate_stackfilter.mockImplementation(original_generate_stackfilter)
+    apply_stack_filter.mockImplementation(original_apply_stack_filter)
+    generate_layerdeployment.mockImplementation(original_generate_layerdeployment)
+
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          { id: 'first', if: 'false' },
+          { id: 'second', if: 'false', depends_on: ['first'] }
+        ])
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(apply_stack_filter).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'first' }),
+        expect.objectContaining({ id: 'second' })
+      ]),
+      []
+    )
+    expect(core.setOutput).toHaveBeenCalledWith('layer-deployments', '[]')
+  })
+
+  it('does not fall back to all stacks when an explicit filter selects only false conditions', async () => {
+    generate_stackfilter.mockImplementation(original_generate_stackfilter)
+    apply_stack_filter.mockImplementation(original_apply_stack_filter)
+    generate_layerdeployment.mockImplementation(original_generate_layerdeployment)
+
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-config')
+        return JSON.stringify([
+          { id: 'selected', if: 'false' },
+          { id: 'unselected' }
+        ])
+      if (name === 'stack-filter') return 'selected'
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).not.toHaveBeenCalled()
+    expect(apply_stack_filter).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'selected' }),
+        expect.objectContaining({ id: 'unselected' })
+      ]),
+      []
+    )
+    expect(core.setOutput).toHaveBeenCalledWith('layer-deployments', '[]')
+  })
+
   it('US-10 integration: stacks with external explicit deps appear in layer-deployments output', async () => {
     convert_implicit_to_explicit_dependencies.mockImplementation(
       original_convert_implicit_to_explicit_dependencies

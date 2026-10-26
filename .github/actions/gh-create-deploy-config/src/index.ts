@@ -190,16 +190,19 @@ export async function run(): Promise<void> {
       core.info('Resolved source_version from external-repos where applicable.')
     }
 
+    // With no explicit filter, evaluate conditions against all stacks rather than
+    // an empty selection. A condition may exclude every stack.
+    const evaluate_all_stacks =
+      stack_filter === '' && deploy_config.some((config) => config.if)
     const expanded_stack_filter: string[] = generate_stackfilter(
       deploy_config,
-      stack_filter,
+      evaluate_all_stacks
+        ? deploy_config.map((config) => config.id).join(',')
+        : stack_filter,
       global_vars
     )
 
-    if (
-      expanded_stack_filter.length !== 0 &&
-      !(expanded_stack_filter.length === 1 && expanded_stack_filter[0] === '')
-    ) {
+    if (stack_filter !== '' || evaluate_all_stacks) {
       core.info(`Applying stack filter: ${expanded_stack_filter}`)
       deploy_config = apply_stack_filter(deploy_config, expanded_stack_filter)
       core.info(`Filtered deploy-config: ${JSON.stringify(deploy_config)}`)
