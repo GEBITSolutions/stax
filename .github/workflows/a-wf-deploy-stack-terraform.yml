@@ -248,16 +248,16 @@ jobs:
       id: app-token
       if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
       continue-on-error: true
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
-        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        client-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
         private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
         owner: ${{ github.repository_owner }}
         repositories: ${{ steps.token-scope.outputs.repositories }}
 
 
     - name: "Checkout Actions"
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
         ref: ${{ inputs.actions-version || 'main' }}
@@ -317,7 +317,7 @@ jobs:
         fi
 
     - name: Checkout Source Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         path: source_repo
         repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}
@@ -547,9 +547,9 @@ jobs:
       id: app-token
       if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
       continue-on-error: true
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
-        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        client-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
         private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
         owner: ${{ github.repository_owner }}
         repositories: ${{ steps.token-scope.outputs.repositories }}
@@ -559,7 +559,7 @@ jobs:
 
 
     - name: "Checkout Actions"
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
         ref: ${{ inputs.actions-version || 'main' }}
@@ -601,7 +601,7 @@ jobs:
         fi
 
     - name: Checkout Source Repository
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         path: source_repo
         repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}

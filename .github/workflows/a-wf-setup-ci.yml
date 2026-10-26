@@ -147,9 +147,9 @@ jobs:
       id: app-token
       if: ${{ env.CONFIG_LOCAL == 'false' && (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '') }}
       continue-on-error: true
-      uses: actions/create-github-app-token@v2
+      uses: actions/create-github-app-token@v3
       with:
-        app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        client-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
         private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
         owner: ${{ github.repository_owner }}
         repositories: ${{ steps.token-scope.outputs.repositories }}
