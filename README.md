@@ -70,6 +70,7 @@ Having trouble? Open an [issue](https://github.com/GEBITSolutions/stax/issues).
 | [.github/actions](.github/actions) | Actions the workflows build on: deploy-config generation, stack inputs, versioning, static sites, Terraform |
 | [configs](configs) | This repository's own deploy configs |
 | [docs](docs) | Documentation site sources |
+| [e2e](e2e) | End-to-end tests run on every pull request: example projects deployed through the reusable workflows |
 
 ## Links
 

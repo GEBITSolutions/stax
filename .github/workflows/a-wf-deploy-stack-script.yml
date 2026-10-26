@@ -179,6 +179,7 @@ jobs:
         secrets: ${{ toJson(secrets) }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
         pipeline-globals: ${{ inputs.env }}
 
     - id: convert-inputs-ssm
@@ -190,6 +191,7 @@ jobs:
         secrets: ${{ toJson(secrets) }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
         pipeline-globals: ${{ inputs.env }}
         environment-name: ${{ env.ENVIRONMENT }}
         ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
@@ -209,6 +211,7 @@ jobs:
         secrets: ${{ toJson(secrets) }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
         pipeline-globals: ${{ inputs.env }}
         environment-name: ${{ env.ENVIRONMENT }}
         key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
@@ -227,6 +230,7 @@ jobs:
         secrets: ${{ toJson(secrets) }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
         pipeline-globals: ${{ inputs.env }}
         environment-name: ${{ env.ENVIRONMENT }}
         key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}

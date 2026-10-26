@@ -1,0 +1,91 @@
+---
+name: "E2E: Infrastructure plan"
+
+# Dry run of an OpenTofu and a Terraform stack (local state, no cloud provider) followed
+# by a script stack in the next layer. Checks that both plans contain the values passed
+# from config and pipeline globals and that the script receives globals and DRY_RUN.
+# See e2e/README.md.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+# The stack dispatcher declares these for other stack types; nested workflows need them.
+permissions:
+  actions: read
+  contents: read
+  packages: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  setup:
+    name: Setup
+    uses: ./.github/workflows/a-wf-setup-ci.yml
+    with:
+      environment: e2e
+      stack_filter: ""
+      release_config_filepath: e2e/configs/iac-plan.yaml
+      skip-azure-credentials-validation: true
+      artifact_prefix: e2e-iac
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  plan:
+    name: Plan
+    needs: setup
+    uses: ./.github/workflows/a-wf-deploy-levels.yml
+    secrets: inherit
+    with:
+      ci_config: ${{ needs.setup.outputs.ci-config }}
+      env: ${{ needs.setup.outputs.env }}
+      default_location: ${{ needs.setup.outputs.default-location }}
+      external_repos: ${{ needs.setup.outputs.external-repos }}
+      actions-repository: ${{ github.repository }}
+      actions-version: ${{ github.sha }}
+
+  check:
+    name: Check plans
+    needs: plan
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+    - uses: actions/checkout@v7
+      with:
+        sparse-checkout: e2e/assert
+        persist-credentials: false
+    - name: Both plans and the script ran, nothing was applied
+      run: |
+        e2e/assert/run.sh jobs 'Terraform: E2E Plan OpenTofu / TF Plan echo$' success 1
+        e2e/assert/run.sh jobs 'Terraform: E2E Plan Terraform / TF Plan echo$' success 1
+        e2e/assert/run.sh jobs 'Script GH Action E2E Plan Script$' success 1
+        e2e/assert/run.sh not-run 'Terraform: E2E Plan (OpenTofu|Terraform) / TF (Apply|Destroy)'
+    - name: Plans contain the resolved inputs
+      run: |
+        e2e/assert/run.sh artifact '^opentofu ?-plan-e2e-tofu-plan ?-.*-as-text$' tofu
+        e2e/assert/run.sh artifact '^terraform ?-plan-e2e-terraform-plan ?-.*-as-text$' terraform
+        grep -rq 'terraform_data.echo' tofu terraform
+        grep -rq '"stax-e2e"' tofu || { echo "::error::OpenTofu plan lacks the config global"; exit 1; }
+        grep -rq '"e2e"' terraform || { echo "::error::Terraform plan lacks the pipeline global"; exit 1; }
+
+  result:
+    name: "E2E: Infrastructure plan"
+    needs: [setup, plan, check]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: All jobs succeeded
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
+        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null

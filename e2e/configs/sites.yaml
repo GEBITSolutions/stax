@@ -1,0 +1,21 @@
+deployment:
+  project: stax-e2e
+  customer_id: e2e
+  stage: e2e
+  cloud: azure
+  default_location: westeurope
+  public_cloud_flag: false
+
+stacks:
+  - id: e2e-mkdocs
+    name: E2E MkDocs
+    type: github-pages-site-deploy
+    site_source_type: mkdocs
+    docs_path: e2e/sites/mkdocs
+
+  - id: e2e-image
+    name: E2E Image
+    type: docker-build-push
+    dockerfile_folder: e2e/docker
+    image_name: stax-e2e
+    input: []
