@@ -839,7 +839,7 @@ runs:
 
       # TODO: tf root dir --> https://discuss.hashicorp.com/t/terraform-chdir-folder-isolation/24789/2
       lock=""
-      if [[ "$ACTION_NO_LOCK" == 'true' ]]; then lock="-lock"; fi
+      if [[ "$ACTION_NO_LOCK" == 'true' ]]; then lock="-lock=false"; fi
       echo -e "\033[1;35mRun HCL Plan ${tf_bin} \
         -chdir=${chdir} tf_plan_args=${tf_plan_args} lock=$lock \
         -out ${ACTION_PLAN_BINARY_NAME}";
