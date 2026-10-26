@@ -18,7 +18,7 @@ You do not need cloud credentials to install the CLI or generate project files. 
 
 ## Choose an installation method
 
-Use a **project-local installation** to share a locked CLI version with your team. Use a **global installation** to run `stax` across repositories without adding a dependency to each project. You only need one method.
+Use a **project-local installation** to share a locked CLI version with your team. Use a **global installation** to run `stax` across repositories without adding a dependency to each project. Prefer project-local installation when dealing with multiple projects to avoid version conflicts.
 
 ### Project-local installation
 
