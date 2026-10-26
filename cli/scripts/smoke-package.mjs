@@ -52,7 +52,7 @@ function exercise(label, cwd, invoke, version, frameworkRef) {
 try {
   const prefix = join(root, "global");
   mkdirSync(prefix);
-  run("npm", ["install", "--global", "--prefix", prefix, "--offline", "--ignore-scripts", "--no-audit", "--no-fund", tarball], root);
+  run("npm", ["install", "--global", "--prefix", prefix, "--ignore-scripts", "--no-audit", "--no-fund", tarball], root);
   const installed = join(prefix, "lib/node_modules/@gebit/stax-cli");
   const { version } = JSON.parse(readFileSync(join(installed, "package.json"), "utf8"));
   const frameworkRef = version === "0.0.0-development" ? developmentRef : version;
@@ -70,7 +70,7 @@ try {
   writeFileSync(join(localProject, "package.json"), JSON.stringify({
     name: "stax-smoke-consumer", version: "9.9.9", private: true, scripts: { stax: "stax" },
   }));
-  run("npm", ["install", "--save-dev", "--save-exact", "--offline", "--ignore-scripts", "--no-audit", "--no-fund", tarball], localProject);
+  run("npm", ["install", "--save-dev", "--save-exact", "--ignore-scripts", "--no-audit", "--no-fund", tarball], localProject);
   exercise("project-local install", localProject, (args, status) => run("npm", ["run", "--silent", "stax", "--", ...args], localProject, status), version, frameworkRef);
 } finally {
   rmSync(root, { recursive: true, force: true });
