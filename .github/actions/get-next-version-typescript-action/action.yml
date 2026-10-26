@@ -30,5 +30,5 @@ outputs:
   prevVersion:
     description: 'Previous version tag (the last release tag before the next version, empty if none)'
 runs:
-  using: 'node20'
+  using: 'node24'
   main: 'dist/index.js'

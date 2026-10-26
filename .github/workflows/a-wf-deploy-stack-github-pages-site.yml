@@ -91,9 +91,9 @@ jobs:
            steps.config.outputs.source-owner == github.repository_owner &&
            (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '')) ||
           (steps.config.outputs.docs-version != '' && steps.config.outputs.publish == 'true')
-        uses: actions/create-github-app-token@v2
+        uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
           private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
           owner: ${{ steps.config.outputs.source-owner }}
           repositories: ${{ steps.config.outputs.source-name }}

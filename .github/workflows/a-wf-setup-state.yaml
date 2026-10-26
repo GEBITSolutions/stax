@@ -176,7 +176,7 @@ jobs:
         echo "customer_config=$CUSTOMER_CONFIG_B64" >> "$GITHUB_OUTPUT"
 
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         clean: false
         fetch-depth: 0
