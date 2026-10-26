@@ -13,6 +13,14 @@ const fields = [
   'state_resource_group_name',
   'state_bucket_name',
   'state_region',
+  'aws_endpoint_url',
+  'aws_endpoint_url_s3',
+  'aws_endpoint_url_sts',
+  'aws_endpoint_url_iam',
+  'aws_s3_compatible',
+  'aws_skip_sts_check',
+  'state_use_lockfile',
+  'state_use_path_style',
 ];
 
 const requiredCommon = ['project', 'customer_id', 'stage', 'cloud', 'default_location', 'public_cloud_flag'];
@@ -26,6 +34,20 @@ const requiredAzure = [
 ];
 const requiredAws = ['state_bucket_name', 'state_region'];
 const fieldSet = new Set(fields);
+const booleanFields = new Set(['public_cloud_flag', 'aws_s3_compatible', 'aws_skip_sts_check', 'state_use_lockfile', 'state_use_path_style']);
+const endpointFields = ['aws_endpoint_url', 'aws_endpoint_url_s3', 'aws_endpoint_url_sts', 'aws_endpoint_url_iam'];
+// Optional AWS-only options with the value that keeps today's behaviour (AWS endpoints, S3 native locking, STS check).
+const awsOptionDefaults = {
+  aws_endpoint_url: '',
+  aws_endpoint_url_s3: '',
+  aws_endpoint_url_sts: '',
+  aws_endpoint_url_iam: '',
+  aws_s3_compatible: 'false',
+  aws_skip_sts_check: 'false',
+  state_use_lockfile: 'true',
+  state_use_path_style: 'false',
+};
+const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 function isMapping(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -40,7 +62,7 @@ function validateValue(field, value, source) {
     throw new Error(`${source}.${field} must not contain newlines (unsafe for workflow environment data)`);
   }
   if (isAbsent(value)) return undefined;
-  if (field === 'public_cloud_flag') {
+  if (booleanFields.has(field)) {
     if (value === true || value === false || value === 'true' || value === 'false') {
       return String(value);
     }
@@ -48,6 +70,28 @@ function validateValue(field, value, source) {
   }
   if (typeof value !== 'string') {
     throw new Error(`${source}.${field} must be a string`);
+  }
+  if (endpointFields.includes(field)) return validateEndpointUrl(field, value.trim(), source);
+  return value;
+}
+
+// Endpoint URLs end up in AWS_ENDPOINT_URL_* for Terraform/OpenTofu and the AWS CLI.
+// Credentials never belong in them, and plain http is only accepted for local test servers.
+function validateEndpointUrl(field, value, source) {
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error(`${source}.${field} must be an absolute URL such as https://s3.example.com (received '${value}')`);
+  }
+  if (url.username || url.password) {
+    throw new Error(`${source}.${field} must not contain credentials; use the AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY secrets`);
+  }
+  if (url.search || url.hash) {
+    throw new Error(`${source}.${field} must not contain a query string or fragment`);
+  }
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && localHosts.has(url.hostname))) {
+    throw new Error(`${source}.${field} must use https (http is only allowed for localhost / 127.0.0.1)`);
   }
   return value;
 }
@@ -100,6 +144,15 @@ export function resolveDeploymentContext({ documents, variables = {}, skipCloudV
   for (const field of required) {
     if (!result[field.toUpperCase()]) {
       throw new Error(`Missing deployment.${field}; set it in deployment or GitHub variable ${field.toUpperCase()}`);
+    }
+  }
+
+  if (!skipCloudValidation && cloud !== 'aws') {
+    const awsOnly = Object.entries(awsOptionDefaults)
+      .filter(([field, fallback]) => result[field.toUpperCase()] && result[field.toUpperCase()] !== fallback)
+      .map(([field]) => field);
+    if (awsOnly.length > 0) {
+      throw new Error(`deployment.${awsOnly.join(', deployment.')} require cloud 'aws' (cloud is '${cloud || 'unset'}'); remove them or the matching GitHub variables`);
     }
   }
 

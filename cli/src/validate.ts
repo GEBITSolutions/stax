@@ -265,6 +265,55 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
   }
 }
 
+const AWS_OPTION_DEFAULTS: Record<string, string> = {
+  aws_endpoint_url: "",
+  aws_endpoint_url_s3: "",
+  aws_endpoint_url_sts: "",
+  aws_endpoint_url_iam: "",
+  aws_s3_compatible: "false",
+  aws_skip_sts_check: "false",
+  state_use_lockfile: "true",
+  state_use_path_style: "false",
+};
+
+function deploymentText(value: unknown): string {
+  return value === undefined || value === null ? "" : String(value).trim();
+}
+
+/** Mirrors the AWS option checks in .github/scripts/deployment-config.mjs and a-wf-setup-ci. */
+function checkDeploymentRules(data: Record<string, unknown>, report: Reporter): void {
+  const deployment = data.deployment;
+  if (!isRecord(deployment)) return;
+  const cloud = deploymentText(deployment.cloud).toLowerCase();
+  const changed = Object.entries(AWS_OPTION_DEFAULTS)
+    .filter(([field, fallback]) => {
+      const value = deploymentText(deployment[field]);
+      return value !== "" && value !== fallback;
+    })
+    .map(([field]) => field);
+
+  // An unset cloud may still resolve to aws from the CLOUD variable.
+  if (cloud !== "" && cloud !== "aws") {
+    for (const field of changed) report.add("error", ["deployment", field], `only applies to cloud "aws" (cloud is "${cloud}")`);
+    return;
+  }
+  if (deploymentText(deployment.state_use_lockfile) === "false") {
+    report.add(
+      "warning",
+      ["deployment", "state_use_lockfile"],
+      "state locking is off; concurrent runs can corrupt the state, so only disable it for S3-compatible stores without conditional writes",
+    );
+  }
+  const hasEndpoint = ["aws_endpoint_url", "aws_endpoint_url_sts"].some((field) => deploymentText(deployment[field]) !== "");
+  if (deploymentText(deployment.aws_skip_sts_check) === "true" && !hasEndpoint) {
+    report.add(
+      "warning",
+      ["deployment", "aws_skip_sts_check"],
+      "skips the credential check against AWS STS; this is meant for S3-compatible stores without an STS endpoint",
+    );
+  }
+}
+
 /** Validates one deploy config. Findings are sorted by position. */
 export function validateConfigText(text: string): Finding[] {
   const lineCounter = new LineCounter();
@@ -296,6 +345,7 @@ export function validateConfigText(text: string): Finding[] {
   if (Array.isArray(data.stacks)) {
     data.stacks.forEach((stack, index) => checkUnknownKeys(stack, KNOWN_KEYS.stack, ["stacks", index], report));
   }
+  checkDeploymentRules(data, report);
   checkPipelineRules(data, report);
 
   return report.findings.sort((a, b) => a.line - b.line || a.column - b.column);
