@@ -252,7 +252,7 @@ runs:
       fi
 
   - name: Setup Infracost
-    uses: infracost/actions/setup@v3
+    uses: infracost/actions/setup@v4
     continue-on-error: true   # allow failure for cost reporting steps
     with:
       currency: "EUR"
@@ -270,20 +270,8 @@ runs:
     shell: bash
     run: tar --exclude="**/kubeconfig" -cvf project.tar "${{inputs.chdir}}"
 
-  - id: artifact-exists
-    uses: LIT-Protocol/artifact-exists-action@v0
-    with:
-      name: ${{ format('{0}-source-code-modules-{1}', inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform', inputs.location)
-        }}
-
-    # - name: "Tar Module Files"
-    #   if: (inputs.generate-source-artifact == 'true' && inputs.destroy != 'true' && inputs.plan == 'true'  &&
-    # steps.artifact-exists.outputs.exists == 'false')
-    #   shell: bash
-    #   run: tar --exclude="**/kubeconfig" -cvf modules.tar "${{inputs.chdir}}/${{inputs.relative-module-path}}"
-
   - name: "Upload ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }} Source Code Tar"
-    uses: actions/upload-artifact@v4
+    uses: actions/upload-artifact@v7
     if: (inputs.generate-source-artifact == 'true' && inputs.destroy != 'true' && inputs.plan == 'true')
     with:
       name: "terraform-source-code-${{inputs.solution}}${{steps.tf-folder.outputs.value}}-${{inputs.location}}"
@@ -291,13 +279,13 @@ runs:
       if-no-files-found: warn
 
   - name: Setup Terraform
-    uses: hashicorp/setup-terraform@v3
+    uses: hashicorp/setup-terraform@v4
     if: (inputs.iac-provider == 'terraform')
     with:
       terraform_version: ${{inputs.terraform-version}}
       terraform_wrapper: false
 
-  - uses: opentofu/setup-opentofu@v1
+  - uses: opentofu/setup-opentofu@v2
     if: (inputs.iac-provider == 'opentofu')
     with:
       tofu_version: ${{inputs.opentofu-version}}
@@ -719,7 +707,7 @@ runs:
   - id: setup-python-cache
     name: "Setup Python with pip cache"
     if: (inputs.plan == 'true')
-    uses: actions/setup-python@v5
+    uses: actions/setup-python@v7
     with:
       python-version: '3.x'
       cache: 'pip'
@@ -908,7 +896,7 @@ runs:
       script: |
         core.setFailed("[ERROR] TF plan exited with code 1 ERROR");
 
-  - uses: actions/upload-artifact@v4
+  - uses: actions/upload-artifact@v7
     name: Upload Checkov Report
     if: always() && (inputs.plan == 'true')
     with:
@@ -1361,7 +1349,7 @@ runs:
           core.setFailed(err)
         }
 
-  - uses: actions/upload-artifact@v4
+  - uses: actions/upload-artifact@v7
     name: Upload ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-plan
     if: (inputs.plan == 'true' && inputs.upload-plan-artifact == 'true')
     with:
@@ -1370,7 +1358,7 @@ runs:
       if-no-files-found: error
       overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
 
-  - uses: actions/upload-artifact@v4
+  - uses: actions/upload-artifact@v7
     name: Upload ${{ inputs.iac-provider == 'opentofu' && 'OpenTofu' || 'Terraform' }}-plan txt
     with:
       name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-as-text"
@@ -1378,7 +1366,7 @@ runs:
       if-no-files-found: ignore
       overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
 
-  - uses: actions/upload-artifact@v4
+  - uses: actions/upload-artifact@v7
     if: (inputs.plan == 'true')
     name: Upload Terracost report
     with:
@@ -1387,7 +1375,7 @@ runs:
       if-no-files-found: ignore
       overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
 
-  - uses: actions/upload-artifact@v4
+  - uses: actions/upload-artifact@v7
     if: (inputs.plan == 'true')
     name: Upload Terracost markdown
     with:
