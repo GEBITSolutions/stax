@@ -29,6 +29,7 @@ assert.ok(stack(all.layers, 'e2e-app').depends_on.includes('e2e-cluster'));
 assert.ok(stack(all.layers, 'e2e-cluster')['output-var'].includes('endpoint'), 'referenced output is registered on the producer');
 assert.equal(stack(all.layers, 'e2e-network').config_globals.app_name, 'stax-e2e');
 assert.equal(stack(all.layers, 'e2e-cluster').config_globals.app_name, 'stax-e2e-overlay', 'globals stay per config file');
+assert.equal(stack(all.layers, 'e2e-prod-only'), undefined, 'false stack conditions exclude stacks even without a filter');
 const allIds = all.layers.flat().map(candidate => candidate.id);
 assert.equal(new Set(allIds).size, allIds.length, 'no stack is scheduled twice');
 

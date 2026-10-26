@@ -70,8 +70,8 @@ jobs:
         e2e/assert/run.sh not-run 'Terraform: E2E Plan (OpenTofu|Terraform) / TF (Apply|Destroy)'
     - name: Plans contain the resolved inputs
       run: |
-        e2e/assert/run.sh artifact '^opentofu ?-plan-e2e-tofu-plan ?-.*-as-text$' tofu
-        e2e/assert/run.sh artifact '^terraform ?-plan-e2e-terraform-plan ?-.*-as-text$' terraform
+        e2e/assert/run.sh artifact '^opentofu-plan-e2e-tofu-plan-.*-as-text$' tofu
+        e2e/assert/run.sh artifact '^terraform-plan-e2e-terraform-plan-.*-as-text$' terraform
         grep -rq 'terraform_data.echo' tofu terraform
         grep -rq '"stax-e2e"' tofu || { echo "::error::OpenTofu plan lacks the config global"; exit 1; }
         grep -rq '"e2e"' terraform || { echo "::error::Terraform plan lacks the pipeline global"; exit 1; }

@@ -294,9 +294,7 @@ runs:
     name: "Generate Artifact Names"
     shell: bash
     run: |
-      plan_artifacts_name=$(echo "${{ inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform' }}"\
-        "-plan-${{inputs.solution}}${{steps.tf-folder.outputs.value}}"\
-        "-${{inputs.location}}.tfplan")
+      plan_artifacts_name="${{ inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform' }}-plan-${{inputs.solution}}${{steps.tf-folder.outputs.value}}-${{inputs.location}}.tfplan"
       plan_binary_name="${{ inputs.iac-provider == 'opentofu' && 'opentofu' || 'terraform' }}.tfplan"
       plan_binary_path=$(echo "${{inputs.chdir}}/${plan_binary_name}" | sed 's/\/.\//\//g')
       echo "[DEBUG] plan_artifacts_name=$plan_artifacts_name"

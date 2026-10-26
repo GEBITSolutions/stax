@@ -57,3 +57,9 @@ Precedence per field is selected YAML → GitHub variable. An empty string or `n
 | `state_resource_group_name` | `STATE_RESOURCE_GROUP_NAME` | Required for Azure |
 | `state_bucket_name` | `STATE_BUCKET_NAME` | Required for AWS |
 | `state_region` | `STATE_REGION` | Required for AWS |
+
+## Stack conditions
+
+A stack's `if` string is evaluated whether or not a stack filter is supplied. For example, `if: "'{stage}' === 'prod'"` selects the stack only for the production stage. A false condition excludes the stack; if every selected stack is excluded, the deployment plan is empty.
+
+Previously, unfiltered deployments ignored these conditions. Review existing conditions before upgrading: stacks that previously ran despite a false condition will now be skipped.

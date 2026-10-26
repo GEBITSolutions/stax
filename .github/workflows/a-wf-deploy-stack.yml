@@ -91,6 +91,7 @@ jobs:
       data: ${{ inputs.data }}
       env: ${{ inputs.env }}
       external-repos: ${{ inputs.external-repos }}
+      actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
     secrets: inherit
 
@@ -819,6 +820,7 @@ jobs:
       stack-repository: ${{ fromJson(inputs.data)['source_repo'] || github.repository }}
       stack-repository-version: ${{ fromJson(inputs.data)['source_version'] || github.sha }}
       destroy: ${{ fromJson(inputs.env)['destroy'] || fromJson(inputs.data)['destroy'] || 'false' }}
+      actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
     secrets: inherit
 
@@ -884,5 +886,6 @@ jobs:
       dry-run: ${{ fromJson(inputs.env)['dry_run'] || 'true' }}
       destroy: ${{ fromJson(inputs.env)['destroy'] || fromJson(inputs.data)['destroy'] || 'false' }}
       debug: ${{ fromJson(inputs.env)['debug'] || 'false' }}
+      actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
     secrets: inherit
