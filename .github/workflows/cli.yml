@@ -8,6 +8,7 @@ on:
       - schema/**
       - configs/**
       - .github/workflows/cli.yml
+      - .github/workflows/cli-pack.yml
 
 permissions:
   contents: read
@@ -29,13 +30,13 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Smoke stax init, add and validate
+      - name: Smoke packed CLI global and project-local installs
+        env:
+          FRAMEWORK_REF: ${{ github.event.pull_request.head.sha }}
         run: |
           target="$(mktemp -d)"
-          node dist/cli.js init "$target"
-          test -f "$target/.github/workflows/deploy.yml"
-          node dist/cli.js add "$target" --name "Network Hub" --type opentofu --yes
-          node dist/cli.js add "$target" --name Docs --type github-pages-site-deploy --yes
-          node dist/cli.js validate config "$target/configs/default.yaml" --strict
+          trap 'rm -rf "$target"' EXIT
+          npm pack --pack-destination "$target"
+          node scripts/smoke-package.mjs "$target"/gebit-stax-cli-*.tgz "$FRAMEWORK_REF"
       - name: Validate this repository's deploy configs
         run: node dist/cli.js validate config ../configs -r --strict

@@ -114,7 +114,7 @@ describe("addStackToConfig", () => {
 describe("stax add", () => {
   function initProject(): string {
     const root = mkdtempSync(join(tmpdir(), "stax-add-"));
-    const config = renderProject({ project: "demo", environment: "dev" }).find((file) => file.path === DEPLOY_CONFIG_PATH);
+    const config = renderProject({ project: "demo", environment: "dev" }, "feature/cli-tests").find((file) => file.path === DEPLOY_CONFIG_PATH);
     mkdirSync(join(root, "configs"));
     writeFileSync(join(root, DEPLOY_CONFIG_PATH), config!.content);
     return root;

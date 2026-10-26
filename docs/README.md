@@ -49,7 +49,7 @@ For a local single-version content preview, continue using `zensical serve` abov
 ## Files
 
 - `zensical.toml`: site title, navigation, and light/dark themes.
-- `docs/`: the existing landing page and supported stack types, plus title-only placeholders for Why STAX?, Installation, Your first config, Configuration, and Backends.
+- `docs/`: the landing page, global and project-local CLI installation guide, configuration overview, Why STAX?, supported stack types, and title-only placeholders for Your first config and Backends.
 - `pyproject.toml` and `uv.lock`: documentation dependency and locked versions.
 - `docs/assets/stax-logo.png` and `docs/assets/stax-favicon.png`: transparent header logo and favicon derived from the supplied Downloads image. The header symbol displays in white in dark mode through `docs/stylesheets/extra.css`.
 

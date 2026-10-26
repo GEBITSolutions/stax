@@ -1,13 +1,7 @@
-/**
- * Reusable workflows the generated wrapper calls. Unpinned until stax publishes releases.
- */
 export const WORKFLOW_REPOSITORY = "GEBITSolutions/stax";
-export const WORKFLOW_REF = "main";
 
 export const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
 export const DEPLOY_CONFIG_PATH = "configs/default.yaml";
-export const DEPLOY_CONFIG_SCHEMA_URL =
-  "https://raw.githubusercontent.com/GEBITSolutions/stax/main/schema/deploy-config.schema.json";
 
 export interface ProjectValues {
   /** Optional deployment.project in configs/default.yaml; otherwise the GitHub variable PROJECT supplies it. */
@@ -78,8 +72,8 @@ function renderDeploymentBlock(project: string | undefined): string {
   return [project === undefined ? "# deployment:" : "deployment:", ...lines].join("\n");
 }
 
-function renderDeployConfig({ project, environment }: ProjectValues): string {
-  return `# yaml-language-server: $schema=${DEPLOY_CONFIG_SCHEMA_URL}
+function renderDeployConfig({ project, environment }: ProjectValues, frameworkRef: string): string {
+  return `# yaml-language-server: $schema=https://raw.githubusercontent.com/${WORKFLOW_REPOSITORY}/${encodeURIComponent(frameworkRef)}/schema/deploy-config.schema.json
 # Deploy configuration read by the Deploy workflow (deploy-config input "default").
 # Nothing is deployed until at least one stack is defined. Add one with: stax add
 # Check the file with: stax validate config
@@ -117,7 +111,7 @@ stacks: []
 `;
 }
 
-export function renderProject(values: ProjectValues): GeneratedFile[] {
+export function renderProject(values: ProjectValues, frameworkRef: string): GeneratedFile[] {
   const { environment } = values;
   const workflowPrefix = `${WORKFLOW_REPOSITORY}/.github/workflows`;
   const deployWorkflow = `name: Deploy
@@ -163,9 +157,10 @@ concurrency:
 jobs:
   setup:
     name: Setup CI/CD
-    uses: ${workflowPrefix}/a-wf-setup-ci.yml@${WORKFLOW_REF}
+    uses: ${workflowPrefix}/a-wf-setup-ci.yml@${frameworkRef}
     secrets: inherit
     with:
+      actions-version: ${JSON.stringify(frameworkRef)}
       environment: \${{ inputs.environment }}
       stack_filter: \${{ inputs.stack-filter }}
       dry-run: \${{ inputs.dry-run }}
@@ -176,9 +171,10 @@ jobs:
   deploy-levels:
     name: Deploy Levels
     needs: setup
-    uses: ${workflowPrefix}/a-wf-deploy-levels.yml@${WORKFLOW_REF}
+    uses: ${workflowPrefix}/a-wf-deploy-levels.yml@${frameworkRef}
     secrets: inherit
     with:
+      actions-version: ${JSON.stringify(frameworkRef)}
       ci_config: \${{ needs.setup.outputs.ci-config }}
       env: \${{ needs.setup.outputs.env }}
       default_location: \${{ needs.setup.outputs.default-location }}
@@ -187,7 +183,7 @@ jobs:
 
   return [
     { path: DEPLOY_WORKFLOW_PATH, content: deployWorkflow },
-    { path: DEPLOY_CONFIG_PATH, content: renderDeployConfig(values) },
+    { path: DEPLOY_CONFIG_PATH, content: renderDeployConfig(values, frameworkRef) },
   ];
 }
 

@@ -37,6 +37,8 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: npm pack
+      - name: Smoke packed CLI global and project-local installs
+        run: node scripts/smoke-package.mjs "gebit-stax-cli-$VERSION.tgz"
       - uses: actions/upload-artifact@v7
         with:
           name: stax-cli
