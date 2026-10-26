@@ -20,11 +20,12 @@
     ".": "./dist/index.js"
   },
   "engines": {
-    "npm": ">=10.0.0 <11.0.0",
-    "node": ">=20.0.0 <21.0.0"
+    "npm": ">=11.0.0 <12.0.0",
+    "node": ">=24.0.0 <25.0.0"
   },
   "volta": {
-    "node": "20.6.0"
+    "node": "24.22.0",
+    "npm": "11.21.1"
   },
   "scripts": {
     "bundle": "npm run format:write && npm run package",
@@ -151,6 +152,9 @@
     "undici": "^7.29.1",
     "prettier-eslint": {
       "minimatch": ">=9.0.7"
+    },
+    "@eslint/eslintrc": {
+      "minimatch": "^3.1.5"
     }
   }
 }
