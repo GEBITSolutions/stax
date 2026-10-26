@@ -24,7 +24,7 @@ on:
         default: "[]"
       actions-version:
         required: false
-        default: "1.3.2"
+        default: "1.3.3"
         description: "Github Repo branch for shared actions."
         type: string
       actions-repository:
