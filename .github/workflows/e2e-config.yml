@@ -1,15 +1,20 @@
 ---
-name: ".E2E: Config resolution"
+name: "E2E: Config resolution"
 
 # Resolves two deploy config files through a-wf-setup-ci.yml (setup only, nothing is
 # deployed) and checks deployment value precedence, per-file globals, explicit and
-# implicit dependencies across files, stack filters and if conditions.
+# implicit dependencies across files, stack filters and if conditions. See e2e/README.md.
 
 on:
-  workflow_call:
+  pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   all:
@@ -72,3 +77,17 @@ jobs:
         RUN_UPSTREAM_CONFIG: ${{ needs.upstream.outputs.ci-config }}
         RUN_UPSTREAM_ENV: ${{ needs.upstream.outputs.env }}
         RUN_UPSTREAM_LOCATION: ${{ needs.upstream.outputs.default-location }}
+
+  result:
+    name: "E2E: Config resolution"
+    needs: [all, group, upstream, check]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: All jobs succeeded
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
+        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null

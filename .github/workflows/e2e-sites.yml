@@ -1,11 +1,12 @@
 ---
-name: ".E2E: Site and image builds"
+name: "E2E: Site and image builds"
 
 # Dry run of a GitHub Pages MkDocs site and a Docker image. Checks the built site
-# content and that neither the site nor the image is published.
+# content and that neither the site nor the image is published. See e2e/README.md.
 
 on:
-  workflow_call:
+  pull_request:
+  workflow_dispatch:
 
 # The stack dispatcher declares these for other stack types; nested workflows need them.
 permissions:
@@ -14,6 +15,10 @@ permissions:
   packages: write
   pages: write
   id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   setup:
@@ -65,3 +70,17 @@ jobs:
         e2e/assert/run.sh artifact "^github-pages-e2e-mkdocs-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}$" site
         mkdir page && tar -xf site/artifact.tar -C page
         grep -q 'stax-e2e-mkdocs-marker' page/index.html
+
+  result:
+    name: "E2E: Site and image builds"
+    needs: [setup, build, check]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: All jobs succeeded
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
+        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null

@@ -1,15 +1,15 @@
 ---
-name: ".E2E: Deploy, pass values, destroy"
+name: "E2E: Deploy and destroy"
 
 # Applies an OpenTofu stack (local state, no cloud provider) and a script stack that
 # consumes its output, as a project's deploy workflow would. Values between stacks are
 # stored as variables of the GitHub Environment "e2e" through the release GitHub App.
-# Then runs a destroy. Stored variables are deleted before and after the run.
-# Callers must pass secrets: inherit and serialize runs, because all runs share the
-# same Environment variables.
+# Then destroys the OpenTofu stack. Stored variables are deleted before and after the
+# run; runs are serialized because they share these variables. See e2e/README.md.
 
 on:
-  workflow_call:
+  pull_request:
+  workflow_dispatch:
 
 # The stack dispatcher declares these for other stack types; nested workflows need them.
 permissions:
@@ -18,6 +18,10 @@ permissions:
   packages: write
   pages: write
   id-token: write
+
+concurrency:
+  group: stax-e2e-deploy
+  cancel-in-progress: false
 
 env:
   ENVIRONMENT: e2e
@@ -110,16 +114,18 @@ jobs:
       actions-repository: ${{ github.repository }}
       actions-version: ${{ github.sha }}
 
+  # A single stack: call the stack dispatcher directly. A second deploy-levels call
+  # would exceed GitHub's size limit for one workflow run.
   destroy:
     name: Destroy
     needs: destroy-setup
-    uses: ./.github/workflows/a-wf-deploy-levels.yml
+    uses: ./.github/workflows/a-wf-deploy-stack.yml
     secrets: inherit
     with:
-      ci_config: ${{ needs.destroy-setup.outputs.ci-config }}
+      data: ${{ toJSON(fromJSON(needs.destroy-setup.outputs.ci-config)[0][0]) }}
       env: ${{ needs.destroy-setup.outputs.env }}
-      default_location: ${{ needs.destroy-setup.outputs.default-location }}
-      external_repos: ${{ needs.destroy-setup.outputs.external-repos }}
+      default-location: ${{ needs.destroy-setup.outputs.default-location }}
+      external-repos: ${{ needs.destroy-setup.outputs.external-repos }}
       actions-repository: ${{ github.repository }}
       actions-version: ${{ github.sha }}
 
@@ -163,3 +169,17 @@ jobs:
         e2e/assert/run.sh delete-variables "${ENVIRONMENT}" "${names[@]}"
       env:
         GH_TOKEN: ${{ steps.app-token.outputs.token }}
+
+  result:
+    name: "E2E: Deploy and destroy"
+    needs: [reset, setup, apply, verify, destroy-setup, destroy, check-destroy, cleanup]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: All jobs succeeded
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
+        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null

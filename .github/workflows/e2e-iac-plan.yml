@@ -1,12 +1,14 @@
 ---
-name: ".E2E: Infrastructure plan"
+name: "E2E: Infrastructure plan"
 
 # Dry run of an OpenTofu and a Terraform stack (local state, no cloud provider) followed
 # by a script stack in the next layer. Checks that both plans contain the values passed
 # from config and pipeline globals and that the script receives globals and DRY_RUN.
+# See e2e/README.md.
 
 on:
-  workflow_call:
+  pull_request:
+  workflow_dispatch:
 
 # The stack dispatcher declares these for other stack types; nested workflows need them.
 permissions:
@@ -15,6 +17,10 @@ permissions:
   packages: write
   pages: write
   id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   setup:
@@ -69,3 +75,17 @@ jobs:
         grep -rq 'terraform_data.echo' tofu terraform
         grep -rq '"stax-e2e"' tofu || { echo "::error::OpenTofu plan lacks the config global"; exit 1; }
         grep -rq '"e2e"' terraform || { echo "::error::Terraform plan lacks the pipeline global"; exit 1; }
+
+  result:
+    name: "E2E: Infrastructure plan"
+    needs: [setup, plan, check]
+    if: always()
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+    - name: All jobs succeeded
+      env:
+        RESULTS: ${{ toJSON(needs) }}
+      run: |
+        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
+        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null

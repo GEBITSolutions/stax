@@ -1,16 +1,16 @@
 # End-to-end tests
 
-[`e2e.yml`](../.github/workflows/e2e.yml) runs the framework's reusable workflows the way a project's deploy workflow does, with the code of the commit under test. It runs for every pull request; its `E2E` job is the required check for `main`. Run it manually with **Actions → E2E → Run workflow**.
+The `e2e-*.yml` workflows run the framework's reusable workflows the way a project's deploy workflow does, with the code of the commit under test. Each scenario is its own workflow: a single run cannot call the stack dispatcher more than about twice before GitHub rejects it as too large. All of them run for every pull request, and each ends with a job named after its workflow (for example `E2E: Config resolution`) that fails if any of its jobs did not succeed. Those five jobs are the required checks for `main`. Run a scenario manually from **Actions → E2E: … → Run workflow**.
 
 Each scenario covers one part of the framework with the most common setup, not every option:
 
 | Scenario | Workflow | Config | What it checks |
 |---|---|---|---|
-| CLI new project | `e2e.yml` (`cli`) | generated | `stax init` and `stax add` create a valid config; the generated `deploy.yml` matches the inputs and secrets of the reusable workflows; the configs in `e2e/configs` are valid |
+| CLI new project | `e2e-cli.yml` | generated | `stax init` and `stax add` create a valid config; the generated `deploy.yml` matches the inputs and secrets of the reusable workflows; the configs in `e2e/configs` are valid |
 | Config resolution | `e2e-config.yml` | `config-base.yaml`, `config-overlay.yaml` | deployment values from the later file win; globals stay per file; explicit and implicit (`stack.<id>.var.<key>`) dependencies across files; `group-` and `>` stack filters; `if` conditions |
 | Infrastructure plan | `e2e-iac-plan.yml` | `iac-plan.yaml` | OpenTofu and Terraform plans (local state, no cloud provider) contain values from config and pipeline globals; a script stack in the next layer receives globals and `DRY_RUN=true`; nothing is applied |
 | Site and image builds | `e2e-sites.yml` | `sites.yaml` | a GitHub Pages MkDocs site and a Docker image are built; nothing is published or pushed |
-| Deploy and destroy | `e2e-deploy.yml` | `deploy.yaml` | an OpenTofu apply stores its output in the GitHub Environment `e2e`; a script stack receives it and stores a derived value; destroy runs |
+| Deploy and destroy | `e2e-deploy.yml` | `deploy.yaml` | an OpenTofu apply stores its output in the GitHub Environment `e2e`; a script stack receives it and stores a derived value; the OpenTofu stack is destroyed |
 
 ## Requirements
 

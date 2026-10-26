@@ -1,32 +1,25 @@
 ---
-name: E2E
+name: "E2E: CLI new project"
 
-# End-to-end tests of the framework through its reusable workflows, with the code of
-# this commit (see e2e/README.md). The "E2E" job is the required check for main; it
-# runs for every pull request, so it never stays pending.
+# Creates a project with stax init and stax add, validates it, and checks that the
+# generated deploy.yml matches the inputs and secrets of this commit's reusable
+# workflows. See e2e/README.md.
 
 on:
   pull_request:
   workflow_dispatch:
 
-# The stack dispatcher declares these for other stack types; nested workflows need them.
 permissions:
-  actions: read
   contents: read
-  packages: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: e2e-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
   cli:
-    name: CLI new project
+    name: "E2E: CLI new project"
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
     defaults:
       run:
         working-directory: cli
@@ -60,39 +53,3 @@ jobs:
           "${RUNNER_TEMP}/project/.github/workflows/deploy.yml" > .github/workflows/e2e-generated-deploy.yml
         bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12 "${RUNNER_TEMP}"
         "${RUNNER_TEMP}/actionlint" -shellcheck= -pyflakes= .github/workflows/e2e-generated-deploy.yml
-
-  config:
-    name: Config resolution
-    uses: ./.github/workflows/e2e-config.yml
-
-  iac-plan:
-    name: Infrastructure plan
-    uses: ./.github/workflows/e2e-iac-plan.yml
-    secrets: inherit
-
-  sites:
-    name: Site and image builds
-    uses: ./.github/workflows/e2e-sites.yml
-    secrets: inherit
-
-  deploy:
-    name: Deploy and destroy
-    uses: ./.github/workflows/e2e-deploy.yml
-    secrets: inherit
-    concurrency:
-      group: stax-e2e-deploy
-      cancel-in-progress: false
-
-  e2e:
-    name: E2E
-    needs: [cli, config, iac-plan, sites, deploy]
-    if: always()
-    runs-on: ubuntu-latest
-    permissions: {}
-    steps:
-    - name: All scenarios passed
-      env:
-        RESULTS: ${{ toJSON(needs) }}
-      run: |
-        jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<<"${RESULTS}"
-        jq -e 'all(.[]; .result == "success")' <<<"${RESULTS}" >/dev/null
