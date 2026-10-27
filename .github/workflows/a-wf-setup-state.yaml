@@ -530,8 +530,9 @@ jobs:
           value="${value#"${value%%[![:space:]]*}"}"
           value="${value%"${value##*[![:space:]]}"}"
           if [ -z "$value" ]; then continue; fi
-          if [[ "$value" =~ [[:space:]@] || ! "$value" =~ ^(https://|http://(localhost|127\.0\.0\.1|\[::1\])([:/]|$)) ]]; then
-            echo "::error::${name} must be an https URL without credentials (http only for localhost): '${value}'."
+          if [[ "$value" == *\\* || "$value" =~ [[:space:]@?#] || ! "$value" =~ ^(https://|http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/|$)) ]] \
+            || ! node -e 'try { new URL(process.argv[1]); } catch { process.exit(1); }' "$value"; then
+            echo "::error::${name} must be a valid https URL without credentials, query or fragment (http only for localhost)."
             exit 1
           fi
           if [ "${OIDC_ENABLED}" = "true" ] && [ "$name" != "AWS_ENDPOINT_URL_S3" ]; then
@@ -667,13 +668,20 @@ jobs:
         bucket="${{ steps.resolve-config.outputs.bucket_name }}"
         region="${{ steps.resolve-config.outputs.region }}"
 
-        # S3-compatible stores may not implement every hardening API; versioning stays mandatory.
+        # Unsupported hardening APIs are optional for compatible stores; transport and
+        # authorization failures are not. Never report a failed security operation as success.
         harden() {
-          local what="$1"; shift
-          if [ "${S3_COMPATIBLE}" = "true" ]; then
-            "$@" || echo "::warning::${what} is not supported by this S3-compatible endpoint or failed; configure it in the provider console if available."
+          local what="$1" err; shift
+          err=$(mktemp)
+          if "$@" 2>"$err"; then
+            rm -f "$err"
+          elif [ "${S3_COMPATIBLE}" = "true" ] && grep -qiE 'NotImplemented|NotSupported|UnsupportedOperation|UnsupportedFeature|\(501\)' "$err"; then
+            echo "::warning::${what} is not supported by this S3-compatible endpoint; configure it in the provider console if available."
+            rm -f "$err"
           else
-            "$@"
+            cat "$err" >&2
+            rm -f "$err"
+            return 1
           fi
         }
 
@@ -682,21 +690,15 @@ jobs:
           echo "[INFO] Use existing bucket ${bucket}"
           bucket_exists=true
           rm -f "$head_err"
-        elif grep -qE '403|Forbidden' "$head_err"; then
-          echo "::error::Bucket '${bucket}' exists but is not accessible with these credentials. S3 bucket names are global across all AWS accounts: it either belongs to another account or the credentials lack access to it. Pick a different STATE_BUCKET_NAME."
-          sed 's/^/[aws] /' "$head_err" >&2
-          rm -f "$head_err"
-          exit 1
-        elif [ "${DRY_RUN}" = "true" ]; then
-          sed 's/^/[aws] /' "$head_err"
-          rm -f "$head_err"
-          echo "[DRY-RUN] Would create bucket ${bucket} in ${region} and enable versioning, encryption, public access block, TLS-only policy and tags."
-          echo "bucket_exists=false" >> "$GITHUB_OUTPUT"
-          exit 0
-        else
+        elif grep -qE '(^|[^0-9])404([^0-9]|$)|NoSuchBucket|Not Found' "$head_err"; then
+          if [ "${DRY_RUN}" = "true" ]; then
+            rm -f "$head_err"
+            echo "[DRY-RUN] Would create bucket ${bucket} in ${region} and enable versioning, encryption, public access block, TLS-only policy and tags."
+            echo "bucket_exists=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           rm -f "$head_err"
           echo "[INFO] Create bucket ${bucket} in ${region}"
-
           create_err=$(mktemp)
           set +e
           if [ "$region" = "us-east-1" ]; then
@@ -707,23 +709,26 @@ jobs:
           fi
           create_exit=$?
           set -e
-
           if [ $create_exit -ne 0 ]; then
             if grep -q 'BucketAlreadyExists' "$create_err"; then
               echo "::error::Bucket name '${bucket}' is already taken in another AWS account. S3 bucket names are globally unique; pick a different STATE_BUCKET_NAME."
             fi
-            sed 's/^/[aws] /' "$create_err" >&2
+            cat "$create_err" >&2
             rm -f "$create_err"
             exit $create_exit
           fi
           rm -f "$create_err"
-
           aws s3api wait bucket-exists --bucket "$bucket"
           bucket_exists=false
+        else
+          cat "$head_err" >&2
+          rm -f "$head_err"
+          echo "::error::Cannot determine whether bucket '${bucket}' exists; refusing to create or assume it is absent."
+          exit 1
         fi
 
         if [ "${DRY_RUN}" = "true" ]; then
-          versioning=$(aws s3api get-bucket-versioning --bucket "$bucket" --query Status --output text 2>/dev/null || echo "unknown")
+          versioning=$(aws s3api get-bucket-versioning --bucket "$bucket" --query Status --output text)
           echo "[DRY-RUN] Bucket ${bucket} exists; versioning status: ${versioning}."
           echo "[DRY-RUN] Would (re)apply versioning, encryption, public access block, TLS-only policy and managed tags."
           echo "bucket_exists=true" >> "$GITHUB_OUTPUT"
@@ -758,7 +763,7 @@ jobs:
         if ! current_policy=$(aws s3api get-bucket-policy --bucket "$bucket" --query Policy --output text 2>"$policy_err"); then
           if grep -q 'NoSuchBucketPolicy' "$policy_err"; then
             current_policy='{}'
-          elif [ "${S3_COMPATIBLE}" = "true" ]; then
+          elif [ "${S3_COMPATIBLE}" = "true" ] && grep -qiE 'NotImplemented|NotSupported|UnsupportedOperation|UnsupportedFeature|\(501\)' "$policy_err"; then
             echo "::warning::Reading the bucket policy failed on this S3-compatible endpoint; TLS-only policy not applied."
             policy_ok=false
           else
@@ -783,7 +788,7 @@ jobs:
         if ! current_tags=$(aws s3api get-bucket-tagging --bucket "$bucket" --query TagSet --output json 2>"$tag_err"); then
           if grep -q 'NoSuchTagSet' "$tag_err"; then
             current_tags='[]'
-          elif [ "${S3_COMPATIBLE}" = "true" ]; then
+          elif [ "${S3_COMPATIBLE}" = "true" ] && grep -qiE 'NotImplemented|NotSupported|UnsupportedOperation|UnsupportedFeature|\(501\)' "$tag_err"; then
             echo "::warning::Reading bucket tags failed on this S3-compatible endpoint; managed tags not applied."
             tags_ok=false
           else

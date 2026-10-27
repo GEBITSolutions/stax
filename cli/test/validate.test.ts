@@ -61,17 +61,12 @@ stacks:
     expect(validateConfigText(wasabi + docsStack)).toEqual([]);
   });
 
-  it("warns when S3 state locking is disabled", () => {
-    expect(brief(validateConfigText(`${wasabi}  state_use_lockfile: false\n${docsStack}`))).toEqual([
-      expect.objectContaining({ severity: "warning", line: 7, message: expect.stringContaining("deployment.state_use_lockfile: state locking is off") }),
-    ]);
+  it("accepts unlocked S3-compatible state with an explicit false", () => {
+    expect(validateConfigText(`${wasabi}  state_use_lockfile: false\n${docsStack}`)).toEqual([]);
   });
 
-  it("warns when the STS check is skipped without a custom STS endpoint", () => {
-    const findings = validateConfigText(`deployment:\n  cloud: aws\n  aws_skip_sts_check: true\n${docsStack}`);
-    expect(brief(findings)).toEqual([
-      expect.objectContaining({ severity: "warning", line: 3, message: expect.stringContaining("deployment.aws_skip_sts_check") }),
-    ]);
+  it("accepts skipping STS for an S3 endpoint without STS", () => {
+    expect(validateConfigText(`deployment:\n  cloud: aws\n  aws_endpoint_url_s3: https://s3.example.com\n  aws_skip_sts_check: true\n${docsStack}`)).toEqual([]);
   });
 
   it("rejects AWS endpoint options for Azure but accepts their defaults", () => {
@@ -95,6 +90,18 @@ stacks:
 
   it("accepts plain http endpoints on localhost", () => {
     expect(validateConfigText(`deployment:\n  cloud: aws\n  aws_endpoint_url: http://127.0.0.1:9000\n${docsStack}`)).toEqual([]);
+  });
+
+  it.each([
+    "aws_endpoint_url_s3: https://",
+    "aws_endpoint_url_s3: https://s3.example.com:invalid",
+    "aws_endpoint_url_s3: https://s3.example.com:99999",
+    "aws_endpoint_url_s3: https://s3.example.com/path@user",
+    "aws_endpoint_url_s3: https://s3.example.com\\evil",
+    "aws_endpoint_url_s3: http://LOCALHOST:9000",
+  ])("rejects malformed or ambiguous endpoint %s", (field) => {
+    const findings = validateConfigText(`deployment:\n  cloud: aws\n  ${field}\n${docsStack}`);
+    expect(findings).toEqual(expect.arrayContaining([expect.objectContaining({ severity: "error", message: expect.stringContaining("deployment.aws_endpoint_url_s3") })]));
   });
 
   it.each([

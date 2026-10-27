@@ -17,7 +17,7 @@ inputs:
   no-lock:
     required: false
     description: "bool"
-    default: "true"
+    default: ""
   apply:
     required: false
     description: "bool"
@@ -499,8 +499,9 @@ runs:
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
         if [[ -z "$value" ]]; then continue; fi
-        if [[ "$value" =~ [[:space:]@] || ! "$value" =~ ^(https://|http://(localhost|127\.0\.0\.1|\[::1\])([:/]|$)) ]]; then
-          echo "::error::${name} must be an https URL without credentials (http only for localhost): '${value}'."
+        if [[ "$value" == *\\* || "$value" =~ [[:space:]@?#] || ! "$value" =~ ^(https://|http://(localhost|127\.0\.0\.1|\[::1\])(:[0-9]+)?(/|$)) ]] \
+          || ! node -e 'try { new URL(process.argv[1]); } catch { process.exit(1); }' "$value"; then
+          echo "::error::${name} must be a valid https URL without credentials, query or fragment (http only for localhost)."
           exit 1
         fi
         printf 'export %s=%q\n' "$name" "$value" >> "$env_file"
@@ -775,8 +776,12 @@ runs:
             "-backend-config=bucket=${TF_VAR_state_bucket_name}"
             "-backend-config=key=${TF_VAR_state_key}"
             "-backend-config=region=${TF_VAR_state_region}"
-            "-backend-config=use_lockfile=${ACTION_STATE_USE_LOCKFILE:-true}"
           )
+          # Older Terraform/OpenTofu versions don't recognize the use_lockfile key,
+          # even when its value is false. Omit it for intentionally unlocked stores.
+          if [[ "${ACTION_STATE_USE_LOCKFILE:-true}" == 'true' ]]; then
+            backend_args+=("-backend-config=use_lockfile=true")
+          fi
           # Endpoints reach the backend through AWS_ENDPOINT_URL_* (sourced above), not -backend-config.
           if [[ "${ACTION_STATE_USE_PATH_STYLE:-false}" == 'true' ]]; then
             backend_args+=("-backend-config=use_path_style=true")
@@ -854,6 +859,7 @@ runs:
       SOLUTION_INFRA_PROJECT: "infra-solutions"
       ACTION_DEBUG: ${{ inputs.debug }}
       ACTION_CHDIR: ${{ inputs.chdir }}
+      ACTION_CLOUD: ${{ inputs.cloud }}
       ACTION_IAC_PROVIDER: ${{ inputs.iac-provider }}
       ACTION_DESTROY: ${{ inputs.destroy }}
       ACTION_NO_LOCK: ${{ inputs.no-lock }}
@@ -959,8 +965,10 @@ runs:
       trap - EXIT
 
       # TODO: tf root dir --> https://discuss.hashicorp.com/t/terraform-chdir-folder-isolation/24789/2
+      # An unset no-lock retains the historical Azure behavior, but S3 state locks by default.
+      # Explicit no-lock=true remains available for read-only plans (including dry runs).
       lock=""
-      if [[ "$ACTION_NO_LOCK" == 'true' ]]; then lock="-lock=false"; fi
+      if [[ "$ACTION_NO_LOCK" == 'true' || ( -z "$ACTION_NO_LOCK" && "$ACTION_CLOUD" != 'aws' ) ]]; then lock="-lock=false"; fi
       echo -e "\033[1;35mRun HCL Plan ${tf_bin} \
         -chdir=${chdir} tf_plan_args=${tf_plan_args} lock=$lock \
         -out ${ACTION_PLAN_BINARY_NAME}";

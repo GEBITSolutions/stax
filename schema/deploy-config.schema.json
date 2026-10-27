@@ -34,7 +34,7 @@
     "deploymentFlag": { "type": ["boolean", "string", "null"], "pattern": "^(?:true|false|[^\\S\\r\\n]*)$" },
     "endpointUrl": {
       "type": ["string", "null"],
-      "pattern": "^(?:[^\\S\\r\\n]*(?:https://[^\\s@/?#]+(?:/[^\\s?#]*)?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s?#]*)?)[^\\S\\r\\n]*|[^\\S\\r\\n]*)$"
+      "pattern": "^(?:[^\\S\\r\\n]*(?:https://[^\\s@/?#\\\\]+(?:/[^\\s@?#\\\\]*)?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s@?#\\\\]*)?)[^\\S\\r\\n]*|[^\\S\\r\\n]*)$"
     },
     "deployment": {
       "type": ["object", "null"],

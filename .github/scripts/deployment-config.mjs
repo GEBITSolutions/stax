@@ -47,7 +47,6 @@ const awsOptionDefaults = {
   state_use_lockfile: 'true',
   state_use_path_style: 'false',
 };
-const localHosts = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 function isMapping(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -78,20 +77,22 @@ function validateValue(field, value, source) {
 // Endpoint URLs end up in AWS_ENDPOINT_URL_* for Terraform/OpenTofu and the AWS CLI.
 // Credentials never belong in them, and plain http is only accepted for local test servers.
 function validateEndpointUrl(field, value, source) {
-  let url;
+  if (value.includes('@')) {
+    throw new Error(`${source}.${field} must not contain credentials or '@'`);
+  }
+  if (/[?#]/.test(value)) {
+    throw new Error(`${source}.${field} must not contain a query string or fragment`);
+  }
+  if (/[\s\\]/.test(value)) {
+    throw new Error(`${source}.${field} must not contain whitespace or backslashes`);
+  }
   try {
-    url = new URL(value);
+    new URL(value);
   } catch {
     throw new Error(`${source}.${field} must be an absolute URL such as https://s3.example.com (received '${value}')`);
   }
-  if (url.username || url.password) {
-    throw new Error(`${source}.${field} must not contain credentials; use the AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY secrets`);
-  }
-  if (url.search || url.hash) {
-    throw new Error(`${source}.${field} must not contain a query string or fragment`);
-  }
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && localHosts.has(url.hostname))) {
-    throw new Error(`${source}.${field} must use https (http is only allowed for localhost / 127.0.0.1)`);
+  if (!value.startsWith('https://') && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?(?:\/|$)/.test(value)) {
+    throw new Error(`${source}.${field} must use https (http is only allowed for localhost / 127.0.0.1 / [::1])`);
   }
   return value;
 }

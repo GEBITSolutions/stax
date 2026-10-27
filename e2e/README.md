@@ -14,6 +14,8 @@ Each scenario covers one part of the framework with the most common setup, not e
 
 The CLI scenario builds the development package and passes the PR head SHA (or dispatch commit SHA) explicitly through `init --framework-ref`. It checks generated workflow inputs against the current checkout rather than assuming a published release.
 
+Job assertions allow up to one minute for the Jobs API to expose final conclusions after workflow dependencies finish. They still fail on completed errors or incorrect job counts. The CLI scenario runs regression checks for this API visibility delay.
+
 ## Requirements
 
 - **GitHub Environment `e2e`:** no protection rules or secrets. The deploy scenario writes `E2E_TOFU__MESSAGE` and `E2E_CONSUMER__DERIVED` to it and deletes them before and after each run. Runs of that scenario are serialized.

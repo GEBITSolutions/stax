@@ -482,7 +482,7 @@ jobs:
         aws-endpoint-url-iam: ${{ fromJson(inputs.env)['aws_endpoint_url_iam'] || '' }}
         aws-s3-compatible: ${{ fromJson(inputs.env)['aws_s3_compatible'] || 'false' }}
         aws-skip-sts-check: ${{ fromJson(inputs.env)['aws_skip_sts_check'] || 'false' }}
-        backend-state-use-lockfile: ${{ fromJson(inputs.env)['state_use_lockfile'] || 'true' }}
+        backend-state-use-lockfile: ${{ format('{0}', fromJson(inputs.env)['state_use_lockfile']) || 'true' }}
         backend-state-use-path-style: ${{ fromJson(inputs.env)['state_use_path_style'] || 'false' }}
         tfvars-file: ${{inputs.tfvars-file != '' && format('{0}/{1}', 'source_repo' , inputs.tfvars-file) || '' }}
         tf-vars: ${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map
@@ -788,7 +788,7 @@ jobs:
         aws-endpoint-url-iam: ${{ fromJson(inputs.env)['aws_endpoint_url_iam'] || '' }}
         aws-s3-compatible: ${{ fromJson(inputs.env)['aws_s3_compatible'] || 'false' }}
         aws-skip-sts-check: ${{ fromJson(inputs.env)['aws_skip_sts_check'] || 'false' }}
-        backend-state-use-lockfile: ${{ fromJson(inputs.env)['state_use_lockfile'] || 'true' }}
+        backend-state-use-lockfile: ${{ format('{0}', fromJson(inputs.env)['state_use_lockfile']) || 'true' }}
         backend-state-use-path-style: ${{ fromJson(inputs.env)['state_use_path_style'] || 'false' }}
         tfvars-file: ${{inputs.tfvars-file != '' && format('{0}/{1}', 'source_repo' , inputs.tfvars-file) || '' }}
         tf-vars: ${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map

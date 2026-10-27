@@ -7,7 +7,8 @@
   ],
   "bugfixes": [
     "Disable state locking for plans when no-lock is true. The plan step passed a bare -lock (meaning -lock=true), so dry-run plans still acquired the state lock.",
-    "Skip Infracost setup, breakdown and report uploads when INFRACOST_API_KEY is unset, so plans no longer log a fake Error: INFRACOST_API_KEY is not set."
+    "Skip Infracost setup, breakdown and report uploads when INFRACOST_API_KEY is unset, so plans no longer log a fake Error: INFRACOST_API_KEY is not set.",
+    "Wait for final Jobs API conclusions in E2E job assertions instead of failing when completed dependency jobs are briefly still reported as running."
   ],
   "performance": [],
   "maintenance": [],

@@ -26,10 +26,19 @@ shift
 case "${command}" in
   jobs)
     pattern="$1" conclusion="$2" expected="$3"
-    all="$(jobs_json)"
+    # Dependencies have finished, but the Jobs API can still report their previous
+    # in-progress state. Wait only for matching jobs with no final conclusion;
+    # completed failures and wrong job counts still fail the assertion.
+    for attempt in {1..13}; do
+      all="$(jobs_json)"
+      pending="$(jq --arg pattern "${pattern}" '[.[] | select((.name | test($pattern)) and .conclusion == null)] | length' <<<"${all}")"
+      if [[ "${pending}" == 0 || "${attempt}" == 13 ]]; then break; fi
+      echo "Waiting for final Jobs API conclusions matching '${pattern}' (${pending} pending)"
+      sleep 5
+    done
     count="$(jq --arg pattern "${pattern}" --arg conclusion "${conclusion}" \
       '[.[] | select((.name | test($pattern)) and .conclusion == $conclusion)] | length' <<<"${all}")"
-    if [[ "${count}" != "${expected}" ]]; then
+    if [[ "${count}" != "${expected}" || "${pending}" != 0 ]]; then
       jq -r '.[] | "\(.conclusion // "running")\t\(.name)"' <<<"${all}"
       fail "expected ${expected} job(s) matching '${pattern}' with conclusion ${conclusion}, found ${count}"
     fi

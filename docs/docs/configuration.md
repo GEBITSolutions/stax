@@ -66,7 +66,7 @@ Precedence per field is selected YAML → GitHub variable. An empty string or `n
 | `state_use_lockfile` | `STATE_USE_LOCKFILE` | Optional, AWS only; boolean, default `true` |
 | `state_use_path_style` | `STATE_USE_PATH_STYLE` | Optional, AWS only; boolean, default `false` |
 
-The optional AWS fields target S3-compatible storage such as Wasabi or MinIO; see [Backends](backends.md#s3-compatible-storage). Endpoint URLs must use `https` (`http` only for `localhost` or `127.0.0.1`) and must not contain credentials. Setting one of them to a non-default value with another cloud fails the setup.
+The optional AWS fields target S3-compatible storage such as Wasabi or MinIO; see [Backends](backends.md#s3-compatible-storage). Endpoint URLs must use `https` (`http` only for `localhost`, `127.0.0.1` or `[::1]`) and cannot contain credentials, query strings, fragments, whitespace or backslashes. Setting one of them to a non-default value with another cloud fails the setup.
 
 ## Stack conditions
 

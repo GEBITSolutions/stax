@@ -166,6 +166,12 @@ test('accepts plain http only for local endpoints', () => {
   }
 });
 
+test('rejects invalid authorities and URL forms before exporting endpoints', () => {
+  for (const url of ['https://', 'https://s3.example.com:invalid', 'https://s3.example.com:99999', 'https://s3.example.com/path@user', 'https://s3.example.com\\evil', 'http://LOCALHOST:9000']) {
+    assert.throws(() => resolve({ ...awsBase, aws_endpoint_url_s3: url }), /aws_endpoint_url_s3/, url);
+  }
+});
+
 test('rejects unsafe or malformed endpoint URLs', () => {
   for (const [url, message] of [
     ['s3.wasabisys.com', /absolute URL/],

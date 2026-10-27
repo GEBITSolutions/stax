@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ErrorObject } from "ajv/dist/2020.js";
 import { isMap, isScalar, LineCounter, parseDocument, type Document } from "yaml";
 import { isRecord } from "./guards.ts";
-import { schema, validateDeployConfig as validateSchema } from "./schema.ts";
+import { ajv, schema, validateDeployConfig as validateSchema } from "./schema.ts";
 
 export type Severity = "error" | "warning";
 
@@ -276,6 +276,27 @@ const AWS_OPTION_DEFAULTS: Record<string, string> = {
   state_use_path_style: "false",
 };
 
+const ENDPOINT_FIELDS = ["aws_endpoint_url", "aws_endpoint_url_s3", "aws_endpoint_url_sts", "aws_endpoint_url_iam"];
+
+function checkEndpointURLs(deployment: Record<string, unknown>, report: Reporter): void {
+  const endpointShape = ajv.getSchema(`${schema.$id}#/$defs/endpointUrl`);
+  if (!endpointShape) throw new Error("endpointUrl schema definition is missing");
+  for (const field of ENDPOINT_FIELDS) {
+    const raw = deployment[field];
+    if (typeof raw !== "string" || !raw.trim() || !endpointShape(raw)) continue;
+    const value = raw.trim();
+    try {
+      new URL(value);
+    } catch {
+      report.add("error", ["deployment", field], "must be a valid absolute URL with a hostname and valid port");
+      continue;
+    }
+    if (!value.startsWith("https://") && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?(?:\/|$)/.test(value)) {
+      report.add("error", ["deployment", field], "must use https (http is only allowed for localhost / 127.0.0.1 / [::1])");
+    }
+  }
+}
+
 function deploymentText(value: unknown): string {
   return value === undefined || value === null ? "" : String(value).trim();
 }
@@ -285,6 +306,7 @@ function checkDeploymentRules(data: Record<string, unknown>, report: Reporter): 
   const deployment = data.deployment;
   if (!isRecord(deployment)) return;
   const cloud = deploymentText(deployment.cloud).toLowerCase();
+  checkEndpointURLs(deployment, report);
   const changed = Object.entries(AWS_OPTION_DEFAULTS)
     .filter(([field, fallback]) => {
       const value = deploymentText(deployment[field]);
@@ -296,21 +318,6 @@ function checkDeploymentRules(data: Record<string, unknown>, report: Reporter): 
   if (cloud !== "" && cloud !== "aws") {
     for (const field of changed) report.add("error", ["deployment", field], `only applies to cloud "aws" (cloud is "${cloud}")`);
     return;
-  }
-  if (deploymentText(deployment.state_use_lockfile) === "false") {
-    report.add(
-      "warning",
-      ["deployment", "state_use_lockfile"],
-      "state locking is off; concurrent runs can corrupt the state, so only disable it for S3-compatible stores without conditional writes",
-    );
-  }
-  const hasEndpoint = ["aws_endpoint_url", "aws_endpoint_url_sts"].some((field) => deploymentText(deployment[field]) !== "");
-  if (deploymentText(deployment.aws_skip_sts_check) === "true" && !hasEndpoint) {
-    report.add(
-      "warning",
-      ["deployment", "aws_skip_sts_check"],
-      "skips the credential check against AWS STS; this is meant for S3-compatible stores without an STS endpoint",
-    );
   }
 }
 
