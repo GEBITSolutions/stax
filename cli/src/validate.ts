@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ErrorObject } from "ajv/dist/2020.js";
 import { isMap, isScalar, LineCounter, parseDocument, type Document } from "yaml";
 import { isRecord } from "./guards.ts";
-import { schema, validateDeployConfig as validateSchema } from "./schema.ts";
+import { ajv, schema, validateDeployConfig as validateSchema } from "./schema.ts";
 
 export type Severity = "error" | "warning";
 
@@ -265,6 +265,62 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
   }
 }
 
+const AWS_OPTION_DEFAULTS: Record<string, string> = {
+  aws_endpoint_url: "",
+  aws_endpoint_url_s3: "",
+  aws_endpoint_url_sts: "",
+  aws_endpoint_url_iam: "",
+  aws_s3_compatible: "false",
+  aws_skip_sts_check: "false",
+  state_use_lockfile: "true",
+  state_use_path_style: "false",
+};
+
+const ENDPOINT_FIELDS = ["aws_endpoint_url", "aws_endpoint_url_s3", "aws_endpoint_url_sts", "aws_endpoint_url_iam"];
+
+function checkEndpointURLs(deployment: Record<string, unknown>, report: Reporter): void {
+  const endpointShape = ajv.getSchema(`${schema.$id}#/$defs/endpointUrl`);
+  if (!endpointShape) throw new Error("endpointUrl schema definition is missing");
+  for (const field of ENDPOINT_FIELDS) {
+    const raw = deployment[field];
+    if (typeof raw !== "string" || !raw.trim() || !endpointShape(raw)) continue;
+    const value = raw.trim();
+    try {
+      new URL(value);
+    } catch {
+      report.add("error", ["deployment", field], "must be a valid absolute URL with a hostname and valid port");
+      continue;
+    }
+    if (!value.startsWith("https://") && !/^http:\/\/(?:localhost|127\.0\.0\.1|\[::1\])(?::[0-9]+)?(?:\/|$)/.test(value)) {
+      report.add("error", ["deployment", field], "must use https (http is only allowed for localhost / 127.0.0.1 / [::1])");
+    }
+  }
+}
+
+function deploymentText(value: unknown): string {
+  return value === undefined || value === null ? "" : String(value).trim();
+}
+
+/** Mirrors the AWS option checks in .github/scripts/deployment-config.mjs and a-wf-setup-ci. */
+function checkDeploymentRules(data: Record<string, unknown>, report: Reporter): void {
+  const deployment = data.deployment;
+  if (!isRecord(deployment)) return;
+  const cloud = deploymentText(deployment.cloud).toLowerCase();
+  checkEndpointURLs(deployment, report);
+  const changed = Object.entries(AWS_OPTION_DEFAULTS)
+    .filter(([field, fallback]) => {
+      const value = deploymentText(deployment[field]);
+      return value !== "" && value !== fallback;
+    })
+    .map(([field]) => field);
+
+  // An unset cloud may still resolve to aws from the CLOUD variable.
+  if (cloud !== "" && cloud !== "aws") {
+    for (const field of changed) report.add("error", ["deployment", field], `only applies to cloud "aws" (cloud is "${cloud}")`);
+    return;
+  }
+}
+
 /** Validates one deploy config. Findings are sorted by position. */
 export function validateConfigText(text: string): Finding[] {
   const lineCounter = new LineCounter();
@@ -296,6 +352,7 @@ export function validateConfigText(text: string): Finding[] {
   if (Array.isArray(data.stacks)) {
     data.stacks.forEach((stack, index) => checkUnknownKeys(stack, KNOWN_KEYS.stack, ["stacks", index], report));
   }
+  checkDeploymentRules(data, report);
   checkPipelineRules(data, report);
 
   return report.findings.sort((a, b) => a.line - b.line || a.column - b.column);

@@ -31,6 +31,11 @@
   },
   "$defs": {
     "deploymentValue": { "type": ["string", "null"], "pattern": "^[^\\r\\n]*$" },
+    "deploymentFlag": { "type": ["boolean", "string", "null"], "pattern": "^(?:true|false|[^\\S\\r\\n]*)$" },
+    "endpointUrl": {
+      "type": ["string", "null"],
+      "pattern": "^(?:[^\\S\\r\\n]*(?:https://[^\\s@/?#\\\\]+(?:/[^\\s@?#\\\\]*)?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s@?#\\\\]*)?)[^\\S\\r\\n]*|[^\\S\\r\\n]*)$"
+    },
     "deployment": {
       "type": ["object", "null"],
       "additionalProperties": false,
@@ -48,7 +53,15 @@
         "state_container_name": { "description": "Azure state container; falls back to STATE_CONTAINER_NAME.", "$ref": "#/$defs/deploymentValue" },
         "state_resource_group_name": { "description": "Azure state resource group; falls back to STATE_RESOURCE_GROUP_NAME.", "$ref": "#/$defs/deploymentValue" },
         "state_bucket_name": { "description": "AWS state bucket; falls back to STATE_BUCKET_NAME.", "$ref": "#/$defs/deploymentValue" },
-        "state_region": { "description": "AWS state region; falls back to STATE_REGION.", "$ref": "#/$defs/deploymentValue" }
+        "state_region": { "description": "AWS state region; falls back to STATE_REGION.", "$ref": "#/$defs/deploymentValue" },
+        "aws_endpoint_url": { "description": "AWS only: base endpoint for every AWS service, e.g. a MinIO server; falls back to AWS_ENDPOINT_URL. https, or http on localhost.", "$ref": "#/$defs/endpointUrl" },
+        "aws_endpoint_url_s3": { "description": "AWS only: S3 endpoint for the state backend and the AWS provider, e.g. https://s3.eu-central-2.wasabisys.com; falls back to AWS_ENDPOINT_URL_S3.", "$ref": "#/$defs/endpointUrl" },
+        "aws_endpoint_url_sts": { "description": "AWS only: STS endpoint; falls back to AWS_ENDPOINT_URL_STS. Not supported with OIDC_ENABLED.", "$ref": "#/$defs/endpointUrl" },
+        "aws_endpoint_url_iam": { "description": "AWS only: IAM endpoint; falls back to AWS_ENDPOINT_URL_IAM.", "$ref": "#/$defs/endpointUrl" },
+        "aws_s3_compatible": { "description": "AWS only: S3-compatible storage mode (checksums only when required, no region or account-id lookups); falls back to AWS_S3_COMPATIBLE. Default false.", "$ref": "#/$defs/deploymentFlag" },
+        "aws_skip_sts_check": { "description": "AWS only: skip the STS get-caller-identity check and backend credential validation; falls back to AWS_SKIP_STS_CHECK. Default false.", "$ref": "#/$defs/deploymentFlag" },
+        "state_use_lockfile": { "description": "AWS only: S3 native state locking (use_lockfile); falls back to STATE_USE_LOCKFILE. Default true; set false only for stores without conditional writes.", "$ref": "#/$defs/deploymentFlag" },
+        "state_use_path_style": { "description": "AWS only: path-style S3 addressing for the state backend; falls back to STATE_USE_PATH_STYLE. Default false.", "$ref": "#/$defs/deploymentFlag" }
       }
     },
     "externalRepo": {

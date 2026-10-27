@@ -14,11 +14,13 @@ Each scenario covers one part of the framework with the most common setup, not e
 
 The CLI scenario builds the development package and passes the PR head SHA (or dispatch commit SHA) explicitly through `init --framework-ref`. It checks generated workflow inputs against the current checkout rather than assuming a published release.
 
+Job assertions refresh pending jobs through their individual Jobs API endpoint, then allow up to one minute for final conclusions. They still fail on completed errors or incorrect job counts. The CLI scenario runs regression checks for this API visibility delay.
+
 ## Requirements
 
 - **GitHub Environment `e2e`:** no protection rules or secrets. The deploy scenario writes `E2E_TOFU__MESSAGE` and `E2E_CONSUMER__DERIVED` to it and deletes them before and after each run. Runs of that scenario are serialized.
 - **Release GitHub App:** the variable `RELEASE_APP_CLIENT_ID` and the secret `RELEASE_APP_CLIENT_SECRET`, with Environments, Secrets and Variables write access. The deploy scenario uses it to store values between stacks.
-- **Pull requests from forks** receive no secrets, so the deploy scenario fails for them. Push the branch to this repository to run the check.
+- **Pull requests from forks** receive no secrets and never execute credentialed deploy jobs. Their required check instead waits up to ten minutes for a successful maintainer-dispatched upstream `e2e-deploy.yml` run at the exact PR head SHA. After reviewing the code, a maintainer pushes that commit to an upstream verification branch and dispatches the workflow there. Then rerun the fork deploy check if its wait has already timed out. A different commit, different workflow, or newer failed acceptance does not satisfy the check. No `pull_request_target` execution or ruleset bypass is used.
 
 ## Files
 

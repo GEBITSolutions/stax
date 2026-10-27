@@ -48,6 +48,62 @@ stacks:
     expect(validateConfigText("deployment:\n  project: shop\n  cloud: Azure\n  public_cloud_flag: false\n  stage: null\nstacks:\n  - id: docs\n    type: github-pages-site-deploy\n")).toEqual([]);
   });
 
+  const wasabi = `deployment:
+  cloud: aws
+  aws_endpoint_url_s3: https://s3.eu-central-2.wasabisys.com
+  aws_endpoint_url_sts: https://sts.wasabisys.com
+  aws_s3_compatible: true
+  state_use_path_style: "false"
+`;
+  const docsStack = "stacks:\n  - id: docs\n    type: github-pages-site-deploy\n";
+
+  it("accepts S3-compatible endpoint options for AWS", () => {
+    expect(validateConfigText(wasabi + docsStack)).toEqual([]);
+  });
+
+  it("accepts unlocked S3-compatible state with an explicit false", () => {
+    expect(validateConfigText(`${wasabi}  state_use_lockfile: false\n${docsStack}`)).toEqual([]);
+  });
+
+  it("accepts skipping STS for an S3 endpoint without STS", () => {
+    expect(validateConfigText(`deployment:\n  cloud: aws\n  aws_endpoint_url_s3: https://s3.example.com\n  aws_skip_sts_check: true\n${docsStack}`)).toEqual([]);
+  });
+
+  it("rejects AWS endpoint options for Azure but accepts their defaults", () => {
+    const findings = validateConfigText(`deployment:\n  cloud: azure\n  aws_endpoint_url_s3: https://s3.example.com\n  state_use_lockfile: true\n${docsStack}`);
+    expect(brief(findings)).toEqual([
+      { severity: "error", line: 3, message: 'deployment.aws_endpoint_url_s3: only applies to cloud "aws" (cloud is "azure")' },
+    ]);
+  });
+
+  it.each([
+    "aws_endpoint_url_s3: s3.wasabisys.com",
+    "aws_endpoint_url_s3: http://s3.wasabisys.com",
+    "aws_endpoint_url_iam: https://key:secret@iam.wasabisys.com",
+    "aws_endpoint_url: https://s3.example.com/?region=x",
+    "aws_s3_compatible: yes",
+    "state_use_lockfile: 0",
+  ])("rejects invalid endpoint option %s", (field) => {
+    const findings = validateConfigText(`deployment:\n  cloud: aws\n  ${field}\n${docsStack}`);
+    expect(findings).toEqual(expect.arrayContaining([expect.objectContaining({ severity: "error", message: expect.stringContaining("deployment.") })]));
+  });
+
+  it("accepts plain http endpoints on localhost", () => {
+    expect(validateConfigText(`deployment:\n  cloud: aws\n  aws_endpoint_url: http://127.0.0.1:9000\n${docsStack}`)).toEqual([]);
+  });
+
+  it.each([
+    "aws_endpoint_url_s3: https://",
+    "aws_endpoint_url_s3: https://s3.example.com:invalid",
+    "aws_endpoint_url_s3: https://s3.example.com:99999",
+    "aws_endpoint_url_s3: https://s3.example.com/path@user",
+    "aws_endpoint_url_s3: https://s3.example.com\\evil",
+    "aws_endpoint_url_s3: http://LOCALHOST:9000",
+  ])("rejects malformed or ambiguous endpoint %s", (field) => {
+    const findings = validateConfigText(`deployment:\n  cloud: aws\n  ${field}\n${docsStack}`);
+    expect(findings).toEqual(expect.arrayContaining([expect.objectContaining({ severity: "error", message: expect.stringContaining("deployment.aws_endpoint_url_s3") })]));
+  });
+
   it.each([
     "project: 12",
     "cloud: gcp",
