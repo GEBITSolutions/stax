@@ -17,7 +17,7 @@ const dir = process.env.FIXTURE;
 const calls = Number(fs.existsSync(dir+'/calls') ? fs.readFileSync(dir+'/calls','utf8') : 0);
 const states = JSON.parse(fs.readFileSync(dir+'/responses.json','utf8'));
 fs.writeFileSync(dir+'/calls', String(calls+1));
-console.log(JSON.stringify({name:'Build / Docker: fixture', conclusion:states[Math.min(calls,states.length-1)]}));
+console.log(JSON.stringify({id:42,name:'Build / Docker: fixture', conclusion:states[Math.min(calls,states.length-1)]}));
 `, { mode: 0o755 });
     writeFileSync(join(directory, 'sleep'), '#!/bin/sh\nexit 0\n', { mode: 0o755 });
     const result = spawnSync('bash', [helper, 'jobs', 'Docker: fixture$', 'success', '1'], {
@@ -31,4 +31,4 @@ console.log(JSON.stringify({name:'Build / Docker: fixture', conclusion:states[Ma
 
 test('waits for a matching job that is still in progress in the Jobs API', () => scenario([null, 'success'], 0, 2));
 test('does not retry or hide a completed failed job', () => scenario(['failure', 'success'], 1, 1));
-test('fails when the API never reports a final conclusion', () => scenario([null], 1, 13));
+test('fails when the API never reports a final conclusion', () => scenario([null], 1, 26));
