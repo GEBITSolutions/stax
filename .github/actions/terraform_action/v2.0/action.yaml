@@ -284,6 +284,10 @@ runs:
       fi
 
   - name: Setup Infracost
+    # Skip entirely when no key is configured. Running breakdown without a key
+    # prints Error: INFRACOST_API_KEY is not set into the log even with
+    # continue-on-error, which looks like a real failure on every plan.
+    if: inputs.INFRACOST_API_KEY != ''
     uses: infracost/actions/setup@v4
     continue-on-error: true   # allow failure for cost reporting steps
     with:
@@ -1413,7 +1417,7 @@ runs:
 
   - name: Generate Infracost diff
     shell: bash
-    if: (inputs.apply != 'true')
+    if: (inputs.apply != 'true') && (inputs.INFRACOST_API_KEY != '')
     continue-on-error: true   # allow failure for cost reporting steps
     run: |2
 
@@ -1489,7 +1493,7 @@ runs:
       overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
 
   - uses: actions/upload-artifact@v7
-    if: (inputs.plan == 'true')
+    if: (inputs.plan == 'true') && (inputs.INFRACOST_API_KEY != '')
     name: Upload Terracost report
     with:
       name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-infracost-report"
@@ -1498,7 +1502,7 @@ runs:
       overwrite: true   # Artifacts are stored persistenly on self hosted runners so we need to overwrite
 
   - uses: actions/upload-artifact@v7
-    if: (inputs.plan == 'true')
+    if: (inputs.plan == 'true') && (inputs.INFRACOST_API_KEY != '')
     name: Upload Terracost markdown
     with:
       name: "${{ steps.artifact-names.outputs.plan-artifacts-name }}-infracost-report-md"
