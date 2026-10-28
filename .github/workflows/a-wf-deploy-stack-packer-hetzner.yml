@@ -26,6 +26,21 @@ on:
       image_id:
         description: "Hetzner snapshot id"
         value: ${{ jobs.packer.outputs.image_id }}
+      image_ref:
+        description: "Opaque locator hcloud:snapshot:<id>"
+        value: ${{ jobs.packer.outputs.image_ref }}
+      build_target:
+        description: "Always hetzner"
+        value: ${{ jobs.packer.outputs.build_target }}
+      version:
+        description: "Derived version 0.0.0+<git sha>"
+        value: ${{ jobs.packer.outputs.version }}
+      labels:
+        description: "JSON object of labels on the snapshot"
+        value: ${{ jobs.packer.outputs.labels }}
+      git_sha:
+        description: "Source commit recorded for this build"
+        value: ${{ jobs.packer.outputs.git_sha }}
     secrets:
       ARM_CLIENT_SECRET:
         required: false
@@ -55,6 +70,11 @@ jobs:
     environment: ${{ fromJson(inputs.env)['environment'] || 'dev' }}
     outputs:
       image_id: ${{ steps.publish.outputs.image_id }}
+      image_ref: ${{ steps.publish.outputs.image_ref }}
+      build_target: ${{ steps.publish.outputs.build_target }}
+      version: ${{ steps.publish.outputs.version }}
+      labels: ${{ steps.publish.outputs.labels }}
+      git_sha: ${{ steps.publish.outputs.git_sha }}
       transfer_requested: ${{ steps.preflight.outputs.transfer-requested }}
       actions_sha: ${{ steps.resolve-actions-ref.outputs.sha }}
     env:
@@ -277,7 +297,8 @@ jobs:
           | if ($outputs | type) != "array" or any($outputs[]; type != "string") then
               error("output-var must be an array of strings")
             else
-              ($outputs | index("image_id") != null)
+              (["image_id", "image_ref", "build_target", "version", "labels", "git_sha"] as $known
+                | any($outputs[]; . as $name | ($known | index($name)) != null))
             end
         ' <<< "$DATA_JSON")" || {
           echo "::error::output-var must be an array of strings."
@@ -293,11 +314,11 @@ jobs:
 
           if [[ "$dry_run" == "false" ]]; then
             if [[ -z "$ENVIRONMENT" ]]; then
-              echo "::error::An environment is required to transfer image_id."
+              echo "::error::An environment is required to transfer Packer outputs."
               exit 1
             fi
             if [[ -z "$KEY_VAULT_URL" && "$TRANSFER_PAT_AVAILABLE" != "true" && "$TRANSFER_APP_CREDENTIALS_AVAILABLE" != "true" ]]; then
-              echo "::error::No GitHub transfer credential is configured for the requested image_id transfer."
+              echo "::error::No GitHub transfer credential is configured for the requested Packer output transfer."
               exit 1
             fi
           fi
@@ -828,6 +849,7 @@ jobs:
         PACKER_DIRECTORY: ${{ steps.packer-paths.outputs.directory }}
         PACKER_TEMPLATE: ${{ steps.packer-paths.outputs.template }}
         PACKER_VARS_FILE: ${{ steps.packer-vars.outputs.file }}
+        GIT_SHA: ${{ steps.source-sha.outputs.sha }}
         HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
       run: |
         set -euo pipefail
@@ -840,9 +862,27 @@ jobs:
         fi
         script="$GITHUB_WORKSPACE/trusted-actions/.github/scripts/packer-build-target.mjs"
         image_id="$(node "$script" manifest-id --manifest "$manifest")"
-        echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+        image_ref="hcloud:snapshot:${image_id}"
+        version="0.0.0+${GIT_SHA}"
+        labels="$(jq -c '.snapshot_labels // {}' "$PACKER_VARS_FILE")"
+        if created="$(curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+          --header "Authorization: Bearer ${HCLOUD_TOKEN}" \
+          --header "Accept: application/json" \
+          "https://api.hetzner.cloud/v1/images/${image_id}")"; then
+          labels="$(jq -c '.image.labels // {}' <<< "$created")"
+        fi
+        {
+          echo "image_id=$image_id"
+          echo "image_ref=$image_ref"
+          echo "build_target=hetzner"
+          echo "version=$version"
+          echo "git_sha=$GIT_SHA"
+          echo "labels<<STAX_LABELS_EOF"
+          printf '%s\n' "$labels"
+          echo "STAX_LABELS_EOF"
+        } >> "$GITHUB_OUTPUT"
         # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
-        printf '\n- Snapshot id: `%s`\n' "$image_id" >> "$GITHUB_STEP_SUMMARY"
+        printf '\n- Snapshot id: `%s`\n- Image ref: `%s`\n' "$image_id" "$image_ref" >> "$GITHUB_STEP_SUMMARY"
 
     - name: Apply Hetzner snapshot retention
       if: ${{ steps.preflight.outputs.dry-run == 'false' }}
@@ -947,15 +987,37 @@ jobs:
       env:
         DATA_JSON: ${{ inputs.data }}
         IMAGE_ID: ${{ needs.packer.outputs.image_id }}
+        IMAGE_REF: ${{ needs.packer.outputs.image_ref }}
+        BUILD_TARGET: ${{ needs.packer.outputs.build_target }}
+        VERSION: ${{ needs.packer.outputs.version }}
+        LABELS: ${{ needs.packer.outputs.labels }}
+        GIT_SHA: ${{ needs.packer.outputs.git_sha }}
       run: |
         set -euo pipefail
-        stack_id="$(jq -er 'if (.id | type) == "string" then .id else error("id must be a string") end' <<< "$DATA_JSON" | tr '-' '_')"
-        if [[ ! "$stack_id" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-          echo "::error::Stack id cannot be converted to a valid output variable prefix."
+        stack_id="$(jq -er 'if (.id | type) == "string" then .id else error("id must be a string") end' <<< "$DATA_JSON")"
+        script="$GITHUB_WORKSPACE/trusted-actions/.github/scripts/packer-build-target.mjs"
+        if [[ ! -f "$script" ]]; then
+          echo "::error::Packer build-target helpers are missing from the trusted actions checkout. actions-version must include .github/scripts/packer-build-target.mjs."
           exit 1
         fi
-        transfer_variable_key="${stack_id^^}__IMAGE_ID"
-        variables="$(jq -cn --arg key "$transfer_variable_key" --arg value "$IMAGE_ID" '{($key): $value}')"
+        requested_file="$(mktemp)"
+        outputs_file="$(mktemp)"
+        jq -c '."output-var" // []' <<< "$DATA_JSON" > "$requested_file"
+        jq -cn \
+          --arg image_id "$IMAGE_ID" \
+          --arg image_ref "$IMAGE_REF" \
+          --arg build_target "$BUILD_TARGET" \
+          --arg version "$VERSION" \
+          --arg labels "$LABELS" \
+          --arg git_sha "$GIT_SHA" \
+          '{image_id:$image_id, image_ref:$image_ref, build_target:$build_target, version:$version, labels:$labels, git_sha:$git_sha}' \
+          > "$outputs_file"
+        variables="$(node "$script" transfer-variables --stack-id "$stack_id" --requested "$requested_file" --outputs "$outputs_file")"
+        rm -f -- "$requested_file" "$outputs_file"
+        if [[ "$variables" == "{}" ]]; then
+          echo "::error::None of the requested Packer outputs were produced."
+          exit 1
+        fi
         echo "variables=$variables" >> "$GITHUB_OUTPUT"
 
     - name: Generate GitHub App Token for output transfer
