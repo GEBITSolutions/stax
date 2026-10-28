@@ -79,6 +79,8 @@ on:
         required: false
       CI_ENV_TRANSFER_GH_TOKEN:
         required: false
+      HCLOUD_TOKEN:
+        required: false
 
 jobs:
   script:
