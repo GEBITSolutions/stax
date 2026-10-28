@@ -48979,6 +48979,11 @@ function validatePackerConfig(config, warn = () => undefined) {
         validateRelativePosixPath(config, 'packer_template', config.packer_template);
     }
     const buildTarget = buildTargetOf(config);
+    if (buildTarget !== 'azure' &&
+        (config.azure !== undefined ||
+            GALLERY_FIELDS.some((field) => config[field] !== undefined))) {
+        throw new Error(`Packer stack "${config.id}" build_target ${buildTarget} does not use Azure Gallery fields.`);
+    }
     if (buildTarget === 'aws') {
         warn(`Packer stack "${config.id}" uses build_target aws, which is reserved and not implemented.`);
     }
