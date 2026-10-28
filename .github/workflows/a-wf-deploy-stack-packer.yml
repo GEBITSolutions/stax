@@ -24,8 +24,8 @@ on:
         default: "1.5.0"
     outputs:
       image_id:
-        description: "Full Azure Compute Gallery image version resource ID after replication is complete"
-        value: ${{ jobs.azure.outputs.image_id }}
+        description: "Gallery version resource ID, or the Hetzner snapshot id"
+        value: ${{ jobs.azure.outputs.image_id || jobs.hetzner.outputs.image_id }}
     secrets:
       ARM_CLIENT_SECRET:
         required: false
@@ -40,6 +40,8 @@ on:
       RELEASE_GH_APP_PRIVATE_KEY:
         required: false
       CI_ENV_TRANSFER_GH_TOKEN:
+        required: false
+      HCLOUD_TOKEN:
         required: false
 
 permissions:
@@ -78,10 +80,10 @@ jobs:
           end
         ' <<< "$DATA_JSON")"
         case "$build_target" in
-          azure)
+          azure|hetzner)
             ;;
-          hetzner|aws)
-            echo "::error::build_target ${build_target} is not implemented yet."
+          aws)
+            echo "::error::build_target aws is reserved and not implemented. The output contract will not change when an AMI workflow is added."
             exit 1
             ;;
           *)
@@ -96,6 +98,19 @@ jobs:
     if: needs.route.outputs.build_target == 'azure'
     name: "Packer Azure: ${{ fromJson(inputs.data)['name'] || fromJson(inputs.data)['id'] }}"
     uses: ./.github/workflows/a-wf-deploy-stack-packer-azure.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  hetzner:
+    needs: route
+    if: needs.route.outputs.build_target == 'hetzner'
+    name: "Packer Hetzner: ${{ fromJson(inputs.data)['name'] || fromJson(inputs.data)['id'] }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-packer-hetzner.yml
     with:
       data: ${{ inputs.data }}
       env: ${{ inputs.env }}
