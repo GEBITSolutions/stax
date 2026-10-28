@@ -806,92 +806,26 @@ jobs:
         gallery="$(jq -r '.gallery_name' "$PACKER_VARS_FILE")"
         definition="$(jq -r '.image_definition_name' "$PACKER_VARS_FILE")"
         version="$(jq -r '.image_version' "$PACKER_VARS_FILE")"
-        target_regions="$(jq -c '.target_regions' "$PACKER_VARS_FILE")"
+        regions_file="$(mktemp "${RUNNER_TEMP}/packer-regions-XXXXXX.json")"
+        jq -c '.target_regions' "$PACKER_VARS_FILE" > "$regions_file"
 
         packer build -var-file="$PACKER_VARS_FILE" "$PACKER_TEMPLATE"
 
-        az sig image-version wait \
+        script="$GITHUB_WORKSPACE/trusted-actions/.github/scripts/packer-build-target.mjs"
+        if [[ ! -f "$script" ]]; then
+          echo "::error::Packer build-target helpers are missing from the trusted actions checkout."
+          exit 1
+        fi
+        result="$(node "$script" wait-gallery \
           --resource-group "$resource_group" \
-          --gallery-name "$gallery" \
-          --gallery-image-definition "$definition" \
-          --gallery-image-version "$version" \
-          --created --interval 30 --timeout 1800 --only-show-errors
-
-        ready="false"
-        image_id=""
-        for ((attempt = 1; attempt <= 60; attempt++)); do
-          status_json="$(az sig image-version show \
-            --resource-group "$resource_group" \
-            --gallery-name "$gallery" \
-            --gallery-image-definition "$definition" \
-            --gallery-image-version "$version" \
-            --expand ReplicationStatus \
-            --only-show-errors --output json)" || {
-              echo "::error::Unable to read Gallery image version readiness."
-              exit 1
-            }
-
-          provisioning_state="$(jq -r '.provisioningState // empty' <<< "$status_json")"
-          case "$provisioning_state" in
-            Failed|Canceled|Cancelled)
-              echo "::error::Gallery image version provisioning ended in state '$provisioning_state'."
-              exit 1
-              ;;
-          esac
-
-          regional_status="$(jq -c --argjson requested "$target_regions" '
-            def norm: ascii_downcase | gsub("[[:space:]_-]"; "");
-            (.replicationStatus.summary // []) as $summary
-            | [
-                $requested[] as $region
-                | ($summary | map(select((.region | norm) == ($region | norm)))) as $matches
-                | {
-                    region: $region,
-                    matches: ($matches | length),
-                    state: ($matches[0].state // "Missing")
-                  }
-              ]
-          ' <<< "$status_json")"
-
-          if jq -e 'any(.[]; .matches > 1 or .state == "Failed" or .state == "Canceled" or .state == "Cancelled")' \
-            <<< "$regional_status" > /dev/null; then
-            echo "::error::Gallery replication failed or returned ambiguous status for a requested region."
-            exit 1
-          fi
-
-          if [[ "$provisioning_state" == "Succeeded" ]] && \
-            jq -e 'all(.[]; .matches == 1 and .state == "Completed")' <<< "$regional_status" > /dev/null; then
-            image_id="$(jq -r '.id // empty' <<< "$status_json")"
-            ready="true"
-            break
-          fi
-
-          if [[ "$attempt" -lt 60 ]]; then
-            sleep 30
-          fi
-        done
-
-        if [[ "$ready" != "true" || -z "$image_id" || "$image_id" != /subscriptions/* || "$image_id" != */versions/"$version" ]]; then
-          echo "::error::Gallery image version did not reach provisioning and replication readiness within 30 minutes."
-          exit 1
-        fi
-
-        if [[ "$resource_group" == */* || "$gallery" == */* || "$definition" == */* || "$version" == */* ]]; then
-          echo "::error::Gallery destination names must not contain a slash."
-          exit 1
-        fi
-        image_ref="azure:gallery:${resource_group}/${gallery}/${definition}/${version}"
-        labels="$(jq -c 'if (.tags | type) == "object" then .tags else {} end' <<< "$status_json")"
-        {
-          echo "image_id=$image_id"
-          echo "image_ref=$image_ref"
-          echo "build_target=azure"
-          echo "version=$version"
-          echo "git_sha=$GIT_SHA"
-          echo "labels<<STAX_LABELS_EOF"
-          printf '%s\n' "$labels"
-          echo "STAX_LABELS_EOF"
-        } >> "$GITHUB_OUTPUT"
+          --gallery "$gallery" \
+          --definition "$definition" \
+          --version "$version" \
+          --regions-file "$regions_file" \
+          --git-sha "$GIT_SHA")"
+        rm -f -- "$regions_file"
+        image_id="$(jq -er '.image_id' <<< "$result")"
+        image_ref="$(jq -er '.image_ref' <<< "$result")"
         # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
         printf '\n- Ready image version ID: `%s`\n- Image ref: `%s`\n' "$image_id" "$image_ref" >> "$GITHUB_STEP_SUMMARY"
 

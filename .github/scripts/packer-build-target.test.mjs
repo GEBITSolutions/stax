@@ -11,16 +11,19 @@ import {
   azureImageRef,
   costNote,
   declaredPackerVariables,
+  evaluateGalleryReadiness,
   galleryFieldsFromStack,
   hetznerImageRef,
   manifestSnapshotId,
   materializeScan,
+  normalizeAzureRegion,
   resolveBuildTarget,
   resolveHetzner,
   resolveScan,
   snapshotsToDelete,
   staxVariables,
   transferVariableMap,
+  waitForGalleryReplication,
 } from './packer-build-target.mjs';
 
 const sha = '0123456789abcdef0123456789abcdef01234567';
@@ -210,4 +213,109 @@ test('materializeScan embeds config and goss spec into run.sh', () => {
   const disabled = materializeScan({ packerDirectory: root, scan: { enabled: false, config: null } });
   assert.equal(disabled.written, false);
   assert.match(readFileSync(join(root, '.stax/scan/run.sh'), 'utf8'), /scan hooks disabled/);
+});
+
+test('normalizeAzureRegion collapses case separators', () => {
+  assert.equal(normalizeAzureRegion('West Europe'), 'westeurope');
+  assert.equal(normalizeAzureRegion('west_europe'), 'westeurope');
+  assert.equal(normalizeAzureRegion('West-Europe'), 'westeurope');
+});
+
+test('evaluateGalleryReadiness matches the previous workflow poll rules', () => {
+  const version = '1.2.3';
+  const imageId = `/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/d/versions/${version}`;
+  const ready = evaluateGalleryReadiness({
+    id: imageId,
+    provisioningState: 'Succeeded',
+    tags: { built_by: 'stax' },
+    replicationStatus: {
+      summary: [
+        { region: 'West Europe', state: 'Completed' },
+        { region: 'northeurope', state: 'Completed' },
+      ],
+    },
+  }, ['westeurope', 'North Europe']);
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.imageId, imageId);
+  assert.deepEqual(ready.labels, { built_by: 'stax' });
+
+  const pending = evaluateGalleryReadiness({
+    id: imageId,
+    provisioningState: 'Creating',
+    replicationStatus: { summary: [{ region: 'westeurope', state: 'Replicating' }] },
+  }, ['westeurope']);
+  assert.equal(pending.state, 'pending');
+
+  const failedProv = evaluateGalleryReadiness({
+    provisioningState: 'Failed',
+    replicationStatus: { summary: [] },
+  }, ['westeurope']);
+  assert.equal(failedProv.state, 'failed');
+
+  const failedRegion = evaluateGalleryReadiness({
+    provisioningState: 'Succeeded',
+    replicationStatus: { summary: [{ region: 'westeurope', state: 'Failed' }] },
+  }, ['westeurope']);
+  assert.equal(failedRegion.state, 'failed');
+
+  const ambiguous = evaluateGalleryReadiness({
+    provisioningState: 'Succeeded',
+    replicationStatus: {
+      summary: [
+        { region: 'West Europe', state: 'Completed' },
+        { region: 'westeurope', state: 'Completed' },
+      ],
+    },
+  }, ['westeurope']);
+  assert.equal(ambiguous.state, 'failed');
+});
+
+test('waitForGalleryReplication polls until ready and rejects bad ids', async () => {
+  const version = '9.9.9';
+  const imageId = `/subscriptions/sub/resourceGroups/rg-images/providers/Microsoft.Compute/galleries/corp/images/ubuntu/versions/${version}`;
+  const statuses = [
+    { provisioningState: 'Creating', replicationStatus: { summary: [{ region: 'westeurope', state: 'Replicating' }] } },
+    {
+      id: imageId,
+      provisioningState: 'Succeeded',
+      tags: { role: 'golden' },
+      replicationStatus: { summary: [{ region: 'westeurope', state: 'Completed' }] },
+    },
+  ];
+  let sleeps = 0;
+  const result = await waitForGalleryReplication({
+    resourceGroup: 'rg-images',
+    gallery: 'corp',
+    definition: 'ubuntu',
+    version,
+    targetRegions: ['westeurope'],
+    waitCreated: async () => {},
+    showVersion: async () => statuses.shift(),
+    sleep: async () => { sleeps += 1; },
+    maxAttempts: 5,
+    intervalMs: 1,
+  });
+  assert.equal(sleeps, 1);
+  assert.equal(result.image_id, imageId);
+  assert.equal(result.image_ref, 'azure:gallery:rg-images/corp/ubuntu/9.9.9');
+  assert.equal(result.build_target, 'azure');
+  assert.deepEqual(result.labels, { role: 'golden' });
+
+  await assert.rejects(
+    () => waitForGalleryReplication({
+      resourceGroup: 'rg-images',
+      gallery: 'corp',
+      definition: 'ubuntu',
+      version,
+      targetRegions: ['westeurope'],
+      showVersion: async () => ({
+        id: '/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/d/versions/other',
+        provisioningState: 'Succeeded',
+        replicationStatus: { summary: [{ region: 'westeurope', state: 'Completed' }] },
+      }),
+      maxAttempts: 1,
+      intervalMs: 1,
+    }),
+    /readiness/,
+  );
 });
