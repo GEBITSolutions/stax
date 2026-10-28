@@ -1,0 +1,20 @@
+{
+  "pr": 37,
+  "feature": [
+    "Add the reusable workflow a-wf-deploy-state.yml: it deploys the Terraform/OpenTofu state backend described by a state config (Azure resource group, storage account and optional private container, or an S3 bucket including S3-compatible endpoint options). Call a-wf-setup-ci.yml with config-profile: state first and pass its env and default-location outputs. setup's dry-run (default true) only plans without cloud access; destroy is rejected.",
+    "Add the config-profile input to a-wf-setup-ci.yml. config-profile: state requires only cloud and the backend fields, makes state_container_name optional, and rejects configs that define stacks.",
+    "Add location and create-container inputs to a-wf-setup-state.yaml, so a storage account can be deployed before any container and in a chosen location."
+  ],
+  "bugfixes": [
+    "a-wf-setup-state.yaml created and updated storage accounts with anonymous blob access allowed; it now disables it and creates containers private.",
+    "a-wf-setup-state.yaml logged an error but continued when the storage account existed in another resource group; the run now fails."
+  ],
+  "performance": [],
+  "maintenance": [],
+  "breaking": [
+    "a-wf-setup-state.yaml now disables anonymous blob access on every Azure storage account it touches, including existing accounts. Anything reading public blobs from a state account loses that access."
+  ],
+  "docs": [
+    "Document state configs, a-wf-deploy-state.yml and the deployed resources on the Backends page; correct the claim that setup rejects configs without stacks."
+  ]
+}
