@@ -37,7 +37,7 @@ on:
       actions-version:
         required: false
         type: string
-        default: "1.3.3"
+        default: "1.4.0"
         description: "Github ref (branch/tag/sha) for shared actions."
     outputs:
       cloud:
@@ -145,3 +145,9 @@ jobs:
       location: ${{ needs.plan.outputs.location }}
       bucket_name: ${{ needs.plan.outputs.bucket-name }}
       region: ${{ needs.plan.outputs.region }}
+      # S3-compatible stores: setup resolves and validates these deployment fields.
+      aws_endpoint_url: ${{ fromJSON(inputs.env).aws_endpoint_url || '' }}
+      aws_endpoint_url_s3: ${{ fromJSON(inputs.env).aws_endpoint_url_s3 || '' }}
+      aws_endpoint_url_sts: ${{ fromJSON(inputs.env).aws_endpoint_url_sts || '' }}
+      aws_s3_compatible: ${{ fromJSON(inputs.env).aws_s3_compatible || '' }}
+      aws_skip_sts_check: ${{ fromJSON(inputs.env).aws_skip_sts_check || '' }}
