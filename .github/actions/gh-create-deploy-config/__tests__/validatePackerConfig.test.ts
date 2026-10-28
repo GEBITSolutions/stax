@@ -139,6 +139,26 @@ describe('validatePackerConfig', () => {
     ).toThrow(/does not apply/)
   })
 
+  it.each(['hetzner', 'aws'] as const)(
+    'rejects Azure destinations for build_target %s',
+    (build_target) => {
+      const destination =
+        build_target === 'hetzner'
+          ? { hetzner: { location: 'fsn1', server_type: 'cax11' } }
+          : { aws: { regions: ['eu-central-1'] } }
+      for (const azureFields of [
+        { azure: { gallery_name: 'corp_gallery' } },
+        { gallery_name: 'corp_gallery' }
+      ]) {
+        expect(() =>
+          validatePackerConfig(
+            validPackerConfig({ build_target, ...destination, ...azureFields })
+          )
+        ).toThrow(/does not use Azure Gallery fields/)
+      }
+    }
+  )
+
   it('warns on deprecated Gallery aliases and rejects conflicts', () => {
     const warnings: string[] = []
     validatePackerConfig(
