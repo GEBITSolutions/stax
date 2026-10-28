@@ -130,9 +130,8 @@ jobs:
     name: "Provision"
     needs: plan
     if: needs.plan.outputs.dry-run == 'false'
-    permissions:
-      contents: read
-      id-token: write
+    # Inherits the caller's permissions: deploying callers grant id-token: write for OIDC.
+    # Requesting it here would fail at startup for plan-only callers that grant less.
     uses: ./.github/workflows/a-wf-setup-state.yaml
     secrets: inherit
     with:
