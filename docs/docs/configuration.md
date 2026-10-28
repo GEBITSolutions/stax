@@ -31,7 +31,7 @@ deployment:
 stacks: []
 ```
 
-Selecting `configs/prod.yaml` uses its `stage`, resource group and state container. Supply the remaining required values through GitHub variables or add them to that selected YAML. Add a stack to the selected file before deploying; setup rejects an empty stack list.
+Selecting `configs/prod.yaml` uses its `stage`, resource group and state container. Supply the remaining required values through GitHub variables or add them to that selected YAML. A config without stacks deploys nothing; the CLI's `validate config --strict` reports it.
 
 The setup workflow reads only the files you select. `configs/default.yaml` is a normal config file: it contributes no values when you select `prod`. The same rule applies to external configuration repositories.
 
@@ -67,6 +67,8 @@ Precedence per field is selected YAML → GitHub variable. An empty string or `n
 | `state_use_path_style` | `STATE_USE_PATH_STYLE` | Optional, AWS only; boolean, default `false` |
 
 The optional AWS fields target S3-compatible storage such as Wasabi or MinIO; see [Backends](backends.md#s3-compatible-storage). Endpoint URLs must use `https` (`http` only for `localhost`, `127.0.0.1` or `[::1]`) and cannot contain credentials, query strings, fragments, whitespace or backslashes. Setting one of them to a non-default value with another cloud fails the setup.
+
+These requirements apply to stack deployments. A state config, resolved with `config-profile: state`, needs only the backend fields; see [Backends](backends.md).
 
 ## Stack conditions
 
