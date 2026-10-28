@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -306,6 +306,16 @@ stacks:
       expect.objectContaining({ severity: "error", message: expect.stringContaining("conflicts with deprecated alias gallery_name") }),
       expect.objectContaining({ severity: "warning", message: expect.stringContaining("deprecated alias of azure.gallery_name") }),
     ]));
+  });
+
+  it("validates the Packer examples", () => {
+    const directory = join(import.meta.dirname, "../../examples/packer");
+    for (const name of ["legacy-azure.yaml", "azure.yaml", "hetzner-personal-assistant.yaml"]) {
+      expect(validateConfigText(readFileSync(join(directory, name), "utf8")), name).toEqual([]);
+    }
+    const aws = brief(validateConfigText(readFileSync(join(directory, "aws-reserved.yaml"), "utf8")));
+    expect(aws).toEqual([expect.objectContaining({ severity: "warning", message: expect.stringContaining("not implemented") })]);
+    expect(aws.filter((finding) => finding.severity === "error")).toEqual([]);
   });
 });
 
