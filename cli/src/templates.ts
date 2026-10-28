@@ -1,5 +1,59 @@
 export const WORKFLOW_REPOSITORY = "GEBITSolutions/stax";
 
+/** Optional secrets a-wf-setup-ci.yml accepts. Cross-org callers must map these by name. */
+const SETUP_CI_SECRETS = [
+  "ARM_CLIENT_ID",
+  "ARM_CLIENT_SECRET",
+  "ARM_SUBSCRIPTION_ID",
+  "ARM_TENANT_ID",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "AWS_ROLE_ARN",
+  "CONFIG_GITHUB_TOKEN",
+  "RELEASE_APP_CLIENT_SECRET",
+  "RELEASE_GH_APP_PRIVATE_KEY",
+] as const;
+
+/** Optional secrets a-wf-deploy-levels.yml accepts and forwards to stack workflows. */
+const DEPLOY_LEVELS_SECRETS = [
+  "ARM_CLIENT_ID",
+  "ARM_CLIENT_SECRET",
+  "ARM_SUBSCRIPTION_ID",
+  "ARM_TENANT_ID",
+  "AWS_ACCESS_KEY_ID",
+  "AWS_ROLE_ARN",
+  "AWS_SECRET_ACCESS_KEY",
+  "AWS_SESSION_TOKEN",
+  "CI_AZURE_STATIC_WEB_APPS_API_TOKEN",
+  "CI_ENV_TRANSFER_GH_TOKEN",
+  "CI_GITHUB_PAT",
+  "CI_GITHUB_TOKEN_TERRAFORM",
+  "GPG_PASSPHRASE",
+  "GPG_PRIVATE_KEY",
+  "GPG_PUBLIC_KEY",
+  "HCLOUD_TOKEN",
+  "INFRACOST_API_KEY",
+  "PULP_HOSTNAME",
+  "PULP_PASSWORD",
+  "PULP_USERNAME",
+  "RELEASE_APP_CLIENT_SECRET",
+  "RELEASE_GH_APP_PRIVATE_KEY",
+  "REPO_KEYSTORE_SP_CLIENT_SECRET",
+  "TF_PROVIDER_GH_OWNER",
+] as const;
+
+/** Render a `secrets:` map that passes each named secret through from the caller. */
+function renderNamedSecrets(names: readonly string[], indent = 4): string {
+  const pad = " ".repeat(indent);
+  const lines = [`${pad}secrets:`];
+  for (const name of names) {
+    lines.push(`${pad}  ${name}: \${{ secrets.${name} }}`);
+  }
+  return lines.join("\n");
+}
+
+
 export const DEPLOY_WORKFLOW_PATH = ".github/workflows/deploy.yml";
 export const DEPLOY_CONFIG_PATH = "configs/default.yaml";
 
@@ -157,8 +211,10 @@ concurrency:
 jobs:
   setup:
     name: Setup CI/CD
+    # secrets: inherit only works same-org/enterprise. Map by name for cross-org
+    # callers of GEBITSolutions/stax (Environment secrets resolve on nested jobs).
     uses: ${workflowPrefix}/a-wf-setup-ci.yml@${frameworkRef}
-    secrets: inherit
+${renderNamedSecrets(SETUP_CI_SECRETS)}
     with:
       actions-version: ${JSON.stringify(frameworkRef)}
       environment: \${{ inputs.environment }}
@@ -172,7 +228,7 @@ jobs:
     name: Deploy Levels
     needs: setup
     uses: ${workflowPrefix}/a-wf-deploy-levels.yml@${frameworkRef}
-    secrets: inherit
+${renderNamedSecrets(DEPLOY_LEVELS_SECRETS)}
     with:
       actions-version: ${JSON.stringify(frameworkRef)}
       ci_config: \${{ needs.setup.outputs.ci-config }}

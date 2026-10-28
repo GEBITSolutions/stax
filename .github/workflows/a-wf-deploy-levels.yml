@@ -1,4 +1,9 @@
 ---
+# Optional workflow_call secrets below support cross-org callers. Same-org (or
+# enterprise) callers may still use secrets: inherit. GitHub does not forward
+# inherit across orgs; those callers must map secrets by name. Nested jobs
+# forward the same set into a-wf-deploy-stack.yml; stack-type workflows then
+# receive them via same-repo secrets: inherit.
 name: ".Deploy Levels (Abstract)"
 on:
   workflow_call:
@@ -26,6 +31,55 @@ on:
         required: false
         default: "GEBITSolutions/stax"
         type: string
+    secrets:
+      ARM_CLIENT_ID:
+        required: false
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN:
+        required: false
+      CI_ENV_TRANSFER_GH_TOKEN:
+        required: false
+      CI_GITHUB_PAT:
+        required: false
+      CI_GITHUB_TOKEN_TERRAFORM:
+        required: false
+      GPG_PASSPHRASE:
+        required: false
+      GPG_PRIVATE_KEY:
+        required: false
+      GPG_PUBLIC_KEY:
+        required: false
+      HCLOUD_TOKEN:
+        required: false
+      INFRACOST_API_KEY:
+        required: false
+      PULP_HOSTNAME:
+        required: false
+      PULP_PASSWORD:
+        required: false
+      PULP_USERNAME:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+      REPO_KEYSTORE_SP_CLIENT_SECRET:
+        required: false
+      TF_PROVIDER_GH_OWNER:
+        required: false
 
 jobs:
   l0:
@@ -42,7 +96,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l1:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -60,7 +138,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l2:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -78,7 +180,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l3:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -96,7 +222,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l4:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -114,7 +264,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l5:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -132,7 +306,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l6:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -150,7 +348,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l7:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -168,7 +390,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l8:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -186,7 +432,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l9:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -204,7 +474,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l10:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -222,7 +516,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l11:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -240,7 +558,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l12:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -258,7 +600,31 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
 
   l13:
     uses: ./.github/workflows/a-wf-deploy-stack.yml
@@ -276,4 +642,28 @@ jobs:
       external-repos: "${{ inputs.external_repos }}"
       actions-version: ${{ inputs.actions-version }}
       actions-repository: ${{ inputs.actions-repository }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
+      GPG_PUBLIC_KEY: ${{ secrets.GPG_PUBLIC_KEY }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      PULP_HOSTNAME: ${{ secrets.PULP_HOSTNAME }}
+      PULP_PASSWORD: ${{ secrets.PULP_PASSWORD }}
+      PULP_USERNAME: ${{ secrets.PULP_USERNAME }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}

@@ -91,6 +91,16 @@ on:
         required: false
       HCLOUD_TOKEN:
         required: false
+      CI_GITHUB_PAT:
+        required: false
+      CI_GITHUB_TOKEN_TERRAFORM:
+        required: false
+      INFRACOST_API_KEY:
+        required: false
+      TF_PROVIDER_GH_OWNER:
+        required: false
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN:
+        required: false
 
 jobs:
   script:

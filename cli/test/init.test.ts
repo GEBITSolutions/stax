@@ -53,6 +53,17 @@ describe("stax init", () => {
     expect(workflow.jobs["deploy-levels"].uses).toBe(`GEBITSolutions/stax/.github/workflows/a-wf-deploy-levels.yml@${expectedRef}`);
     expect(workflow.jobs.setup.with["actions-version"]).toBe(expectedRef);
     expect(workflow.jobs["deploy-levels"].with["actions-version"]).toBe(expectedRef);
+    // Cross-org: named secrets, not secrets: inherit (inherit does not cross organizations).
+    expect(workflow.jobs.setup.secrets).toMatchObject({
+      AWS_ACCESS_KEY_ID: "${{ secrets.AWS_ACCESS_KEY_ID }}",
+      ARM_CLIENT_ID: "${{ secrets.ARM_CLIENT_ID }}",
+    });
+    expect(workflow.jobs.setup.secrets).not.toBe("inherit");
+    expect(workflow.jobs["deploy-levels"].secrets).toMatchObject({
+      HCLOUD_TOKEN: "${{ secrets.HCLOUD_TOKEN }}",
+      AWS_ACCESS_KEY_ID: "${{ secrets.AWS_ACCESS_KEY_ID }}",
+    });
+    expect(workflow.jobs["deploy-levels"].secrets).not.toBe("inherit");
     expect(readFileSync(join(dir, DEPLOY_CONFIG_PATH), "utf8").split("\n", 1)[0]).toBe(
       `# yaml-language-server: $schema=https://raw.githubusercontent.com/GEBITSolutions/stax/${encodeURIComponent(expectedRef)}/schema/deploy-config.schema.json`,
     );
