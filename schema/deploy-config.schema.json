@@ -206,6 +206,72 @@
             }
           }
         },
+        "scan": {
+          "description": "Optional Packer image scan/test hooks. Omit to keep build-only behaviour. When set, STAX materialises .stax/scan/run.sh and runs it on the build VM before the image is captured; a failing hook fails packer build so Azure Gallery and Hetzner never publish. Requires the template to declare stax_scan_enabled and reference .stax/scan/run.sh.",
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "trivy": {
+              "description": "Vulnerability/misconfig scan via aquasecurity/trivy rootfs. Fails when findings meet or exceed severity.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "severity": {
+                  "description": "Comma-separated uppercase severities passed to trivy --severity.",
+                  "type": "string",
+                  "pattern": "^[A-Z]+(?:,[A-Z]+)*$",
+                  "default": "HIGH,CRITICAL",
+                  "examples": ["HIGH,CRITICAL", "CRITICAL"]
+                },
+                "scanners": {
+                  "description": "Trivy scanners to enable.",
+                  "type": "array",
+                  "minItems": 1,
+                  "items": { "enum": ["vuln", "misconfig", "secret", "license"] },
+                  "default": ["vuln"],
+                  "examples": [["vuln"], ["vuln", "misconfig"]]
+                }
+              }
+            },
+            "lynis": {
+              "description": "Hardening audit via CISOfy Lynis. Fails when the hardening index is below min_hardening_index.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "min_hardening_index": {
+                  "description": "Minimum acceptable Lynis hardening index (0-100).",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "default": 50,
+                  "examples": [50, 65]
+                }
+              }
+            },
+            "goss": {
+              "description": "Server spec tests via goss. Fails on any failed expectation.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["spec"],
+              "properties": {
+                "spec": {
+                  "description": "Goss spec path relative to packer_directory (no ..).",
+                  "type": "string",
+                  "minLength": 1,
+                  "pattern": "^(?!.*\\.\\.)(?!/)[A-Za-z0-9._/-]+$",
+                  "examples": ["goss.yaml", "tests/goss.yaml"]
+                }
+              }
+            }
+          },
+          "examples": [{
+            "trivy": { "severity": "HIGH,CRITICAL", "scanners": ["vuln", "misconfig"] },
+            "lynis": { "min_hardening_index": 50 },
+            "goss": { "spec": "goss.yaml" }
+          }],
+          "x-stax-types": ["packer"]
+        },
         "image_resource_group_name": { "description": "Deprecated alias of azure.image_resource_group_name.", "type": "string", "minLength": 1 },
         "gallery_name": { "description": "Deprecated alias of azure.gallery_name.", "type": "string", "minLength": 1 },
         "image_definition_name": { "description": "Deprecated alias of azure.image_definition_name.", "type": "string", "minLength": 1 },

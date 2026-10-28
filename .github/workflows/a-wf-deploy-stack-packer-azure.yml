@@ -748,6 +748,7 @@ jobs:
         set -euo pipefail
         need="$(jq -r '
           if (has("azure") and .azure != null) or (has("hetzner") and .hetzner != null)
+            or (has("scan") and .scan != null)
             or has("gallery_name") or has("image_definition_name") or has("image_version")
             or has("target_regions") or has("image_resource_group_name") then
             "true"
@@ -755,7 +756,7 @@ jobs:
             "false"
           end
         ' <<< "$DATA_JSON")"
-        if [[ "$need" == "false" ]] && ! grep -R -q -E 'variable[[:space:]]+"(stax_build_target|stax_stack_id|stax_env|stax_git_sha|stax_image_version)"' "$PACKER_TEMPLATE"; then
+        if [[ "$need" == "false" ]] && ! grep -R -q -E 'variable[[:space:]]+"(stax_build_target|stax_stack_id|stax_env|stax_git_sha|stax_image_version|stax_scan_enabled)"' "$PACKER_TEMPLATE"; then
           echo "Packer var-file unchanged. No build-target fields and no declared stax variables."
           exit 0
         fi
@@ -773,6 +774,34 @@ jobs:
           --environment "$STACK_ENV" \
           --git-sha "$GIT_SHA"
         rm -f -- "$stack_file"
+
+
+    - name: Materialize Packer scan hooks
+      shell: bash
+      env:
+        PACKER_DIRECTORY: ${{ steps.packer-paths.outputs.directory }}
+        PACKER_TEMPLATE: ${{ steps.packer-paths.outputs.template }}
+        DATA_JSON: ${{ inputs.data }}
+      run: |
+        set -euo pipefail
+        if ! jq -e 'has("scan") and .scan != null' <<< "$DATA_JSON" >/dev/null; then
+          echo "Packer scan hooks disabled."
+          exit 0
+        fi
+        script="$GITHUB_WORKSPACE/trusted-actions/.github/scripts/packer-build-target.mjs"
+        if [[ ! -f "$script" ]]; then
+          echo "::error::Packer build-target helpers are missing from the trusted actions checkout. actions-version must include .github/scripts/packer-build-target.mjs."
+          exit 1
+        fi
+        stack_file="$(mktemp)"
+        printf '%s' "$DATA_JSON" > "$stack_file"
+        node "$script" materialize-scan \
+          --packer-directory "$PACKER_DIRECTORY" \
+          --template "$PACKER_TEMPLATE" \
+          --stack-file "$stack_file"
+        rm -f -- "$stack_file"
+        # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
+        printf '\n- Scan hooks: materialised under `.stax/scan` (fail the build before publish)\n' >> "$GITHUB_STEP_SUMMARY"
 
     - name: Format and validate Packer template
       shell: bash

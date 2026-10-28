@@ -179,6 +179,36 @@ describe('validatePackerConfig', () => {
     ).toThrow(/conflicts with deprecated alias gallery_name/)
   })
 
+  it('accepts scan hooks and rejects empty or invalid scan objects', () => {
+    expect(() =>
+      validatePackerConfig(
+        validPackerConfig({
+          scan: {
+            trivy: { severity: 'HIGH,CRITICAL', scanners: ['vuln'] },
+            lynis: { min_hardening_index: 65 },
+            goss: { spec: 'goss.yaml' }
+          }
+        })
+      )
+    ).not.toThrow()
+
+    expect(() =>
+      validatePackerConfig(validPackerConfig({ scan: {} }))
+    ).toThrow(/at least one/)
+
+    expect(() =>
+      validatePackerConfig(
+        validPackerConfig({ scan: { trivy: { severity: 'high' } } })
+      )
+    ).toThrow(/severity/)
+
+    expect(() =>
+      validatePackerConfig(
+        validPackerConfig({ scan: { goss: { spec: '../goss.yaml' } } })
+      )
+    ).toThrow(/\.\./)
+  })
+
   it('does not impose Packer requirements on non-Packer stacks', () => {
     const config: ITerraformConfig = {
       id: 'terraform-stack',

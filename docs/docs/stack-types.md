@@ -20,7 +20,7 @@ Checked boxes indicate support. Unchecked boxes indicate planned support, not av
 
 `type: packer` takes `packer_directory`, an exact `packer_version`, and an optional `packer_template` (default `.`). `build_target` selects the publisher. Omit it, or set `azure`, to keep today's Azure Compute Gallery behavior.
 
-The template owns the source block (builder, base image, provisioners) and must declare any Packer variables it reads. STAX owns credentials, the injected var-file, `packer fmt` / `init` / `validate`, publishing, retention, and outputs. A Hetzner template must write `manifest.json` with a manifest post-processor. Gallery builds still take `image_id` from `az sig image-version show`; the manifest is optional there.
+The template owns the source block (builder, base image, provisioners) and must declare any Packer variables it reads. STAX owns credentials, the injected var-file, optional scan hooks, `packer fmt` / `init` / `validate`, publishing, retention, and outputs. A Hetzner template must write `manifest.json` with a manifest post-processor. Gallery builds still take `image_id` from `az sig image-version show`; the manifest is optional there.
 
 Packer input conversion still comes from `GEBITSolutions/stax` at `actions-version`. The build-target helper is loaded from that same trusted checkout (`.github/scripts/packer-build-target.mjs`). `actions-version` has to include this change. `dry_run` remains the default, so a Hetzner build does not create a server unless dry-run is turned off. There is no extra environment protection rule.
 
@@ -48,6 +48,52 @@ Downstream stacks read published values with `stack.<id>.var.<output>`:
 | `git_sha` | Source commit |
 
 `output-var` lists which of those to export. A list that only contains `image_id` still exports only that value.
+
+### Packer scan hooks
+
+Optional `scan` runs on the Packer build VM **before** the image is captured. A failing hook fails `packer build`, so Azure Gallery and Hetzner never publish a bad image (the same contract will apply to `aws` later). Omit `scan` to keep today's build-only behaviour.
+
+| Tool | Config | Default fail rule |
+|---|---|---|
+| `trivy` | `severity`, `scanners` | `HIGH,CRITICAL` on `vuln` |
+| `lynis` | `min_hardening_index` | index below `50` |
+| `goss` | `spec` (required, relative to `packer_directory`) | any failed expectation |
+
+Empty tool objects enable defaults (`trivy: {}`). The build VM needs outbound HTTPS so the hooks can install the tools.
+
+When `scan` is set, the Packer template must:
+
+1. Declare `variable "stax_scan_enabled" { type = bool }`.
+2. Run a shell provisioner whose script path contains `.stax/scan/run.sh` (STAX materialises that file with the scan config embedded before `packer validate` / `packer build`).
+
+```hcl
+provisioner "shell" {
+  script           = "${path.root}/.stax/scan/run.sh"
+  environment_vars = ["STAX_SCAN_ENABLED=${var.stax_scan_enabled}"]
+  execute_command  = "chmod +x '{{ .Path }}'; {{ if .Vars }}{{ .Vars }} {{ end }}sudo -E '{{ .Path }}'"
+}
+```
+
+```yaml
+stacks:
+  - id: golden-scanned
+    type: packer
+    packer_directory: packer/scanned-hetzner
+    packer_template: .
+    packer_version: "1.16.1"
+    build_target: hetzner
+    hetzner:
+      location: fsn1
+      server_type: cax11
+    scan:
+      trivy:
+        severity: HIGH,CRITICAL
+        scanners: [vuln, misconfig]
+      lynis:
+        min_hardening_index: 50
+      goss:
+        spec: goss.yaml
+```
 
 ```yaml
 stacks:

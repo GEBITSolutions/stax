@@ -1,0 +1,23 @@
+# Packer stack with optional build-failing scan hooks. STAX runs trivy, lynis and
+# goss on the build VM via .stax/scan/run.sh before the snapshot is published.
+stacks:
+  - id: golden-scanned
+    type: packer
+    packer_directory: packer/scanned-hetzner
+    packer_template: .
+    packer_version: "1.16.1"
+    build_target: hetzner
+    hetzner:
+      location: fsn1
+      server_type: cax11
+      snapshot_name: golden-scanned
+      keep_last: 3
+    scan:
+      trivy:
+        severity: HIGH,CRITICAL
+        scanners: [vuln, misconfig]
+      lynis:
+        min_hardening_index: 50
+      goss:
+        spec: goss.yaml
+    output-var: [image_id, image_ref, build_target, version, labels]

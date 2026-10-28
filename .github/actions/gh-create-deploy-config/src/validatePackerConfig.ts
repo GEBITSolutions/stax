@@ -153,4 +153,88 @@ export function validatePackerConfig(
       `Packer stack "${config.id}" build_target aws requires aws.regions.`
     )
   }
+
+  if (config.scan !== undefined) {
+    if (!config.scan || typeof config.scan !== 'object' || Array.isArray(config.scan)) {
+      throw new Error(
+        `Packer stack "${config.id}" scan must be an object with trivy, lynis and/or goss.`
+      )
+    }
+    const tools = ['trivy', 'lynis', 'goss'] as const
+    const keys = Object.keys(config.scan)
+    if (keys.length === 0) {
+      throw new Error(
+        `Packer stack "${config.id}" scan requires at least one of trivy, lynis, or goss.`
+      )
+    }
+    for (const key of keys) {
+      if (!tools.includes(key as (typeof tools)[number])) {
+        throw new Error(
+          `Packer stack "${config.id}" scan has unknown tool "${key}".`
+        )
+      }
+    }
+    if (config.scan.trivy !== undefined) {
+      const trivy = config.scan.trivy
+      if (!trivy || typeof trivy !== 'object' || Array.isArray(trivy)) {
+        throw new Error(`Packer stack "${config.id}" scan.trivy must be an object.`)
+      }
+      if (
+        trivy.severity !== undefined &&
+        (typeof trivy.severity !== 'string' ||
+          !/^[A-Z]+(,[A-Z]+)*$/.test(trivy.severity))
+      ) {
+        throw new Error(
+          `Packer stack "${config.id}" scan.trivy.severity must be a comma-separated list of uppercase severities.`
+        )
+      }
+      if (trivy.scanners !== undefined) {
+        const allowed = new Set(['vuln', 'misconfig', 'secret', 'license'])
+        if (
+          !Array.isArray(trivy.scanners) ||
+          trivy.scanners.length === 0 ||
+          trivy.scanners.some((item) => !allowed.has(item))
+        ) {
+          throw new Error(
+            `Packer stack "${config.id}" scan.trivy.scanners must be a nonempty list from vuln, misconfig, secret, license.`
+          )
+        }
+      }
+    }
+    if (config.scan.lynis !== undefined) {
+      const lynis = config.scan.lynis
+      if (!lynis || typeof lynis !== 'object' || Array.isArray(lynis)) {
+        throw new Error(`Packer stack "${config.id}" scan.lynis must be an object.`)
+      }
+      if (lynis.min_hardening_index !== undefined) {
+        const min = lynis.min_hardening_index
+        if (!Number.isInteger(min) || min < 0 || min > 100) {
+          throw new Error(
+            `Packer stack "${config.id}" scan.lynis.min_hardening_index must be an integer from 0 to 100.`
+          )
+        }
+      }
+    }
+    if (config.scan.goss !== undefined) {
+      const goss = config.scan.goss
+      if (!goss || typeof goss !== 'object' || Array.isArray(goss)) {
+        throw new Error(`Packer stack "${config.id}" scan.goss must be an object.`)
+      }
+      if (typeof goss.spec !== 'string' || goss.spec.trim() === '') {
+        throw new Error(
+          `Packer stack "${config.id}" scan.goss.spec must be a nonempty path relative to packer_directory.`
+        )
+      }
+      if (
+        goss.spec.startsWith('/') ||
+        goss.spec.includes('\\') ||
+        goss.spec.split('/').includes('..') ||
+        goss.spec.split('/').includes('')
+      ) {
+        throw new Error(
+          `Packer stack "${config.id}" scan.goss.spec must be a repository-relative POSIX path without "..".`
+        )
+      }
+    }
+  }
 }

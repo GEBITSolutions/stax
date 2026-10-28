@@ -189,6 +189,16 @@ function checkPackerBuildTarget(stack: Record<string, unknown>, index: number, r
   }
 }
 
+/** Extra scan rules: goss path shape. Schema covers the rest. */
+function checkPackerScan(stack: Record<string, unknown>, index: number, report: Reporter): void {
+  if (stack.scan === undefined) return;
+  if (!isRecord(stack.scan)) return;
+  const goss = stack.scan.goss;
+  if (!isRecord(goss) || typeof goss.spec !== "string") return;
+  const problem = packerPathProblem(goss.spec);
+  if (problem) report.add("error", ["stacks", index, "scan", "goss", "spec"], problem);
+}
+
 /** Collects stack.<id>.var|secret.<key> references in an input value, like update_deploy_config. */
 function collectStackReferences(value: unknown, path: Path, out: { path: Path; ref: string }[]): void {
   if (typeof value === "string") {
@@ -252,8 +262,14 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
         if (problem) report.add("error", ["stacks", index, field], problem);
       }
       checkPackerBuildTarget(stack, index, report);
-    } else if (stack.build_target !== undefined) {
-      report.add("warning", ["stacks", index, "build_target"], "applies to packer stacks only");
+      checkPackerScan(stack, index, report);
+    } else {
+      if (stack.build_target !== undefined) {
+        report.add("warning", ["stacks", index, "build_target"], "applies to packer stacks only");
+      }
+      if (stack.scan !== undefined) {
+        report.add("warning", ["stacks", index, "scan"], "applies to packer stacks only");
+      }
     }
 
     // Mirrors validateGitHubPagesConfig and github-pages-config.mjs.

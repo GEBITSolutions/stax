@@ -1,19 +1,25 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
+  SCAN_HOOK_MARKER,
   assembleVarFile,
+  assertScanTemplateContract,
   azureImageRef,
   costNote,
   declaredPackerVariables,
   galleryFieldsFromStack,
   hetznerImageRef,
   manifestSnapshotId,
+  materializeScan,
   resolveBuildTarget,
   resolveHetzner,
+  resolveScan,
   snapshotsToDelete,
+  staxVariables,
   transferVariableMap,
 } from './packer-build-target.mjs';
 
@@ -121,4 +127,87 @@ test('template variable discovery ignores the plugin cache', () => {
   writeFileSync(join(root, 'image.pkr.hcl'), 'variable "location" {\n  type = string\n}\nvariable "stax_git_sha" {\n  type = string\n}\n');
   writeFileSync(join(root, '.packer', 'ignore.pkr.hcl'), 'variable "token" {\n  type = string\n}\n');
   assert.deepEqual([...declaredPackerVariables(root)].sort(), ['location', 'stax_git_sha']);
+});
+
+test('resolveScan stays disabled when omitted and fills defaults when enabled', () => {
+  assert.deepEqual(resolveScan({ type: 'packer' }), { enabled: false, config: null });
+  assert.throws(() => resolveScan({ scan: {} }), /at least one/);
+  assert.throws(() => resolveScan({ scan: { trivy: { severity: 'high' } } }), /severity/);
+  const resolved = resolveScan({
+    scan: {
+      trivy: {},
+      lynis: { min_hardening_index: 65 },
+      goss: { spec: 'goss.yaml' },
+    },
+  });
+  assert.equal(resolved.enabled, true);
+  assert.deepEqual(resolved.config, {
+    trivy: { severity: 'HIGH,CRITICAL', scanners: ['vuln'] },
+    lynis: { min_hardening_index: 65 },
+    goss: { spec: 'goss.yaml' },
+  });
+});
+
+test('staxVariables only adds stax_scan_enabled when scans are on', () => {
+  const off = staxVariables({
+    buildTarget: 'hetzner',
+    stackId: 'img',
+    environment: 'dev',
+    gitSha: sha,
+    version: `0.0.0+${sha}`,
+  });
+  assert.equal(Object.hasOwn(off, 'stax_scan_enabled'), false);
+  const on = staxVariables({
+    buildTarget: 'hetzner',
+    stackId: 'img',
+    environment: 'dev',
+    gitSha: sha,
+    version: `0.0.0+${sha}`,
+    scanEnabled: true,
+  });
+  assert.equal(on.stax_scan_enabled, true);
+});
+
+test('assertScanTemplateContract requires the variable and the hook marker', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stax-scan-'));
+  writeFileSync(
+    join(root, 'bare.pkr.hcl'),
+    'variable "location" { type = string }\nbuild { sources = [] }\n',
+  );
+  assert.throws(() => assertScanTemplateContract(root), /stax_scan_enabled/);
+
+  const root2 = mkdtempSync(join(tmpdir(), 'stax-scan-'));
+  writeFileSync(
+    join(root2, 'partial.pkr.hcl'),
+    'variable "stax_scan_enabled" { type = bool }\nbuild { sources = [] }\n',
+  );
+  assert.throws(() => assertScanTemplateContract(root2), new RegExp(SCAN_HOOK_MARKER.replace(/\./g, '\\.')));
+  writeFileSync(
+    join(root2, 'hook.pkr.hcl'),
+    `variable "stax_scan_enabled" { type = bool }\nbuild {\n  sources = []\n  provisioner "shell" {\n    script = "\${path.root}/${SCAN_HOOK_MARKER}"\n  }\n}\n`,
+  );
+  assert.doesNotThrow(() => assertScanTemplateContract(root2));
+});
+
+test('materializeScan embeds config and goss spec into run.sh', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stax-scan-mat-'));
+  writeFileSync(join(root, 'goss.yaml'), 'file:\n  /etc/os-release:\n    exists: true\n');
+  writeFileSync(
+    join(root, 'image.pkr.hcl'),
+    `variable "stax_scan_enabled" { type = bool }\nbuild {\n  provisioner "shell" { script = "\${path.root}/${SCAN_HOOK_MARKER}" }\n}\n`,
+  );
+  const scriptsRoot = join(dirname(fileURLToPath(import.meta.url)), 'packer-scan');
+  const scan = resolveScan({
+    scan: { trivy: { severity: 'CRITICAL' }, goss: { spec: 'goss.yaml' } },
+  });
+  const result = materializeScan({ packerDirectory: root, scan, scriptsRoot });
+  assert.equal(result.written, true);
+  const generated = readFileSync(join(root, '.stax/scan/run.sh'), 'utf8');
+  assert.match(generated, /STAX_EMBEDDED_CONFIG=/);
+  assert.match(generated, /CRITICAL/);
+  assert.match(generated, /STAX_EMBEDDED_GOSS_SPEC=/);
+  assert.match(generated, /\/etc\/os-release/);
+  const disabled = materializeScan({ packerDirectory: root, scan: { enabled: false, config: null } });
+  assert.equal(disabled.written, false);
+  assert.match(readFileSync(join(root, '.stax/scan/run.sh'), 'utf8'), /scan hooks disabled/);
 });
