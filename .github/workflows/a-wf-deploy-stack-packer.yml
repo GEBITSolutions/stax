@@ -26,6 +26,21 @@ on:
       image_id:
         description: "Gallery version resource ID, or the Hetzner snapshot id"
         value: ${{ jobs.azure.outputs.image_id || jobs.hetzner.outputs.image_id }}
+      image_ref:
+        description: "Opaque locator azure:gallery:... or hcloud:snapshot:<id>"
+        value: ${{ jobs.azure.outputs.image_ref || jobs.hetzner.outputs.image_ref }}
+      build_target:
+        description: "azure or hetzner"
+        value: ${{ jobs.azure.outputs.build_target || jobs.hetzner.outputs.build_target }}
+      version:
+        description: "Gallery image version, or 0.0.0+<git sha> for Hetzner"
+        value: ${{ jobs.azure.outputs.version || jobs.hetzner.outputs.version }}
+      labels:
+        description: "JSON object of tags or snapshot labels"
+        value: ${{ jobs.azure.outputs.labels || jobs.hetzner.outputs.labels }}
+      git_sha:
+        description: "Source commit recorded for this build"
+        value: ${{ jobs.azure.outputs.git_sha || jobs.hetzner.outputs.git_sha }}
     secrets:
       ARM_CLIENT_SECRET:
         required: false
