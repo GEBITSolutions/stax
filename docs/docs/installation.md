@@ -115,17 +115,6 @@ Local validation checks the configuration structure; it does not verify cloud ac
 
 `stax init` does not deploy anything. Before running the generated workflow, add a stack and supply the required deployment settings and credentials. See [Configuration](configuration.md) for deployment fields and their matching GitHub variables.
 
-
-## Cross-organization secrets
-
-`stax init` writes a Deploy workflow that calls `GEBITSolutions/stax`. GitHub's `secrets: inherit` only works when the caller and the reusable workflow share an organization or enterprise. Across organizations, Environment and repository secrets arrive empty unless you pass them by name.
-
-The generated `.github/workflows/deploy.yml` maps every optional secret that `a-wf-setup-ci.yml` and `a-wf-deploy-levels.yml` declare. You only need to create the secrets your stacks use on the GitHub Environment (for example `HCLOUD_TOKEN` for Packer Hetzner, or `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for OpenTofu on AWS). Unused mappings stay empty and are ignored.
-
-Same-organization callers may replace the maps with `secrets: inherit`. Do not mix inherit on a cross-org call: GitHub accepts the keyword, but the nested jobs still see empty values.
-
-`a-wf-setup-state.yaml` and `a-wf-deploy-state.yml` already declare the same optional `ARM_*` and `AWS_*` secrets. Cross-org state workflows must map those by name as well.
-
 ## Next step
 
 Continue with [Your first config](your-first-config.md) to add a stack and configure your deployment.

@@ -112,16 +112,7 @@ permissions:
 jobs:
   setup:
     uses: GEBITSolutions/stax/.github/workflows/a-wf-setup-ci.yml@<ref>
-    # Cross-org: map by name. Same-org callers may use secrets: inherit instead.
-    secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+    secrets: inherit
     with:
       environment: ${{ inputs.environment }}
       stack_filter: ""
@@ -133,22 +124,14 @@ jobs:
   state:
     needs: setup
     uses: GEBITSolutions/stax/.github/workflows/a-wf-deploy-state.yml@<ref>
-    secrets:
-      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
-      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+    secrets: inherit
     with:
       env: ${{ needs.setup.outputs.env }}
       default_location: ${{ needs.setup.outputs.default-location }}
       actions-version: <ref>
 ```
 
-Use the same `<ref>` for both workflows and both `actions-version` inputs. Across organizations, pass secrets by name as shown; `secrets: inherit` does not forward Environment secrets to another org's reusable workflows.
+Use the same `<ref>` for both workflows and both `actions-version` inputs.
 
 With `dry-run: true` (the setup default), the plan job validates the config and writes the backend to the run summary; nothing is deployed and no cloud login happens. Set `dry-run: false` to deploy. `destroy: true` fails: state backends are never removed by STAX.
 

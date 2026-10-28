@@ -36,8 +36,6 @@ STAX injects `stax_build_target`, `stax_stack_id`, `stax_env`, `stax_git_sha` an
 
 `hetzner` requires `location` and `server_type` (`cax11` is arm64; the template's base image must match, STAX does not translate architecture). Optional: `snapshot_name` (default: the stack id), `snapshot_labels`, `keep_last`. STAX merges labels with `stax_stack_id`, `stax_env`, `stax_git_sha`, `stax_build_target=hetzner` and `managed_by=stax`, and those keys win. A `cax11` build is about €0.01 per hour; snapshots are about €0.017 per GB-month. The job summary prints that estimate. `dry_run` validates the template and does not create a server or call the Hetzner API.
 
-When the Deploy workflow calls `GEBITSolutions/stax` from another organization, pass `HCLOUD_TOKEN` (and any other stack secrets) by name into `a-wf-deploy-levels.yml`. See [Cross-organization secrets](installation.md#cross-organization-secrets).
-
 Downstream stacks read published values with `stack.<id>.var.<output>`:
 
 | Output | Meaning |
