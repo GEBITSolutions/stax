@@ -4,9 +4,9 @@ name: ".Deploy State Backend (Abstract)"
 # Deploys the Terraform/OpenTofu state backend described by a state config. Call
 # a-wf-setup-ci.yml with config-profile: state first and pass its outputs here:
 #
-#   setup:  uses: GEBITSolutions/stax/.github/workflows/a-wf-setup-ci.yml@1.5.0
+#   setup:  uses: GEBITSolutions/stax/.github/workflows/a-wf-setup-ci.yml@1.6.0
 #           with: { config-profile: state, release_config_filepath: configs/state/<name>.yaml, ... }
-#   state:  uses: GEBITSolutions/stax/.github/workflows/a-wf-deploy-state.yml@1.5.0
+#   state:  uses: GEBITSolutions/stax/.github/workflows/a-wf-deploy-state.yml@1.6.0
 #           with: { env: needs.setup.outputs.env, default_location: needs.setup.outputs.default-location }
 #
 # Azure: resource group, storage account and (when state_container_name is set) a private
@@ -37,7 +37,7 @@ on:
       actions-version:
         required: false
         type: string
-        default: "1.5.0"
+        default: "1.6.0"
         description: "Github ref (branch/tag/sha) for shared actions."
     outputs:
       cloud:

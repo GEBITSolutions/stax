@@ -21,7 +21,7 @@ on:
       actions-version:
         type: string
         required: false
-        default: "1.5.0"
+        default: "1.6.0"
     outputs:
       image_id:
         description: "Gallery version resource ID, or the Hetzner snapshot id"
