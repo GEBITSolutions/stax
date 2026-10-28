@@ -102,16 +102,14 @@ jobs:
       run: |
         set -euo pipefail
 
+        # Runtime gates only. Schema, config action, and CLI already validate
+        # type, paths, packer_version shape, and build_target membership.
         jq -e 'type == "object"' <<< "$DATA_JSON" > /dev/null || {
           echo "::error::Packer data must be a JSON object."
           exit 1
         }
         jq -e 'type == "object"' <<< "$PIPELINE_ENV_JSON" > /dev/null || {
           echo "::error::Packer env must be a JSON object."
-          exit 1
-        }
-        jq -e 'type == "object" or (type == "array" and length == 0)' <<< "$EXTERNAL_REPOS_JSON" > /dev/null || {
-          echo "::error::external-repos must be a JSON object or an empty array."
           exit 1
         }
 
@@ -168,84 +166,9 @@ jobs:
           destroy="true"
         fi
 
-        if [[ "$(jq -r '.type // empty' <<< "$DATA_JSON")" != "packer" ]]; then
-          echo "::error::The Packer executor only accepts descriptors with type 'packer'."
-          exit 1
-        fi
-
-        build_target="$(jq -r '
-          if has("build_target") | not then
-            "azure"
-          elif (.build_target | type) == "string" then
-            .build_target
-          else
-            "invalid"
-          end
-        ' <<< "$DATA_JSON")"
-        if [[ "$build_target" != "hetzner" ]]; then
-          echo "::error::The Hetzner Packer workflow only accepts build_target hetzner."
-          exit 1
-        fi
-        if ! jq -e '.hetzner | type == "object" and (.location | type == "string") and (.server_type | type == "string")' <<< "$DATA_JSON" > /dev/null; then
-          echo "::error::build_target hetzner requires hetzner.location and hetzner.server_type."
-          exit 1
-        fi
-
-        packer_version="$(jq -er 'if (.packer_version | type) == "string" then .packer_version else error("packer_version must be a string") end' <<< "$DATA_JSON")" || {
-          echo "::error::packer_version must be an exact version string."
-          exit 1
-        }
-        if [[ ! "$packer_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          echo "::error::packer_version must be an exact numeric version such as 1.11.2."
-          exit 1
-        fi
-
-        validate_relative_path() {
-          local value="$1"
-          local label="$2"
-
-          if [[ -z "$value" || "$value" == /* || "$value" =~ ^[A-Za-z]: || "$value" == *\\* || "$value" == *//* || "$value" == */ ]]; then
-            echo "::error::$label must be a nonempty repository-relative POSIX path."
-            exit 1
-          fi
-          if [[ "$value" =~ (^|/)\.\.(/|$) ]]; then
-            echo "::error::$label must not contain a '..' path segment."
-            exit 1
-          fi
-        }
-
-        packer_directory="$(jq -er '
-          if (.packer_directory | type) == "string" and (.packer_directory | explode | all(. >= 32 and . != 127)) then
-            .packer_directory
-          else
-            error("packer_directory must be a string without control characters")
-          end
-        ' <<< "$DATA_JSON")" || {
-          echo "::error::packer_directory must be a string without control characters."
-          exit 1
-        }
-        packer_template="$(jq -er '
-          if has("packer_template") | not then
-            "."
-          elif (.packer_template | type) == "string" and (.packer_template | explode | all(. >= 32 and . != 127)) then
-            .packer_template
-          else
-            error("packer_template must be a string without control characters")
-          end
-        ' <<< "$DATA_JSON")" || {
-          echo "::error::packer_template must be a string without control characters."
-          exit 1
-        }
-        validate_relative_path "$packer_directory" packer_directory
-        validate_relative_path "$packer_template" packer_template
-        if ! jq -e '
-          if type == "object" then
-            all(keys[]; test("^[A-Za-z0-9][A-Za-z0-9._-]*$") and . != "." and . != "..")
-          else
-            true
-          end
-        ' <<< "$EXTERNAL_REPOS_JSON" > /dev/null; then
-          echo "::error::Every external-repos alias must be a safe single path component."
+        packer_version="$(jq -r '.packer_version // empty' <<< "$DATA_JSON")"
+        if [[ -z "$packer_version" ]]; then
+          echo "::error::packer_version is required."
           exit 1
         fi
 
@@ -276,51 +199,24 @@ jobs:
           | unique
         ')"
 
-        source_alias="$(jq -er '
-          if has("source_repo") | not then ""
-          elif (.source_repo | type) == "string" then .source_repo
-          else error("source_repo must be a string")
-          end
-        ' <<< "$DATA_JSON")" || {
-          echo "::error::source_repo must be a string."
-          exit 1
-        }
-        if [[ -n "$source_alias" ]] && ! jq -e --arg alias "$source_alias" '
-          type == "object" and has($alias) and (.[$alias] | type == "array") and (.[$alias] | length > 0)
-        ' <<< "$EXTERNAL_REPOS_JSON" > /dev/null; then
-          echo "::error::source_repo alias '$source_alias' was not found in external-repos."
-          exit 1
-        fi
-
         output_requested="$(jq -r '
           (."output-var" // []) as $outputs
-          | if ($outputs | type) != "array" or any($outputs[]; type != "string") then
-              error("output-var must be an array of strings")
+          | if ($outputs | type) != "array" then
+              false
             else
               (["image_id", "image_ref", "build_target", "version", "labels", "git_sha"] as $known
-                | any($outputs[]; . as $name | ($known | index($name)) != null))
+                | any($outputs[]; type == "string" and (. as $name | ($known | index($name)) != null)))
             end
-        ' <<< "$DATA_JSON")" || {
-          echo "::error::output-var must be an array of strings."
-          exit 1
-        }
+        ' <<< "$DATA_JSON")"
 
-        if [[ "$output_requested" == "true" ]]; then
-          stack_id="$(jq -r '.id // empty' <<< "$DATA_JSON" | tr '-' '_')"
-          if [[ ! "$stack_id" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]]; then
-            echo "::error::Stack id cannot be converted to a valid output variable prefix."
+        if [[ "$output_requested" == "true" && "$dry_run" == "false" ]]; then
+          if [[ -z "$ENVIRONMENT" ]]; then
+            echo "::error::An environment is required to transfer Packer outputs."
             exit 1
           fi
-
-          if [[ "$dry_run" == "false" ]]; then
-            if [[ -z "$ENVIRONMENT" ]]; then
-              echo "::error::An environment is required to transfer Packer outputs."
-              exit 1
-            fi
-            if [[ -z "$KEY_VAULT_URL" && "$TRANSFER_PAT_AVAILABLE" != "true" && "$TRANSFER_APP_CREDENTIALS_AVAILABLE" != "true" ]]; then
-              echo "::error::No GitHub transfer credential is configured for the requested Packer output transfer."
-              exit 1
-            fi
+          if [[ -z "$KEY_VAULT_URL" && "$TRANSFER_PAT_AVAILABLE" != "true" && "$TRANSFER_APP_CREDENTIALS_AVAILABLE" != "true" ]]; then
+            echo "::error::No GitHub transfer credential is configured for the requested Packer output transfer."
+            exit 1
           fi
         fi
 
@@ -337,7 +233,6 @@ jobs:
           echo "actions-version=$ACTIONS_VERSION"
           echo "excluded-secret-names=$excluded_secret_names"
         } >> "$GITHUB_OUTPUT"
-
     - name: Resolve App Token Scope
       id: token-scope
       shell: bash
