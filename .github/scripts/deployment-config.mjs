@@ -33,6 +33,11 @@ const requiredAzure = [
   'state_resource_group_name',
 ];
 const requiredAws = ['state_bucket_name', 'state_region'];
+// State-backend configs only describe the backend; application and DNS fields stay optional.
+// The container is optional so an account can be deployed before any project uses it.
+const requiredStateAzure = ['default_location', 'state_resource_group_name', 'state_storage_account_name'];
+const requiredStateAws = ['state_bucket_name'];
+const profiles = new Set(['deploy', 'state']);
 const fieldSet = new Set(fields);
 const booleanFields = new Set(['public_cloud_flag', 'aws_s3_compatible', 'aws_skip_sts_check', 'state_use_lockfile', 'state_use_path_style']);
 const endpointFields = ['aws_endpoint_url', 'aws_endpoint_url_s3', 'aws_endpoint_url_sts', 'aws_endpoint_url_iam'];
@@ -110,14 +115,19 @@ function readDeployment(mapping, source, label) {
 }
 
 // Later selected documents win; missing fields fall back to GitHub variables.
-export function resolveDeploymentContext({ documents, variables = {}, skipCloudValidation = false }) {
+// profile 'deploy' (default) validates stack deployments; 'state' validates a state-backend config.
+export function resolveDeploymentContext({ documents, variables = {}, skipCloudValidation = false, profile = 'deploy' }) {
   if (!Array.isArray(documents)) throw new Error('documents must be an array of config documents');
   if (!isMapping(variables)) throw new Error('variables must be a mapping of GitHub variables');
+  if (!profiles.has(profile)) throw new Error(`profile must be 'deploy' or 'state' (received '${profile}')`);
 
   const configured = {};
   for (const [index, document] of documents.entries()) {
     if (!isMapping(document)) throw new Error(`documents[${index}] must be a config document`);
     const source = document.sourceFile || `documents[${index}]`;
+    if (profile === 'state' && Array.isArray(document.stacks) && document.stacks.length > 0) {
+      throw new Error(`${source}: state configs must not define stacks; deploy stacks with a separate config`);
+    }
     const selected = readDeployment(document.deployment, source, 'deployment');
     Object.assign(configured, selected);
   }
@@ -135,17 +145,26 @@ export function resolveDeploymentContext({ documents, variables = {}, skipCloudV
     result[variableName] = validateValue(field, rawVariable, `GitHub variable ${variableName}`) ?? '';
   }
 
-  const required = [...requiredCommon];
   const cloud = result.CLOUD.toLowerCase();
   if (cloud && !['azure', 'aws'].includes(cloud)) {
     throw new Error(`deployment.cloud / GitHub variable CLOUD must be 'azure' or 'aws' (received '${result.CLOUD}')`);
   }
   result.CLOUD = cloud;
-  if (!skipCloudValidation) required.push(...(cloud === 'aws' ? requiredAws : cloud === 'azure' ? requiredAzure : []));
+  let required;
+  if (profile === 'state') {
+    // Backend coordinates are the whole point of a state config, so they are always enforced.
+    required = ['cloud', ...(cloud === 'aws' ? requiredStateAws : cloud === 'azure' ? requiredStateAzure : [])];
+  } else {
+    required = [...requiredCommon];
+    if (!skipCloudValidation) required.push(...(cloud === 'aws' ? requiredAws : cloud === 'azure' ? requiredAzure : []));
+  }
   for (const field of required) {
     if (!result[field.toUpperCase()]) {
       throw new Error(`Missing deployment.${field}; set it in deployment or GitHub variable ${field.toUpperCase()}`);
     }
+  }
+  if (profile === 'state' && cloud === 'aws' && !result.STATE_REGION && !result.DEFAULT_LOCATION) {
+    throw new Error('Missing deployment.state_region (or deployment.default_location) for the AWS state bucket');
   }
 
   if (!skipCloudValidation && cloud !== 'aws') {

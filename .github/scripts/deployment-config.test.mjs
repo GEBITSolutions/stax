@@ -200,3 +200,32 @@ test('rejects AWS endpoint options for non-AWS clouds unless they keep the defau
   assert.equal(resolve({ ...azure, state_use_lockfile: true, aws_s3_compatible: false }).CLOUD, 'azure');
   assert.equal(resolve({ ...azure, aws_endpoint_url_s3: 'https://s3.example.com' }, { skipCloudValidation: true }).AWS_ENDPOINT_URL_S3, 'https://s3.example.com');
 });
+
+test('state profile requires only backend coordinates, with an optional Azure container', () => {
+  const stateOnly = { cloud: 'azure', default_location: 'northeurope', state_resource_group_name: 'rg-state', state_storage_account_name: 'stexamplestate' };
+  const state = resolve(stateOnly, { profile: 'state' });
+  assert.equal(state.STATE_STORAGE_ACCOUNT_NAME, 'stexamplestate');
+  assert.equal(state.STATE_CONTAINER_NAME, '');
+  assert.equal(state.PROJECT, '');
+  assert.equal(resolve({ ...stateOnly, state_container_name: 'widget-tfstate' }, { profile: 'state' }).STATE_CONTAINER_NAME, 'widget-tfstate');
+  // The deploy profile still rejects a state-only config.
+  assert.throws(() => resolve(stateOnly), /deployment\.project/);
+  for (const field of ['cloud', 'default_location', 'state_resource_group_name', 'state_storage_account_name']) {
+    assert.throws(() => resolve({ ...stateOnly, [field]: '' }, { profile: 'state' }), new RegExp(`deployment\\.${field}.*GitHub variable ${field.toUpperCase()}`));
+  }
+  // Skipping credential checks never relaxes backend requirements for state configs.
+  assert.throws(() => resolve({ ...stateOnly, state_resource_group_name: '' }, { profile: 'state', skipCloudValidation: true }), /state_resource_group_name/);
+  assert.throws(() => resolve({ ...stateOnly, state_storage_account_name: 'a'.repeat(25) }, { profile: 'state' }), /3-24/);
+
+  const aws = { cloud: 'aws', state_bucket_name: 'example-state', state_region: 'eu-west-1' };
+  assert.equal(resolve(aws, { profile: 'state' }).STATE_BUCKET_NAME, 'example-state');
+  assert.equal(resolve({ ...aws, state_region: '', default_location: 'eu-central-1' }, { profile: 'state' }).DEFAULT_LOCATION, 'eu-central-1');
+  assert.throws(() => resolve({ ...aws, state_region: '' }, { profile: 'state' }), /state_region.*default_location/);
+  assert.throws(() => resolve({ ...aws, state_bucket_name: '' }, { profile: 'state' }), /state_bucket_name/);
+  assert.throws(() => resolve(stateOnly, { profile: 'plan' }), /profile must be 'deploy' or 'state'/);
+  assert.throws(
+    () => resolveDeploymentContext({ documents: [{ sourceFile: 'configs/state.yaml', deployment: stateOnly, stacks: [{ id: 'app' }] }], profile: 'state' }),
+    /configs\/state\.yaml: state configs must not define stacks/,
+  );
+  assert.equal(resolveDeploymentContext({ documents: [{ deployment: stateOnly, stacks: [] }], profile: 'state' }).STATE_RESOURCE_GROUP_NAME, 'rg-state');
+});

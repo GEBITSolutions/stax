@@ -35,6 +35,11 @@ on:
         required: false
         type: string
         default: "deploy-config-default.yaml"
+      config-profile:
+        required: false
+        type: string
+        default: "deploy"
+        description: "deploy: validate stack deployments. state: validate a state-backend config for a-wf-deploy-state.yml."
       is-ghe:
         required: false
         type: string
@@ -316,6 +321,7 @@ jobs:
         DEPLOY_CONFIG_DOCUMENTS: ${{ steps.read-deploy-config.outputs.deploy-configs }}
         DEPLOYMENT_VARIABLES: ${{ toJSON(vars) }}
         SKIP_CLOUD_VALIDATION: ${{ inputs.skip-azure-credentials-validation }}
+        CONFIG_PROFILE: ${{ inputs.config-profile || 'deploy' }}
       with:
         script: |
           const { pathToFileURL } = await import('node:url');
@@ -326,6 +332,7 @@ jobs:
             documents: JSON.parse(process.env.DEPLOY_CONFIG_DOCUMENTS),
             variables: JSON.parse(process.env.DEPLOYMENT_VARIABLES),
             skipCloudValidation: process.env.SKIP_CLOUD_VALIDATION === 'true',
+            profile: process.env.CONFIG_PROFILE,
           });
           for (const [name, value] of Object.entries(resolved)) {
             // AWS_ENDPOINT_URL* would redirect every later AWS CLI/SDK call in this job; keep them prefixed.

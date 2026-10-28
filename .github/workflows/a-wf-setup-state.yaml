@@ -37,7 +37,17 @@ on:
         required: false
         type: string
         default: ""
-        description: "Container name (defaults to customer_id-tfstate, e.g. default-tfstate)"
+        description: "Container name (defaults to customer_id-tfstate, e.g. default-tfstate; ignored when create-container is false)"
+      create-container:
+        required: false
+        type: boolean
+        default: true
+        description: "Create the state container. false: deploy only the resource group and storage account"
+      location:
+        required: false
+        type: string
+        default: ""
+        description: "Azure location for new resources (defaults to the location variable, then northeurope)"
       cloud:
         required: false
         type: string
@@ -136,7 +146,7 @@ jobs:
       ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
       ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
       ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
-      LOCATION: ${{ vars.location || 'northeurope' }}
+      LOCATION: ${{ inputs.location || vars.location || 'northeurope' }}
     steps:
     - name: Validate required envs
       id: validate
@@ -184,7 +194,9 @@ jobs:
         fi
 
         CONTAINER_NAME="${{ inputs.container_name }}"
-        if [ -z "$CONTAINER_NAME" ]; then
+        if [[ "${{ inputs.create-container }}" != "true" ]]; then
+          CONTAINER_NAME=""
+        elif [ -z "$CONTAINER_NAME" ]; then
           CONTAINER_NAME="${CUSTOMER_ID}-tfstate"
         fi
 
@@ -305,12 +317,8 @@ jobs:
 
         # Determine state based on both checks
         if [[ "$sa_exists" == "true" && "$sa_resource_group" != "$resource_group" ]]; then
-          # Storage account exists in a different resource group - ERROR
-          echo "[ERROR] Storage account '${storage_account}' exists in resource group '${sa_resource_group}', expected '${resource_group}'"
-          echo "sa_exists=true" >> "$GITHUB_OUTPUT"
-          echo "sa_in_different_rg=true" >> "$GITHUB_OUTPUT"
-          echo "rg_exists=true" >> "$GITHUB_OUTPUT"
-          echo "sa_container_exists=false" >> "$GITHUB_OUTPUT"
+          echo "::error::Storage account '${storage_account}' exists in resource group '${sa_resource_group}', expected '${resource_group}'"
+          exit 1
         elif [[ "$sa_exists" == "true" && "$sa_resource_group" == "$resource_group" ]]; then
           # Storage account exists in the correct resource group
           echo "[INFO] Use existing Storage Account ${storage_account} in resource group ${resource_group}"
@@ -344,11 +352,13 @@ jobs:
           # END TLS_VERSION_FIX
 
           # Check if container exists
-          sa_container_exists=$(az storage container exists --account-name ${storage_account} \
-            --account-key "${key}" --name "${shared_container}" -o tsv | tr '[:upper:]' '[:lower:]')
-          if [[ $sa_container_exists == "true" ]]; then
-            echo "[INFO] Use existing Storage Container ${shared_container}"
-            echo "sa_container_exists=true" >> "$GITHUB_OUTPUT"
+          if [ -n "${shared_container}" ]; then
+            sa_container_exists=$(az storage container exists --account-name ${storage_account} \
+              --account-key "${key}" --name "${shared_container}" -o tsv | tr '[:upper:]' '[:lower:]')
+            if [[ $sa_container_exists == "true" ]]; then
+              echo "[INFO] Use existing Storage Container ${shared_container}"
+              echo "sa_container_exists=true" >> "$GITHUB_OUTPUT"
+            fi
           fi
         elif [[ "$sa_exists" == "false" && "$rg_exists" == "true" ]]; then
           # RG exists but SA doesn't - need to create SA
@@ -364,6 +374,11 @@ jobs:
           echo "sa_exists=false" >> "$GITHUB_OUTPUT"
           echo "sa_in_different_rg=false" >> "$GITHUB_OUTPUT"
           echo "sa_container_exists=false" >> "$GITHUB_OUTPUT"
+        fi
+
+        if [ -z "${shared_container}" ]; then
+          echo "[INFO] No container requested; deploying the storage account only"
+          echo "sa_container_exists=skipped" >> "$GITHUB_OUTPUT"
         fi
 
         echo "location=${location}" >> "$GITHUB_OUTPUT"
@@ -384,7 +399,7 @@ jobs:
       run: |
         storage_account="${{ steps.init-base.outputs.storage_account }}"
         resource_group="${{ steps.init-base.outputs.resource_group }}"
-
+        location="${{ steps.init-base.outputs.location }}"
         echo "[INFO] Ensure Storage Account ${storage_account} in resource group ${resource_group}"
 
         existing_rg=$(az storage account show \
@@ -402,7 +417,7 @@ jobs:
           az storage account update \
             --resource-group "${resource_group}" \
             --name "${storage_account}" \
-            --allow-blob-public-access true \
+            --allow-blob-public-access false \
             --min-tls-version TLS1_2 \
             --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states
         else
@@ -411,9 +426,10 @@ jobs:
           create_output=$(az storage account create \
             --resource-group "${resource_group}" \
             --name "${storage_account}" \
+            --location "${location}" \
             --sku Standard_LRS \
             --encryption-services blob \
-            --allow-blob-public-access true \
+            --allow-blob-public-access false \
             --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states \
             --min-tls-version TLS1_2 2>&1)
           create_exit=$?
@@ -431,7 +447,7 @@ jobs:
               az storage account update \
                 --resource-group "${resource_group}" \
                 --name "${storage_account}" \
-                --allow-blob-public-access true \
+                --allow-blob-public-access false \
                 --min-tls-version TLS1_2 \
                 --tags owner="GithubActions" repository="${GITHUB_REPOSITORY}" project="tf-states" stage=tf-states
             else
@@ -446,6 +462,11 @@ jobs:
 
     - name: secure-sa
       run: |
+        # Terraform state is never served anonymously; this also closes accounts created with public access.
+        az storage account update \
+          --resource-group ${{ steps.init-base.outputs.resource_group }} \
+          --name ${{ steps.init-base.outputs.storage_account }} \
+          --allow-blob-public-access false
         az storage account blob-service-properties update \
           --resource-group ${{ steps.init-base.outputs.resource_group }} \
           --account-name ${{ steps.init-base.outputs.storage_account }} \
@@ -462,7 +483,7 @@ jobs:
           -n ${{ steps.init-base.outputs.storage_account}} --query "[0].{value:value}" --output tsv)"
         echo "[INFO] Create Storage Container ${{ steps.init-base.outputs.storage_container}}"
         az storage container create --name ${{ steps.init-base.outputs.storage_container}} \
-          --account-name ${{ steps.init-base.outputs.storage_account}} --account-key "${key}"
+          --account-name ${{ steps.init-base.outputs.storage_account}} --account-key "${key}" --public-access off
 
     - name: get-ids
       id: get-ids
@@ -489,7 +510,7 @@ jobs:
         echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
         echo "| Resource Group: \`${{ steps.resolve-config.outputs.TF_VAR_state_resource_group_name }}\` | Exists: ${{ steps.init-base.outputs.rg_exists }} |" >> $GITHUB_STEP_SUMMARY
         echo "| Storage Account: \`${{ steps.resolve-config.outputs.TF_VAR_state_storage_account_name }}\` | Exists: ${{ steps.init-base.outputs.sa_exists }} |" >> $GITHUB_STEP_SUMMARY
-        echo "| Container: \`${{ steps.resolve-config.outputs.TF_VAR_state_storage_container_name }}\` | Exists: ${{ steps.init-base.outputs.sa_container_exists }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| Container: \`${{ steps.resolve-config.outputs.TF_VAR_state_storage_container_name || '(none requested)' }}\` | Exists: ${{ steps.init-base.outputs.sa_container_exists }} |" >> $GITHUB_STEP_SUMMARY
 
   setup-aws:
     name: "Setup TF State (AWS)"
