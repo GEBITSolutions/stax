@@ -633,40 +633,9 @@ jobs:
         oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
 
     - name: Install exact Packer version
-      shell: bash
-      env:
-        PACKER_VERSION: ${{ steps.preflight.outputs.packer-version }}
-      run: |
-        set -euo pipefail
-        if [[ "$RUNNER_OS" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
-          echo "::error::The current Packer download supports Linux x86_64 runners only."
-          exit 1
-        fi
-
-        archive_name="packer_${PACKER_VERSION}_linux_amd64.zip"
-        archive="${RUNNER_TEMP}/${archive_name}"
-        sums="${RUNNER_TEMP}/packer_${PACKER_VERSION}_SHA256SUMS"
-        install_dir="${RUNNER_TEMP}/packer-${PACKER_VERSION}"
-
-        curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-          --output "$archive" "https://releases.hashicorp.com/packer/${PACKER_VERSION}/${archive_name}"
-        curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-          --output "$sums" "https://releases.hashicorp.com/packer/${PACKER_VERSION}/packer_${PACKER_VERSION}_SHA256SUMS"
-
-        expected="$(awk -v name="$archive_name" '$2 == name || $2 == "*" name {print $1}' "$sums")"
-        if [[ ! "$expected" =~ ^[0-9a-fA-F]{64}$ ]]; then
-          echo "::error::HashiCorp checksum manifest did not contain exactly one valid checksum for $archive_name."
-          exit 1
-        fi
-        printf '%s  %s\n' "$expected" "$archive" | sha256sum --check --status
-
-        mkdir -p "$install_dir"
-        unzip -q "$archive" -d "$install_dir"
-        chmod 0755 "$install_dir/packer"
-        echo "$install_dir" >> "$GITHUB_PATH"
-        "$install_dir/packer" version > /dev/null
-        # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
-        printf '\n- Packer version: `%s`\n' "$PACKER_VERSION" >> "$GITHUB_STEP_SUMMARY"
+      uses: hashicorp/setup-packer@v3
+      with:
+        version: ${{ steps.preflight.outputs.packer-version }}
 
     - name: Write private Packer variables
       id: packer-vars
@@ -1033,7 +1002,6 @@ jobs:
       shell: bash
       env:
         PACKER_VARS_FILE: ${{ steps.packer-vars.outputs.file }}
-        PACKER_VERSION: ${{ steps.preflight.outputs.packer-version }}
       run: |
         set +e
         if command -v az > /dev/null 2>&1; then
@@ -1044,10 +1012,6 @@ jobs:
           rm -f -- "$PACKER_VARS_FILE"
         fi
         rm -f -- "$RUNNER_TEMP"/packer-*.pkrvars.json
-        rm -f -- "$RUNNER_TEMP"/packer_*.zip "$RUNNER_TEMP"/packer_*_SHA256SUMS
-        if [[ -n "$PACKER_VERSION" ]]; then
-          rm -rf -- "$RUNNER_TEMP/packer-$PACKER_VERSION"
-        fi
         rm -rf -- "$GITHUB_WORKSPACE/trusted-actions" "$GITHUB_WORKSPACE/source_repo" "$GITHUB_WORKSPACE/externalRepos"
 
   transfer:
