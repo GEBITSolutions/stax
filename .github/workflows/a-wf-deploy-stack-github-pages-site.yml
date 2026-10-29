@@ -23,7 +23,7 @@ on:
         default: "GEBITSolutions/stax"
       actions-version:
         type: string
-        default: "1.6.0"
+        default: "1.7.0"
     secrets:
       RELEASE_APP_CLIENT_SECRET:
         required: false
