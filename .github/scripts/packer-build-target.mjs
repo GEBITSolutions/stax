@@ -11,6 +11,10 @@ import { chmodSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSyn
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+
 
 export const BUILD_TARGETS = ['azure', 'hetzner', 'aws'];
 export const GALLERY_FIELDS = [
@@ -417,6 +421,99 @@ export function snapshotsToDelete({ images, selector, keepLast, protectIds = [] 
   return matching.filter((image) => !protect.has(String(image.id))).slice(0, excess).map((image) => String(image.id));
 }
 
+
+export function normalizeAzureRegion(name) {
+  return String(name).toLowerCase().replace(/[\s_-]/g, '');
+}
+
+/**
+ * One poll of Gallery replicationStatus against the requested regions.
+ * Returns ready | pending | failed with the same rules the workflow YAML used:
+ * Failed/Canceled provisioning or regional state → failed;
+ * Succeeded + every requested region exactly one Completed match → ready;
+ * otherwise pending.
+ */
+export function evaluateGalleryReadiness(status, requestedRegions) {
+  if (!status || typeof status !== 'object' || Array.isArray(status)) {
+    return { state: 'failed', error: 'Gallery image version status must be an object.' };
+  }
+  const regions = Array.isArray(requestedRegions) ? requestedRegions : [];
+  if (regions.length === 0 || regions.some((region) => typeof region !== 'string' || region.length === 0)) {
+    return { state: 'failed', error: 'target_regions must be a nonempty string array.' };
+  }
+
+  const provisioningState = status.provisioningState ?? '';
+  if (['Failed', 'Canceled', 'Cancelled'].includes(provisioningState)) {
+    return { state: 'failed', error: `Gallery image version provisioning ended in state '${provisioningState}'.` };
+  }
+
+  const summary = Array.isArray(status.replicationStatus?.summary) ? status.replicationStatus.summary : [];
+  const regional = regions.map((region) => {
+    const matches = summary.filter(
+      (entry) => entry && typeof entry.region === 'string' && normalizeAzureRegion(entry.region) === normalizeAzureRegion(region),
+    );
+    return {
+      region,
+      matches: matches.length,
+      state: matches[0]?.state ?? 'Missing',
+    };
+  });
+
+  if (regional.some((entry) => entry.matches > 1 || ['Failed', 'Canceled', 'Cancelled'].includes(entry.state))) {
+    return { state: 'failed', error: 'Gallery replication failed or returned ambiguous status for a requested region.' };
+  }
+
+  if (provisioningState === 'Succeeded' && regional.every((entry) => entry.matches === 1 && entry.state === 'Completed')) {
+    const imageId = typeof status.id === 'string' ? status.id : '';
+    return { state: 'ready', imageId, labels: status.tags && typeof status.tags === 'object' && !Array.isArray(status.tags) ? status.tags : {}, regional };
+  }
+
+  return { state: 'pending', regional, provisioningState };
+}
+
+/**
+ * Wait until the Gallery image version is provisioned and every requested region
+ * reports Completed. Defaults match the previous workflow YAML: 30s interval,
+ * 60 attempts (~30 minutes) after --created.
+ */
+export async function waitForGalleryReplication({
+  resourceGroup,
+  gallery,
+  definition,
+  version,
+  targetRegions,
+  showVersion,
+  waitCreated,
+  sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  maxAttempts = 60,
+  intervalMs = 30_000,
+}) {
+  if (typeof waitCreated === 'function') await waitCreated();
+
+  let last = { state: 'pending' };
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const status = await showVersion();
+    last = evaluateGalleryReadiness(status, targetRegions);
+    if (last.state === 'failed') throw new Error(last.error);
+    if (last.state === 'ready') {
+      const imageId = last.imageId ?? '';
+      if (!imageId.startsWith('/subscriptions/') || !imageId.endsWith(`/versions/${version}`)) {
+        throw new Error('Gallery image version did not reach provisioning and replication readiness within 30 minutes.');
+      }
+      const imageRef = azureImageRef({ resourceGroup, gallery, definition, version });
+      return {
+        image_id: imageId,
+        image_ref: imageRef,
+        build_target: 'azure',
+        version,
+        labels: last.labels ?? {},
+      };
+    }
+    if (attempt < maxAttempts) await sleep(intervalMs);
+  }
+  throw new Error('Gallery image version did not reach provisioning and replication readiness within 30 minutes.');
+}
+
 export function transferVariableMap(stackId, requested, outputs) {
   const prefix = String(stackId).replaceAll('-', '_');
   if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(prefix)) {
@@ -515,6 +612,97 @@ function commandCost(argv) {
 }
 
 
+
+function commandWaitGallery(argv) {
+  const { spawnSync } = require('node:child_process');
+  const resourceGroup = arg(argv, '--resource-group');
+  const gallery = arg(argv, '--gallery');
+  const definition = arg(argv, '--definition');
+  const version = arg(argv, '--version');
+  const targetRegions = readJson(arg(argv, '--regions-file'));
+  const gitSha = arg(argv, '--git-sha');
+
+  function az(args) {
+    const result = spawnSync('az', args, { encoding: 'utf8' });
+    if (result.status !== 0) {
+      const detail = (result.stderr || result.stdout || '').trim();
+      throw new Error(detail || `az ${args.join(' ')} failed`);
+    }
+    return result.stdout;
+  }
+
+  az([
+    'sig', 'image-version', 'wait',
+    '--resource-group', resourceGroup,
+    '--gallery-name', gallery,
+    '--gallery-image-definition', definition,
+    '--gallery-image-version', version,
+    '--created', '--interval', '30', '--timeout', '1800', '--only-show-errors',
+  ]);
+
+  const maxAttempts = 60;
+  let result = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const show = spawnSync('az', [
+      'sig', 'image-version', 'show',
+      '--resource-group', resourceGroup,
+      '--gallery-name', gallery,
+      '--gallery-image-definition', definition,
+      '--gallery-image-version', version,
+      '--expand', 'ReplicationStatus',
+      '--only-show-errors', '--output', 'json',
+    ], { encoding: 'utf8' });
+    if (show.status !== 0) {
+      throw new Error('Unable to read Gallery image version readiness.');
+    }
+    let status;
+    try {
+      status = JSON.parse(show.stdout);
+    } catch {
+      throw new Error('Unable to read Gallery image version readiness.');
+    }
+    const evaluated = evaluateGalleryReadiness(status, targetRegions);
+    if (evaluated.state === 'failed') throw new Error(evaluated.error);
+    if (evaluated.state === 'ready') {
+      const imageId = evaluated.imageId ?? '';
+      if (!imageId.startsWith('/subscriptions/') || !imageId.endsWith(`/versions/${version}`)) {
+        throw new Error('Gallery image version did not reach provisioning and replication readiness within 30 minutes.');
+      }
+      result = {
+        image_id: imageId,
+        image_ref: azureImageRef({ resourceGroup, gallery, definition, version }),
+        build_target: 'azure',
+        version,
+        git_sha: gitSha,
+        labels: evaluated.labels ?? {},
+      };
+      break;
+    }
+    if (attempt < maxAttempts) {
+      spawnSync('sleep', ['30'], { stdio: 'ignore' });
+    }
+  }
+  if (!result) {
+    throw new Error('Gallery image version did not reach provisioning and replication readiness within 30 minutes.');
+  }
+
+  const outputPath = process.env.GITHUB_OUTPUT;
+  if (outputPath) {
+    const lines = [
+      `image_id=${result.image_id}`,
+      `image_ref=${result.image_ref}`,
+      `build_target=${result.build_target}`,
+      `version=${result.version}`,
+      `git_sha=${result.git_sha}`,
+      'labels<<STAX_LABELS_EOF',
+      JSON.stringify(result.labels),
+      'STAX_LABELS_EOF',
+    ];
+    writeFileSync(outputPath, `${lines.join('\n')}\n`, { flag: 'a' });
+  }
+  process.stdout.write(`${JSON.stringify(result)}\n`);
+}
+
 function commandMaterializeScan(argv) {
   const packerDirectory = arg(argv, '--packer-directory');
   const stack = readJson(arg(argv, '--stack-file'));
@@ -532,6 +720,7 @@ const commands = {
   'retention-plan': commandRetention,
   'transfer-variables': commandTransfer,
   'cost-note': commandCost,
+  'wait-gallery': commandWaitGallery,
 };
 
 const invokedDirectly = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
