@@ -115,7 +115,19 @@ jobs:
       external-repos: ${{ inputs.external-repos }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
 
   Packer:
     if: fromJson(inputs.data)['type'] == 'packer'
@@ -127,7 +139,15 @@ jobs:
       external-repos: ${{ inputs.external-repos }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
 
   rpmbuild:
     if: fromJson(inputs.data)['type'] == 'rpmbuild'
@@ -829,7 +849,9 @@ jobs:
       stack-repository-version: ${{ fromJSON(inputs.data).source_version || '' }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
-    secrets: inherit
+    secrets:
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
 
   swa:
     if: (fromJson(inputs.data)['type'] == 'swa-docs-site-deploy' || fromJson(inputs.data)['type'] == 'swa-site-deploy')
@@ -844,7 +866,16 @@ jobs:
       destroy: ${{ fromJson(inputs.env)['destroy'] || fromJson(inputs.data)['destroy'] || 'false' }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
-    secrets: inherit
+    secrets:
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      CI_AZURE_STATIC_WEB_APPS_API_TOKEN: ${{ secrets.CI_AZURE_STATIC_WEB_APPS_API_TOKEN }}
 
   s3-site:
     if: fromJson(inputs.data)['type'] == 's3-site-deploy' && (fromJson(inputs.env)['destroy'] || 'false') != 'true'
@@ -858,7 +889,18 @@ jobs:
       stack-repository-version: ${{ fromJson(inputs.data)['source_version'] || github.sha }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
-    secrets: inherit
+    secrets:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
 
   terraform:
     if: ((fromJson(inputs.data)['type'] == 'terraform' || fromJson(inputs.data)['type'] == 'opentofu') && (fromJson(inputs.env)['dry_run']
@@ -910,4 +952,21 @@ jobs:
       debug: ${{ fromJson(inputs.env)['debug'] || 'false' }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
-    secrets: inherit
+    secrets:
+      CI_GITHUB_PAT: ${{ secrets.CI_GITHUB_PAT }}
+      CI_GITHUB_TOKEN_TERRAFORM: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+      CI_ENV_TRANSFER_GH_TOKEN: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN }}
+      INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+      TF_PROVIDER_GH_OWNER: ${{ secrets.TF_PROVIDER_GH_OWNER }}
+      RELEASE_APP_CLIENT_SECRET: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
+      RELEASE_GH_APP_PRIVATE_KEY: ${{ secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
+      AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+      HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
+      REPO_KEYSTORE_SP_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}

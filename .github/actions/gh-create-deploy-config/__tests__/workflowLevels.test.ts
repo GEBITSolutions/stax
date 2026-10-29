@@ -46,24 +46,36 @@ describe('deployment level workflow capacity', () => {
     expect(setupWorkflow).toContain('deploy-depth: "14"')
   })
 
-  it('forwards nested stack jobs with secrets: inherit (not explicit remapping)', () => {
-    // Explicit remapping on levels→stack re-expands ${{ secrets.* }} on a
-    // uses: job that has no environment:, so Environment-scoped values arrive
-    // empty further down. Same-repo inherit preserves the named pass from the
-    // cross-org caller; leaf jobs with environment: then resolve them.
-    const inheritCount = [
-      ...deployLevelsWorkflow.matchAll(/^ {4}secrets: inherit$/gm)
+  it('never uses secrets: inherit in deploy levels or stack workflows', () => {
+    // Cross-org callers cannot rely on inherit; every hop must map secrets by
+    // name. Leaf jobs that need Environment-scoped values set environment:.
+    expect(deployLevelsWorkflow).not.toMatch(/^ {4}secrets: inherit$/m)
+    expect(deployStackWorkflow).not.toMatch(/^ {4}secrets: inherit$/m)
+  })
+
+  it('forwards HCLOUD_TOKEN by name on every level job into stack', () => {
+    const hcloudMaps = [
+      ...deployLevelsWorkflow.matchAll(
+        /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/gm
+      )
     ].length
-    expect(inheritCount).toBe(14)
-    expect(deployLevelsWorkflow).not.toMatch(
-      /^ {4}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/m
-    )
+    expect(hcloudMaps).toBe(14)
     expect(deployLevelsWorkflow).toMatch(
       /^ {6}HCLOUD_TOKEN:\n {8}required: false$/m
     )
   })
 
-  it('declares HCLOUD_TOKEN on packer and terraform so gh.secret.hcloud_token can resolve', () => {
+  it('forwards HCLOUD_TOKEN by name from stack into packer and terraform', () => {
+    const hcloudMaps = [
+      ...deployStackWorkflow.matchAll(
+        /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/gm
+      )
+    ].length
+    // Packer + terraform jobs each map HCLOUD_TOKEN.
+    expect(hcloudMaps).toBe(2)
+  })
+
+  it('declares HCLOUD_TOKEN on stack, packer and terraform for gh.secret.hcloud_token', () => {
     expect(deployStackWorkflow).toMatch(
       /^ {6}HCLOUD_TOKEN:\n {8}required: false$/m
     )
