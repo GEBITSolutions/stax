@@ -1,9 +1,12 @@
 ---
-# Optional workflow_call secrets below support cross-org callers. Same-org (or
-# enterprise) callers may still use secrets: inherit. GitHub does not forward
-# inherit across orgs; those callers must map secrets by name. Nested jobs
-# forward the same set into a-wf-deploy-stack.yml; stack-type workflows then
-# receive them via same-repo secrets: inherit.
+# Always forward secrets by name on every hop. Never use secrets: inherit —
+# inherit breaks for callers from other orgs, and mixed inherit/explicit chains
+# are hard to reason about. Cross-org callers map this workflow_call.secrets
+# list by name into deploy-levels; levels and stack remaps the same names into
+# nested stack-type workflows. Leaf jobs that consume Environment-scoped values
+# must set environment: (packer/terraform/script/sites already do).
+# Tradeoff: only declared names reach toJson(secrets); arbitrary custom
+# gh.secret.* / stack.*.secret.* names need an added workflow_call declaration.
 name: ".Deploy Levels (Abstract)"
 on:
   workflow_call:
