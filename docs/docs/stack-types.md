@@ -89,7 +89,36 @@ Use the `script` workflow type to run custom scripts:
 
 ## Helm deployments
 
-- [x] **Helm**: deploy Helm charts to Kubernetes clusters.
+- [x] **Helm** (`helm`): install or upgrade one release of an OCI chart on a Kubernetes cluster.
+
+`type: helm` requires `chart` (an `oci://` reference), an exact `chart_version` and `namespace`, which is created when missing. `release_name` defaults to the stack id. `values_files` are read from the source checkout (`source_repo`/`source_version`, as for other types) and applied in order.
+
+Inputs are read by key:
+
+- `cluster_host`, `cluster_ca_certificate`, `client_certificate` and `client_key` hold the base64 admin credentials, as the RPOA `aks` stack outputs them, and build the kubeconfig. They are no chart values.
+- `values` is one values document: an object (inline, or a YAML file through `externalRepos.<alias>.<path>.yaml`) or a YAML string (for example a stack output). The key may repeat.
+- Every other key is one chart parameter, like `helm --set`. A dotted key such as `githubConfigSecret.github_app_id` sets a nested value, `\.` is a literal dot (`podAnnotations.prometheus\.io/port`) and `name[0]` a list index. Unlike `--set` the value keeps the type it resolves to: YAML literals stay numbers or booleans, while `gh.var.*`, `gh.secret.*` and stack outputs stay strings. Pass a `values` document when a reference must become a number or an object.
+
+Later sources override earlier ones, merged as Helm merges `--values` files (maps deep, lists replaced): chart defaults, then `values_files` in order, then `values` inputs in input order, then the parameters. Everything is passed as files, so multi-line secrets such as private keys stay intact and never appear on a command line.
+
+`dry_run` renders the chart with `helm template` without contacting the cluster and prints only the rendered kinds, because manifests can contain secrets. Otherwise STAX runs `helm upgrade --install --create-namespace --wait --reset-values`: one idempotent command for the first install and every later run. `--reset-values` makes the config the whole desired state; without it Helm keeps the previous release's values whenever an upgrade passes none. `destroy` runs `helm uninstall`; the namespace stays. `helm upgrade` never updates CRDs that a chart ships in `crds/` (the ARC controller chart does); apply new CRDs separately before raising `chart_version`. The runner needs `helm` on the `PATH`; GitHub-hosted Ubuntu runners have it. A Helm stack exports no outputs.
+
+```yaml
+stacks:
+  - id: arc-controller
+    type: helm
+    chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    chart_version: "0.15.1"
+    release_name: arc
+    namespace: arc-systems
+    input:
+      - stack.aks.secret.cluster_host
+      - stack.aks.secret.cluster_ca_certificate
+      - stack.aks.secret.client_certificate
+      - stack.aks.secret.client_key
+```
+
+`examples/helm/arc.yaml` adds a runner scale set authenticated by a GitHub App.
 
 ## Raw Kubernetes manifest deployments
 

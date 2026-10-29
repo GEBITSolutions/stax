@@ -8,7 +8,7 @@ Each scenario covers one part of the framework with the most common setup, not e
 |---|---|---|---|
 | CLI new project | `e2e-cli.yml` | generated | `stax init` and `stax add` create a valid config; the generated `deploy.yml` matches the inputs and secrets of the reusable workflows; the configs in `e2e/configs` are valid |
 | Config resolution | `e2e-config.yml` | `config-base.yaml`, `config-overlay.yaml`, `state-azure.yaml`, `state-aws.yaml` | deployment values from the later file win; globals stay per file; explicit and implicit (`stack.<id>.var.<key>`) dependencies across files; `group-` and `>` stack filters; `if` conditions; Azure and AWS state configs resolve with `config-profile: state` and `a-wf-deploy-state.yml` dry-runs without deploying |
-| Infrastructure plan | `e2e-iac-plan.yml` | `iac-plan.yaml` | OpenTofu and Terraform plans (local state, no cloud provider) contain values from config and pipeline globals; a script stack in the next layer receives globals and `DRY_RUN=true`; nothing is applied |
+| Infrastructure plan | `e2e-iac-plan.yml` | `iac-plan.yaml` | OpenTofu and Terraform plans (local state, no cloud provider) contain values from config and pipeline globals; a script stack in the next layer receives globals and `DRY_RUN=true`; a Helm stack renders an OCI chart with `helm template`, without a cluster; nothing is applied |
 | Site and image builds | `e2e-sites.yml` | `sites.yaml` | a GitHub Pages MkDocs site and a Docker image are built; nothing is published or pushed |
 | Deploy and destroy | `e2e-deploy.yml` | `deploy.yaml` | an OpenTofu apply stores its output in the GitHub Environment `e2e`; a script stack receives it and stores a derived value; the OpenTofu stack is destroyed |
 

@@ -43,3 +43,16 @@ stacks:
       - stage: global.pipeline.var.stage
       - expect_stage: e2e
       - expect_DRY_RUN: "true"
+
+  - id: e2e-helm-plan
+    name: E2E Plan Helm
+    type: helm
+    chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    chart_version: "0.15.1"
+    namespace: arc-systems
+    input: # one input of each kind: values object, values YAML string, parameter with escaped dot and list index
+      - values: { replicaCount: 1 }
+      - values: "flags:\n  logFormat: json\n"
+      - flags.logLevel: debug
+      - podAnnotations.prometheus\.io/scrape: "true"
+      - imagePullSecrets[0].name: e2e-pull-secret

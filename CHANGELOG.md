@@ -4,6 +4,10 @@
   - Packer stacks accept optional `scan` hooks (`trivy`, `lynis`, `goss`). When configured, STAX materialises `.stax/scan/run.sh` and runs it on the build VM before the image is captured; a failing hook fails `packer build` so Azure Gallery and Hetzner do not publish. Off by default.
   - Packer stacks accept `build_target`: `azure` (the default, unchanged Compute Gallery publish), `hetzner` (labelled snapshots with `keep_last` retention) and `aws` (reserved; the workflow rejects it). Normalized outputs are `image_id`, `image_ref`, `build_target`, `version`, `labels` and `git_sha`.
   - Top-level Gallery fields remain deprecated aliases of `azure.*`. Existing Packer stacks that pass those fields as inputs keep the same var-file and still publish `image_id`.
+  - Add the `helm` stack type (`a-wf-deploy-stack-helm.yml`): runs `helm upgrade --install --reset-values` for one release of an OCI chart with an exact `chart_version` into `namespace`, so the config is the whole desired state on every run. Values come from `values_files` (source checkout), then `values` inputs (objects, `externalRepos` YAML files or YAML strings, repeatable), then parameter inputs (`helm --set` paths with `\.` escapes and `[n]` indices, keeping the resolved type). The RPOA `aks` credential outputs (`cluster_host`, `cluster_ca_certificate`, `client_certificate`, `client_key`) build the kubeconfig. Dry runs render with `helm template` without a cluster; `destroy` uninstalls the release.
+
+### 🐞 Bugfixes
+  - 1.7.0 mapped secrets explicitly from a-wf-deploy-levels.yml into a-wf-deploy-stack.yml. An explicit mapping on any hop hides environment secrets and custom repository secrets from the stack workflows, so `stack.<id>.secret.*` and `gh.secret.<custom>` inputs failed with "Value not found" in repos without a keystore. The levels now pass `secrets: inherit`; cross-org callers still map secrets into a-wf-deploy-levels.yml by name.
 
 ## Release 1.5.0
 

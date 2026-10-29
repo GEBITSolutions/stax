@@ -95,7 +95,8 @@
             "s3-site-deploy",
             "script",
             "bizep",
-            "github-pages-site-deploy"
+            "github-pages-site-deploy",
+            "helm"
           ]
         },
         "if": { "description": "Deploy only when this JavaScript condition holds; {stage} and other pipeline values are substituted first.", "type": "string", "examples": ["'{stage}' == 'prod'"], "x-stax-types": "all" },
@@ -107,7 +108,7 @@
           "type": "array",
           "items": { "type": ["string", "object"] },
           "examples": [["global.pipeline.var.stage"]],
-          "x-stax-types": ["terraform", "opentofu", "packer", "docker-build-push", "function-build-deploy", "swa-site-deploy", "swa-docs-site-deploy", "s3-site-deploy", "script", "bizep"]
+          "x-stax-types": ["terraform", "opentofu", "packer", "docker-build-push", "function-build-deploy", "swa-site-deploy", "swa-docs-site-deploy", "s3-site-deploy", "script", "bizep", "helm"]
         },
         "tf-vars": { "type": "object", "additionalProperties": { "type": "string" } },
         "output-var": { "description": "Outputs exported as variables.", "$ref": "#/$defs/stringList", "examples": [["resource_group_name"]], "x-stax-types": ["terraform", "opentofu", "packer"] },
@@ -118,15 +119,15 @@
           "description": "externalRepos alias holding the stack source.",
           "type": "string",
           "examples": ["shared"],
-          "x-stax-types": ["terraform", "opentofu", "packer", "swa-site-deploy", "swa-docs-site-deploy", "s3-site-deploy", "script", "bizep", "github-pages-site-deploy"]
+          "x-stax-types": ["terraform", "opentofu", "packer", "swa-site-deploy", "swa-docs-site-deploy", "s3-site-deploy", "script", "bizep", "github-pages-site-deploy", "helm"]
         },
         "source_version": {
           "description": "Branch, tag or commit; overrides the alias targetRevision.",
           "type": "string",
           "examples": ["main"],
-          "x-stax-types": ["terraform", "opentofu", "packer", "swa-site-deploy", "swa-docs-site-deploy", "s3-site-deploy", "script", "bizep", "github-pages-site-deploy"]
+          "x-stax-types": ["terraform", "opentofu", "packer", "swa-site-deploy", "swa-docs-site-deploy", "s3-site-deploy", "script", "bizep", "github-pages-site-deploy", "helm"]
         },
-        "destroy": { "description": "Destroy the stack instead of deploying it. For Packer, only build_target hetzner honors this; Azure Gallery builds stay build-only.", "type": ["boolean", "string"], "examples": [false], "x-stax-types": ["terraform", "opentofu", "packer", "swa-site-deploy", "swa-docs-site-deploy"] },
+        "destroy": { "description": "Destroy the stack instead of deploying it. For Packer, only build_target hetzner honors this; Azure Gallery builds stay build-only. For Helm, uninstalls the release.", "type": ["boolean", "string"], "examples": [false], "x-stax-types": ["terraform", "opentofu", "packer", "swa-site-deploy", "swa-docs-site-deploy", "helm"] },
 
         "folder": {
           "description": "Stack directory: below stack_base_path for terraform/opentofu, below functions/ for function-build-deploy.",
@@ -304,7 +305,13 @@
 
         "script": { "description": "Script path relative to the source checkout.", "type": "string", "minLength": 1, "examples": ["scripts/deploy.sh"], "x-stax-types": ["script"] },
         "resource_prefix": { "type": "string", "examples": ["app"], "x-stax-types": ["script", "bizep"] },
-        "template": { "description": "Bicep template path for bizep stacks.", "type": "string", "minLength": 1, "examples": ["bicep/main.bicep"], "x-stax-types": ["bizep"] }
+        "template": { "description": "Bicep template path for bizep stacks.", "type": "string", "minLength": 1, "examples": ["bicep/main.bicep"], "x-stax-types": ["bizep"] },
+
+        "chart": { "description": "OCI chart reference.", "type": "string", "pattern": "^oci://\\S+$", "examples": ["oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller"], "x-stax-types": ["helm"] },
+        "chart_version": { "description": "Exact chart version.", "type": "string", "minLength": 1, "examples": ["0.15.1"], "x-stax-types": ["helm"] },
+        "namespace": { "description": "Kubernetes namespace; created when missing.", "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$", "examples": ["arc-systems"], "x-stax-types": ["helm"] },
+        "release_name": { "description": "Helm release name. Defaults to the stack id.", "type": "string", "pattern": "^[a-z0-9]([-a-z0-9]{0,51}[a-z0-9])?$", "examples": ["arc"], "x-stax-types": ["helm"] },
+        "values_files": { "description": "Values files relative to the source checkout, applied in order; inputs override them.", "type": "array", "items": { "$ref": "#/$defs/relativePath" }, "examples": [["helm/arc-values.yaml"]], "x-stax-types": ["helm"] }
       },
       "required": ["id", "type"],
       "allOf": [
@@ -341,6 +348,10 @@
         {
           "if": { "properties": { "type": { "const": "bizep" } }, "required": ["type"] },
           "then": { "required": ["template"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "helm" } }, "required": ["type"] },
+          "then": { "required": ["chart", "chart_version", "namespace"] }
         },
         {
           "if": { "properties": { "type": { "const": "function-build-deploy" } }, "required": ["type"] },

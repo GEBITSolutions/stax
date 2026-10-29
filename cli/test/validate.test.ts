@@ -348,6 +348,11 @@ stacks:
     expect(aws).toEqual([expect.objectContaining({ severity: "warning", message: expect.stringContaining("not implemented") })]);
     expect(aws.filter((finding) => finding.severity === "error")).toEqual([]);
   });
+
+  it("validates the Helm example", () => {
+    const file = join(import.meta.dirname, "../../examples/helm/arc.yaml");
+    expect(validateConfigText(readFileSync(file, "utf8"))).toEqual([]);
+  });
 });
 
 describe("stax validate config", () => {

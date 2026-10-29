@@ -1,0 +1,230 @@
+---
+name: ".Helm Workflow (Abstract)"
+# Deploys one `type: helm` stack with .github/scripts/deploy-helm-chart.sh from the trusted STAX checkout.
+on:
+  workflow_call:
+    inputs:
+      data:
+        type: string
+        required: true
+      env:
+        type: string
+        required: true
+      external-repos:
+        type: string
+        required: false
+        default: "[]"
+      actions-repository:
+        type: string
+        required: false
+        default: "GEBITSolutions/stax"
+      actions-version:
+        type: string
+        required: false
+        default: "1.6.0"
+    secrets:
+      ARM_CLIENT_SECRET:
+        required: false
+      ARM_CLIENT_ID:
+        required: false
+      ARM_SUBSCRIPTION_ID:
+        required: false
+      ARM_TENANT_ID:
+        required: false
+      AWS_ACCESS_KEY_ID:
+        required: false
+      AWS_SECRET_ACCESS_KEY:
+        required: false
+      AWS_SESSION_TOKEN:
+        required: false
+      AWS_ROLE_ARN:
+        required: false
+      REPO_KEYSTORE_SP_CLIENT_SECRET:
+        required: false
+      RELEASE_APP_CLIENT_SECRET:
+        required: false
+      RELEASE_GH_APP_PRIVATE_KEY:
+        required: false
+jobs:
+  helm:
+    name: "Helm ${{ fromJson(inputs.data)['name'] || fromJson(inputs.data)['id'] }}"
+    runs-on: ${{ fromJson(inputs.data)['runs-on'] || 'ubuntu-latest' }}
+    environment: "${{ fromJson(inputs.env)['environment'] }}"
+    env:
+      ENVIRONMENT: "${{ fromJson(inputs.env)['environment'] || 'default' }}"
+      ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ vars.OIDC_ENABLED != 'true' && secrets.ARM_CLIENT_SECRET || '' }}
+      ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID || secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ vars.ARM_SUBSCRIPTION_ID || secrets.ARM_SUBSCRIPTION_ID }}
+    steps:
+    - name: Resolve App Token Scope
+      id: token-scope
+      shell: bash
+      run: |
+        repositories="${GITHUB_REPOSITORY#*/}"
+        while read -r repo_url; do
+          repo_ref=$(echo "$repo_url" | sed -E 's#.*github\.com[:/]([^/]+)/([^/.]+)(\.git)?$#\1/\2#')
+          repo_owner="${repo_ref%%/*}"
+          repo_name="${repo_ref#*/}"
+          if [[ "$repo_owner" == "$GITHUB_REPOSITORY_OWNER" && "$repo_name" != "$repo_ref" && ",${repositories}," != *",${repo_name},"* ]]; then
+            repositories="${repositories},${repo_name}"
+          fi
+        done < <(echo '${{ inputs.external-repos || '[]' }}' | jq -r '. | to_entries[]? | .value[0]?.repoURL // empty')
+        echo "repositories=${repositories}" >> "$GITHUB_OUTPUT"
+
+    - name: Generate GitHub App Token
+      id: app-token
+      if: ${{ vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '' }}
+      continue-on-error: true
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ vars.RELEASE_APP_CLIENT_ID || vars.RELEASE_GH_APP_ID }}
+        private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET || secrets.RELEASE_GH_APP_PRIVATE_KEY }}
+        owner: ${{ github.repository_owner }}
+        repositories: ${{ steps.token-scope.outputs.repositories }}
+        permission-contents: read
+
+    - name: "Checkout Actions"
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        clean: false
+
+    - id: source-repo
+      name: Determine source repository and token
+      shell: bash
+      run: |
+        SOURCE_REPO="${{ fromJson(inputs.data)['source_repo'] || '' }}"
+        SOURCE_VERSION="${{ fromJson(inputs.data)['source_version'] || '' }}"
+        if [[ -n "$SOURCE_REPO" ]] && [[ $(echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | wc -l) -gt 0 ]]; then
+          echo '${{ inputs.external-repos }}' | jq -c '. | to_entries[]' | while read -r repo; do
+            repo_key=$(echo "$repo" | jq -r '.key')
+            repoURL=$(echo "$repo" | jq -r '.value[0].repoURL')
+            repoName=$(basename "$repoURL" .git)
+            repoOrg=$(echo "$repoURL" | sed -E 's|.*github\.com[:/]([^/]+)/.*|\1|')
+            echo "Checking Repo ID: $repo_key against source repo: $SOURCE_REPO"
+
+            if [[ "$repo_key" == "$SOURCE_REPO" ]]; then
+              echo "Found matching repo: $repoOrg/$repoName, getting token..."
+              use_app_token=$(echo "$repo" | jq -r '.value[0].use_app_token // false')
+              token=$(echo "$repo" | jq -r '.value[0].token // empty')
+
+              token_value=""
+              if [[ "$use_app_token" == "true" && "$repoOrg" == "$GITHUB_REPOSITORY_OWNER" ]]; then
+                token_value="${{ steps.app-token.outputs.token }}"
+              fi
+              if [[ -z "$token_value" && -n "$token" ]]; then
+                token_value=$(echo '${{ toJSON(secrets) }}' | jq --arg token "$token" -r '.[$token]')
+              fi
+
+              echo "Repo Org/Name: $repoOrg/$repoName"
+              if [[ -n "$token_value" && "$token_value" != "null" ]]; then
+                echo "stack-repository-token=$token_value" >> "$GITHUB_OUTPUT"
+              fi
+              echo "stack-repository=$repoOrg/$repoName" >> "$GITHUB_OUTPUT"
+              break
+            fi
+          done
+        fi
+        if [[ -n "$SOURCE_VERSION" ]]; then
+          echo "stack-repository-version=$SOURCE_VERSION" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: "Checkout Source Repository"
+      uses: actions/checkout@v7
+      with:
+        path: source_repo
+        repository: ${{ steps.source-repo.outputs.stack-repository || github.repository }}
+        ref: ${{ steps.source-repo.outputs.stack-repository-version || github.sha }}
+        token: ${{ steps.source-repo.outputs.stack-repository-token || github.token }}
+        clean: false
+
+    - id: convert-inputs
+      name: Convert Inputs
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+
+    - id: convert-inputs-ssm
+      name: Convert Inputs SSM
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
+        aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
+        aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
+        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
+        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
+        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+
+    - id: convert-inputs-key-vault
+      name: Convert Inputs Key Vault (ARM SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        == '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+
+    - id: convert-inputs-key-vault-keystore
+      name: Convert Inputs Key Vault (Keystore SP)
+      if: (vars.REPO_KEYSTORE_SSM_PREFIX == '' && vars.REPO_KEYSTORE_KEY_VAULT_URL != '' && vars.REPO_KEYSTORE_SP_CLIENT_ID
+        != '')
+      uses: ./.github/actions/gh-convert-stack-inputs
+      with:
+        variables: ${{ toJson(vars) }}
+        secrets: ${{ toJson(secrets) }}
+        convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
+        config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) || '{}' }}
+        pipeline-globals: ${{ inputs.env }}
+        environment-name: ${{ env.ENVIRONMENT }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL || '' }}
+        key-vault-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED != 'true' && secrets.REPO_KEYSTORE_SP_CLIENT_SECRET
+          || '' }}
+        key-vault-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
+    - name: Deploy chart
+      shell: bash
+      env:
+        STACK: ${{ inputs.data }}
+        INPUTS: ${{ steps.convert-inputs-ssm.outputs.tf-vars-map || steps.convert-inputs-key-vault-keystore.outputs.tf-vars-map
+          || steps.convert-inputs-key-vault.outputs.tf-vars-map || steps.convert-inputs.outputs.tf-vars-map || '[]' }}
+        DRY_RUN: ${{ fromJson(inputs.env)['dry_run'] || 'true' }}
+        DESTROY: ${{ fromJson(inputs.env)['destroy'] || fromJson(inputs.data)['destroy'] || 'false' }}
+      run: |
+        CHART="$(jq -r '.chart' <<<"${STACK}")"
+        CHART_VERSION="$(jq -r '.chart_version' <<<"${STACK}")"
+        RELEASE_NAME="$(jq -r '.release_name // .id' <<<"${STACK}")"
+        NAMESPACE="$(jq -r '.namespace' <<<"${STACK}")"
+        VALUES_FILES="$(jq -r '(.values_files // [])[] | "source_repo/" + .' <<<"${STACK}")"
+        export CHART CHART_VERSION RELEASE_NAME NAMESPACE VALUES_FILES
+        bash .github/scripts/deploy-helm-chart.sh
+
+    - name: Add pipeline job backlink
+      if: ${{ !cancelled() }}
+      uses: ./.github/actions/pipeline-job-backlink
+      with:
+        job-name: "Helm ${{ fromJson(inputs.data)['name'] || fromJson(inputs.data)['id'] }}"

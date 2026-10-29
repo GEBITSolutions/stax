@@ -129,6 +129,18 @@ jobs:
       actions-version: ${{ inputs.actions-version }}
     secrets: inherit
 
+  helm:
+    if: fromJson(inputs.data)['type'] == 'helm'
+    name: "Helm: ${{ fromJson(inputs.data)['name'] || fromJson(inputs.data)['id'] }}"
+    uses: ./.github/workflows/a-wf-deploy-stack-helm.yml
+    with:
+      data: ${{ inputs.data }}
+      env: ${{ inputs.env }}
+      external-repos: ${{ inputs.external-repos }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
   rpmbuild:
     if: fromJson(inputs.data)['type'] == 'rpmbuild'
     name: "RPM Build: ${{ fromJson(inputs.data)['name'] }}"

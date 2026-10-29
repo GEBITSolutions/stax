@@ -1,0 +1,44 @@
+externalRepos:
+  rpoa:
+    - repoURL: "github.com/GEBITSolutions/itis-rpoa.git"
+      targetRevision: main
+      use_app_token: true
+
+stacks:
+  - id: aks
+    type: opentofu
+    opentofu_version: "1.12.6"
+    source_repo: rpoa
+    folder: aks
+    output-secret: [cluster_host, cluster_ca_certificate, client_certificate, client_key]
+
+  # Actions Runner Controller and one Linux runner scale set. runs-on: linux-runners targets it.
+  - id: arc-controller
+    type: helm
+    chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    chart_version: "0.15.1"
+    release_name: arc
+    namespace: arc-systems
+    input:
+      - stack.aks.secret.cluster_host
+      - stack.aks.secret.cluster_ca_certificate
+      - stack.aks.secret.client_certificate
+      - stack.aks.secret.client_key
+
+  - id: arc-runners
+    type: helm
+    chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set
+    chart_version: "0.15.1"
+    release_name: linux-runners
+    namespace: arc-runners
+    values_files: [helm/arc-runners.yaml]
+    depends_on: [arc-controller]
+    input:
+      - stack.aks.secret.cluster_host
+      - stack.aks.secret.cluster_ca_certificate
+      - stack.aks.secret.client_certificate
+      - stack.aks.secret.client_key
+      - githubConfigUrl: https://github.com/my-org
+      - githubConfigSecret.github_app_id: gh.var.ARC_GITHUB_APP_ID
+      - githubConfigSecret.github_app_installation_id: gh.var.ARC_GITHUB_APP_INSTALLATION_ID
+      - githubConfigSecret.github_app_private_key: gh.secret.ARC_GITHUB_APP_PRIVATE_KEY
