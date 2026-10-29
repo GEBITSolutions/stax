@@ -1,20 +1,29 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 import {
+  SCAN_HOOK_MARKER,
   assembleVarFile,
+  assertScanTemplateContract,
   azureImageRef,
   costNote,
   declaredPackerVariables,
+  evaluateGalleryReadiness,
   galleryFieldsFromStack,
   hetznerImageRef,
   manifestSnapshotId,
+  materializeScan,
+  normalizeAzureRegion,
   resolveBuildTarget,
   resolveHetzner,
+  resolveScan,
   snapshotsToDelete,
+  staxVariables,
   transferVariableMap,
+  waitForGalleryReplication,
 } from './packer-build-target.mjs';
 
 const sha = '0123456789abcdef0123456789abcdef01234567';
@@ -121,4 +130,192 @@ test('template variable discovery ignores the plugin cache', () => {
   writeFileSync(join(root, 'image.pkr.hcl'), 'variable "location" {\n  type = string\n}\nvariable "stax_git_sha" {\n  type = string\n}\n');
   writeFileSync(join(root, '.packer', 'ignore.pkr.hcl'), 'variable "token" {\n  type = string\n}\n');
   assert.deepEqual([...declaredPackerVariables(root)].sort(), ['location', 'stax_git_sha']);
+});
+
+test('resolveScan stays disabled when omitted and fills defaults when enabled', () => {
+  assert.deepEqual(resolveScan({ type: 'packer' }), { enabled: false, config: null });
+  assert.throws(() => resolveScan({ scan: {} }), /at least one/);
+  assert.throws(() => resolveScan({ scan: { trivy: { severity: 'high' } } }), /severity/);
+  const resolved = resolveScan({
+    scan: {
+      trivy: {},
+      lynis: { min_hardening_index: 65 },
+      goss: { spec: 'goss.yaml' },
+    },
+  });
+  assert.equal(resolved.enabled, true);
+  assert.deepEqual(resolved.config, {
+    trivy: { severity: 'HIGH,CRITICAL', scanners: ['vuln'] },
+    lynis: { min_hardening_index: 65 },
+    goss: { spec: 'goss.yaml' },
+  });
+});
+
+test('staxVariables only adds stax_scan_enabled when scans are on', () => {
+  const off = staxVariables({
+    buildTarget: 'hetzner',
+    stackId: 'img',
+    environment: 'dev',
+    gitSha: sha,
+    version: `0.0.0+${sha}`,
+  });
+  assert.equal(Object.hasOwn(off, 'stax_scan_enabled'), false);
+  const on = staxVariables({
+    buildTarget: 'hetzner',
+    stackId: 'img',
+    environment: 'dev',
+    gitSha: sha,
+    version: `0.0.0+${sha}`,
+    scanEnabled: true,
+  });
+  assert.equal(on.stax_scan_enabled, true);
+});
+
+test('assertScanTemplateContract requires the variable and the hook marker', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stax-scan-'));
+  writeFileSync(
+    join(root, 'bare.pkr.hcl'),
+    'variable "location" { type = string }\nbuild { sources = [] }\n',
+  );
+  assert.throws(() => assertScanTemplateContract(root), /stax_scan_enabled/);
+
+  const root2 = mkdtempSync(join(tmpdir(), 'stax-scan-'));
+  writeFileSync(
+    join(root2, 'partial.pkr.hcl'),
+    'variable "stax_scan_enabled" { type = bool }\nbuild { sources = [] }\n',
+  );
+  assert.throws(() => assertScanTemplateContract(root2), new RegExp(SCAN_HOOK_MARKER.replace(/\./g, '\\.')));
+  writeFileSync(
+    join(root2, 'hook.pkr.hcl'),
+    `variable "stax_scan_enabled" { type = bool }\nbuild {\n  sources = []\n  provisioner "shell" {\n    script = "\${path.root}/${SCAN_HOOK_MARKER}"\n  }\n}\n`,
+  );
+  assert.doesNotThrow(() => assertScanTemplateContract(root2));
+});
+
+test('materializeScan embeds config and goss spec into run.sh', () => {
+  const root = mkdtempSync(join(tmpdir(), 'stax-scan-mat-'));
+  writeFileSync(join(root, 'goss.yaml'), 'file:\n  /etc/os-release:\n    exists: true\n');
+  writeFileSync(
+    join(root, 'image.pkr.hcl'),
+    `variable "stax_scan_enabled" { type = bool }\nbuild {\n  provisioner "shell" { script = "\${path.root}/${SCAN_HOOK_MARKER}" }\n}\n`,
+  );
+  const scriptsRoot = join(dirname(fileURLToPath(import.meta.url)), 'packer-scan');
+  const scan = resolveScan({
+    scan: { trivy: { severity: 'CRITICAL' }, goss: { spec: 'goss.yaml' } },
+  });
+  const result = materializeScan({ packerDirectory: root, scan, scriptsRoot });
+  assert.equal(result.written, true);
+  const generated = readFileSync(join(root, '.stax/scan/run.sh'), 'utf8');
+  assert.match(generated, /STAX_EMBEDDED_CONFIG=/);
+  assert.match(generated, /CRITICAL/);
+  assert.match(generated, /STAX_EMBEDDED_GOSS_SPEC=/);
+  assert.match(generated, /\/etc\/os-release/);
+  const disabled = materializeScan({ packerDirectory: root, scan: { enabled: false, config: null } });
+  assert.equal(disabled.written, false);
+  assert.match(readFileSync(join(root, '.stax/scan/run.sh'), 'utf8'), /scan hooks disabled/);
+});
+
+test('normalizeAzureRegion collapses case separators', () => {
+  assert.equal(normalizeAzureRegion('West Europe'), 'westeurope');
+  assert.equal(normalizeAzureRegion('west_europe'), 'westeurope');
+  assert.equal(normalizeAzureRegion('West-Europe'), 'westeurope');
+});
+
+test('evaluateGalleryReadiness matches the previous workflow poll rules', () => {
+  const version = '1.2.3';
+  const imageId = `/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/d/versions/${version}`;
+  const ready = evaluateGalleryReadiness({
+    id: imageId,
+    provisioningState: 'Succeeded',
+    tags: { built_by: 'stax' },
+    replicationStatus: {
+      summary: [
+        { region: 'West Europe', state: 'Completed' },
+        { region: 'northeurope', state: 'Completed' },
+      ],
+    },
+  }, ['westeurope', 'North Europe']);
+  assert.equal(ready.state, 'ready');
+  assert.equal(ready.imageId, imageId);
+  assert.deepEqual(ready.labels, { built_by: 'stax' });
+
+  const pending = evaluateGalleryReadiness({
+    id: imageId,
+    provisioningState: 'Creating',
+    replicationStatus: { summary: [{ region: 'westeurope', state: 'Replicating' }] },
+  }, ['westeurope']);
+  assert.equal(pending.state, 'pending');
+
+  const failedProv = evaluateGalleryReadiness({
+    provisioningState: 'Failed',
+    replicationStatus: { summary: [] },
+  }, ['westeurope']);
+  assert.equal(failedProv.state, 'failed');
+
+  const failedRegion = evaluateGalleryReadiness({
+    provisioningState: 'Succeeded',
+    replicationStatus: { summary: [{ region: 'westeurope', state: 'Failed' }] },
+  }, ['westeurope']);
+  assert.equal(failedRegion.state, 'failed');
+
+  const ambiguous = evaluateGalleryReadiness({
+    provisioningState: 'Succeeded',
+    replicationStatus: {
+      summary: [
+        { region: 'West Europe', state: 'Completed' },
+        { region: 'westeurope', state: 'Completed' },
+      ],
+    },
+  }, ['westeurope']);
+  assert.equal(ambiguous.state, 'failed');
+});
+
+test('waitForGalleryReplication polls until ready and rejects bad ids', async () => {
+  const version = '9.9.9';
+  const imageId = `/subscriptions/sub/resourceGroups/rg-images/providers/Microsoft.Compute/galleries/corp/images/ubuntu/versions/${version}`;
+  const statuses = [
+    { provisioningState: 'Creating', replicationStatus: { summary: [{ region: 'westeurope', state: 'Replicating' }] } },
+    {
+      id: imageId,
+      provisioningState: 'Succeeded',
+      tags: { role: 'golden' },
+      replicationStatus: { summary: [{ region: 'westeurope', state: 'Completed' }] },
+    },
+  ];
+  let sleeps = 0;
+  const result = await waitForGalleryReplication({
+    resourceGroup: 'rg-images',
+    gallery: 'corp',
+    definition: 'ubuntu',
+    version,
+    targetRegions: ['westeurope'],
+    waitCreated: async () => {},
+    showVersion: async () => statuses.shift(),
+    sleep: async () => { sleeps += 1; },
+    maxAttempts: 5,
+    intervalMs: 1,
+  });
+  assert.equal(sleeps, 1);
+  assert.equal(result.image_id, imageId);
+  assert.equal(result.image_ref, 'azure:gallery:rg-images/corp/ubuntu/9.9.9');
+  assert.equal(result.build_target, 'azure');
+  assert.deepEqual(result.labels, { role: 'golden' });
+
+  await assert.rejects(
+    () => waitForGalleryReplication({
+      resourceGroup: 'rg-images',
+      gallery: 'corp',
+      definition: 'ubuntu',
+      version,
+      targetRegions: ['westeurope'],
+      showVersion: async () => ({
+        id: '/subscriptions/sub/resourceGroups/rg/providers/Microsoft.Compute/galleries/g/images/d/versions/other',
+        provisioningState: 'Succeeded',
+        replicationStatus: { summary: [{ region: 'westeurope', state: 'Completed' }] },
+      }),
+      maxAttempts: 1,
+      intervalMs: 1,
+    }),
+    /readiness/,
+  );
 });

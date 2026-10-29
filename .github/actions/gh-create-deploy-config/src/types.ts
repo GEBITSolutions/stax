@@ -62,6 +62,18 @@ export interface ITerraformConfig {
   aws?: {
     regions?: string[]
   }
+  scan?: {
+    trivy?: {
+      severity?: string
+      scanners?: Array<'vuln' | 'misconfig' | 'secret' | 'license'>
+    }
+    lynis?: {
+      min_hardening_index?: number
+    }
+    goss?: {
+      spec: string
+    }
+  }
   image_resource_group_name?: string
   gallery_name?: string
   image_definition_name?: string

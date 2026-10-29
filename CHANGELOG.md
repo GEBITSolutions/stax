@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### 🚀 New Features
+  - Packer stacks accept optional `scan` hooks (`trivy`, `lynis`, `goss`). When configured, STAX materialises `.stax/scan/run.sh` and runs it on the build VM before the image is captured; a failing hook fails `packer build` so Azure Gallery and Hetzner do not publish. Off by default.
   - Packer stacks accept `build_target`: `azure` (the default, unchanged Compute Gallery publish), `hetzner` (labelled snapshots with `keep_last` retention) and `aws` (reserved; the workflow rejects it). Normalized outputs are `image_id`, `image_ref`, `build_target`, `version`, `labels` and `git_sha`.
   - Top-level Gallery fields remain deprecated aliases of `azure.*`. Existing Packer stacks that pass those fields as inputs keep the same var-file and still publish `image_id`.
 
