@@ -308,9 +308,40 @@ stacks:
     ]));
   });
 
+  it("accepts Packer scan hooks and rejects an empty scan object", () => {
+    const scanned = `stacks:
+  - id: golden-scanned
+    type: packer
+    packer_directory: packer/scanned-hetzner
+    packer_template: .
+    packer_version: "1.16.1"
+    build_target: hetzner
+    hetzner:
+      location: fsn1
+      server_type: cax11
+    scan:
+      trivy:
+        severity: HIGH,CRITICAL
+      lynis:
+        min_hardening_index: 50
+      goss:
+        spec: goss.yaml
+`;
+    expect(validateConfigText(scanned)).toEqual([]);
+
+    const empty = brief(validateConfigText(`stacks:
+  - id: img
+    type: packer
+    packer_directory: images
+    packer_version: "1.11.2"
+    scan: {}
+`));
+    expect(empty.some((finding) => finding.severity === "error")).toBe(true);
+  });
+
   it("validates the Packer examples", () => {
     const directory = join(import.meta.dirname, "../../examples/packer");
-    for (const name of ["legacy-azure.yaml", "azure.yaml", "hetzner-personal-assistant.yaml"]) {
+    for (const name of ["legacy-azure.yaml", "azure.yaml", "hetzner-personal-assistant.yaml", "scanned-hetzner.yaml"]) {
       expect(validateConfigText(readFileSync(join(directory, name), "utf8")), name).toEqual([]);
     }
     const aws = brief(validateConfigText(readFileSync(join(directory, "aws-reserved.yaml"), "utf8")));
