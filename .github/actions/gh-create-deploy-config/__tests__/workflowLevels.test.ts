@@ -46,33 +46,34 @@ describe('deployment level workflow capacity', () => {
     expect(setupWorkflow).toContain('deploy-depth: "14"')
   })
 
-  it('never uses secrets: inherit in deploy levels or stack workflows', () => {
-    // Cross-org callers cannot rely on inherit; every hop must map secrets by
-    // name. Leaf jobs that need Environment-scoped values set environment:.
-    expect(deployLevelsWorkflow).not.toMatch(/^ {4}secrets: inherit$/m)
-    expect(deployStackWorkflow).not.toMatch(/^ {4}secrets: inherit$/m)
-  })
-
-  it('forwards HCLOUD_TOKEN by name on every level job into stack', () => {
-    const hcloudMaps = [
-      ...deployLevelsWorkflow.matchAll(
-        /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/gm
-      )
-    ].length
-    expect(hcloudMaps).toBe(14)
+  it('declares optional workflow_call secrets including HCLOUD_TOKEN on levels', () => {
+    // Cross-org callers map these by name into deploy-levels; inherit stops at orgs.
     expect(deployLevelsWorkflow).toMatch(
       /^ {6}HCLOUD_TOKEN:\n {8}required: false$/m
     )
+    expect(deployLevelsWorkflow).toMatch(
+      /^ {6}ARM_CLIENT_ID:\n {8}required: false$/m
+    )
   })
 
-  it('forwards HCLOUD_TOKEN by name from stack into packer and terraform', () => {
-    const hcloudMaps = [
-      ...deployStackWorkflow.matchAll(
-        /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/gm
-      )
+  it('uses secrets: inherit on all 14 nested level jobs', () => {
+    const inheritCount = [
+      ...deployLevelsWorkflow.matchAll(/^ {4}secrets: inherit$/gm)
     ].length
-    // Packer + terraform jobs each map HCLOUD_TOKEN.
-    expect(hcloudMaps).toBe(2)
+    expect(inheritCount).toBe(14)
+    expect(deployLevelsWorkflow).not.toMatch(
+      /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/m
+    )
+  })
+
+  it('uses secrets: inherit on stack child jobs (packer/terraform/script/sites)', () => {
+    const inheritCount = [
+      ...deployStackWorkflow.matchAll(/^ {4}secrets: inherit$/gm)
+    ].length
+    expect(inheritCount).toBe(6)
+    expect(deployStackWorkflow).not.toMatch(
+      /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/m
+    )
   })
 
   it('declares HCLOUD_TOKEN on stack, packer and terraform for gh.secret.hcloud_token', () => {
