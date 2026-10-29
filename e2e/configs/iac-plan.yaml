@@ -43,3 +43,12 @@ stacks:
       - stage: global.pipeline.var.stage
       - expect_stage: e2e
       - expect_DRY_RUN: "true"
+
+  - id: e2e-helm-plan
+    name: E2E Plan Helm
+    type: helm
+    chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    chart_version: "0.15.1"
+    namespace: arc-systems
+    input:
+      - flags.logLevel: debug

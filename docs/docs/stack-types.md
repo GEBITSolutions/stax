@@ -89,7 +89,30 @@ Use the `script` workflow type to run custom scripts:
 
 ## Helm deployments
 
-- [x] **Helm**: deploy Helm charts to Kubernetes clusters.
+- [x] **Helm** (`helm`): install or upgrade one release of an OCI chart on a Kubernetes cluster.
+
+`type: helm` requires `chart` (an `oci://` reference), an exact `chart_version` and `namespace`, which is created when missing. `release_name` defaults to the stack id. `values_files` are read from the source checkout (`source_repo`/`source_version`, as for other types) and applied in order.
+
+Inputs named `cluster_host`, `cluster_ca_certificate`, `client_certificate` and `client_key` hold the base64 admin credentials, as the RPOA `aks` stack outputs them, and build the kubeconfig. Every other input becomes a Helm value that overrides the values files; a dotted key such as `githubConfigSecret.github_app_id` sets a nested value. Values are passed as a file, so multi-line secrets such as private keys stay intact.
+
+`dry_run` renders the chart with `helm template` without contacting the cluster and prints only the rendered kinds, because manifests can contain secrets. Otherwise STAX runs `helm upgrade --install --create-namespace --wait`. `destroy` runs `helm uninstall`. The runner needs `helm` on the `PATH`; GitHub-hosted Ubuntu runners have it. A Helm stack exports no outputs.
+
+```yaml
+stacks:
+  - id: arc-controller
+    type: helm
+    chart: oci://ghcr.io/actions/actions-runner-controller-charts/gha-runner-scale-set-controller
+    chart_version: "0.15.1"
+    release_name: arc
+    namespace: arc-systems
+    input:
+      - stack.aks.secret.cluster_host
+      - stack.aks.secret.cluster_ca_certificate
+      - stack.aks.secret.client_certificate
+      - stack.aks.secret.client_key
+```
+
+`examples/helm/arc.yaml` adds a runner scale set authenticated by a GitHub App.
 
 ## Raw Kubernetes manifest deployments
 
