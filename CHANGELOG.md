@@ -5,6 +5,9 @@
   - Packer stacks accept `build_target`: `azure` (the default, unchanged Compute Gallery publish), `hetzner` (labelled snapshots with `keep_last` retention) and `aws` (reserved; the workflow rejects it). Normalized outputs are `image_id`, `image_ref`, `build_target`, `version`, `labels` and `git_sha`.
   - Top-level Gallery fields remain deprecated aliases of `azure.*`. Existing Packer stacks that pass those fields as inputs keep the same var-file and still publish `image_id`.
 
+### 🐞 Bugfixes
+  - 1.7.0 mapped secrets explicitly from a-wf-deploy-levels.yml into a-wf-deploy-stack.yml. An explicit mapping on any hop hides environment secrets and custom repository secrets from the stack workflows, so `stack.<id>.secret.*` and `gh.secret.<custom>` inputs failed with "Value not found" in repos without a keystore. The levels now pass `secrets: inherit`; cross-org callers still map secrets into a-wf-deploy-levels.yml by name.
+
 ## Release 1.5.0
 
 Merged PRs: 37
