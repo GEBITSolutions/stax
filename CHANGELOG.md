@@ -5,6 +5,10 @@
   - Packer stacks accept `build_target`: `azure` (the default, unchanged Compute Gallery publish), `hetzner` (labelled snapshots with `keep_last` retention) and `aws` (reserved; the workflow rejects it). Normalized outputs are `image_id`, `image_ref`, `build_target`, `version`, `labels` and `git_sha`.
   - Top-level Gallery fields remain deprecated aliases of `azure.*`. Existing Packer stacks that pass those fields as inputs keep the same var-file and still publish `image_id`.
 
+### 📝 Documentation
+  - Document the Hetzner Packer snapshot contract: required template variables (`location`, `server_type`, `snapshot_name`, `snapshot_labels`), forced `managed_by=stax` labels for `keep_last` retention, injected var-file keys, `HCLOUD_TOKEN`, outputs, destroy behaviour, and a minimal working template.
+
+
 ## Release 1.5.0
 
 Merged PRs: 37
