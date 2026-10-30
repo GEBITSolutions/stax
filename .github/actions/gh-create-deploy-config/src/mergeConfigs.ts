@@ -1,4 +1,6 @@
 import {
+  CredentialMappings,
+  CredentialName,
   IDeployConfigDocument,
   IExternalRepos,
   ITerraformConfig,
@@ -32,6 +34,40 @@ function validateSecretBackend(
   }
 }
 
+const credentialNames = new Set<CredentialName>([
+  'AWS_ACCESS_KEY_ID',
+  'AWS_SECRET_ACCESS_KEY',
+  'AWS_SESSION_TOKEN',
+  'HCLOUD_TOKEN',
+  'INFRACOST_API_KEY',
+  'CI_GITHUB_PAT',
+  'CI_GITHUB_TOKEN_TERRAFORM',
+  'TF_PROVIDER_GH_OWNER'
+])
+
+function validateCredentials(value: unknown, source: string): void {
+  if (value === undefined) return
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(`${source} must be a mapping of credential references`)
+  }
+  for (const [name, reference] of Object.entries(value)) {
+    if (
+      !/^[A-Z][A-Z0-9_]*$/.test(name) ||
+      !credentialNames.has(name as CredentialName)
+    ) {
+      throw new Error(`${source}: credential name ${name} is not allowed`)
+    }
+    if (
+      typeof reference !== 'string' ||
+      !/^(secret_backend|gh)\.secret\.[A-Za-z0-9_]+$/.test(reference)
+    ) {
+      throw new Error(
+        `${source}.${name} must reference secret_backend.secret.<key> or gh.secret.<key>`
+      )
+    }
+  }
+}
+
 /**
  * Merge multiple deploy-config documents into a single stacks list and a single
  * externalRepos map.
@@ -56,6 +92,7 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
   const externalRepos: IExternalRepos = {}
   const externalReposSource = new Map<string, string>()
   let deploymentBackend: SecretBackend = 'gh'
+  const deploymentCredentials: CredentialMappings = {}
 
   for (const doc of docs) {
     const sourceFile = doc.sourceFile ?? '<unknown>'
@@ -67,6 +104,11 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
       )
       deploymentBackend = doc.deployment.secret_backend
     }
+    validateCredentials(
+      doc.deployment?.credentials,
+      `${sourceFile}: deployment.credentials`
+    )
+    Object.assign(deploymentCredentials, doc.deployment?.credentials)
 
     for (const stack of docStacks) {
       const existingFile = idToFile.get(stack.id)
@@ -82,6 +124,10 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
           `${sourceFile}: stack "${stack.id}" secret_backend`
         )
       }
+      validateCredentials(
+        stack.credentials,
+        `${sourceFile}: stack "${stack.id}" credentials`
+      )
       stacks.push(stack)
     }
 
@@ -103,10 +149,15 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
   }
 
   return {
-    stacks: stacks.map((stack) => ({
-      ...stack,
-      secret_backend: stack.secret_backend ?? deploymentBackend
-    })),
+    stacks: stacks.map((stack) => {
+      const { credentials: stackCredentials, ...stackFields } = stack
+      const credentials = { ...deploymentCredentials, ...stackCredentials }
+      return {
+        ...stackFields,
+        secret_backend: stack.secret_backend ?? deploymentBackend,
+        ...(Object.keys(credentials).length > 0 ? { credentials } : {})
+      }
+    }),
     externalRepos
   }
 }

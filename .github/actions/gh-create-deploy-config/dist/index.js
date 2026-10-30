@@ -48852,6 +48852,33 @@ function validateSecretBackend(value, source) {
         throw new Error(`${source} must be 'vault' or 'gh'`);
     }
 }
+const credentialNames = new Set([
+    'AWS_ACCESS_KEY_ID',
+    'AWS_SECRET_ACCESS_KEY',
+    'AWS_SESSION_TOKEN',
+    'HCLOUD_TOKEN',
+    'INFRACOST_API_KEY',
+    'CI_GITHUB_PAT',
+    'CI_GITHUB_TOKEN_TERRAFORM',
+    'TF_PROVIDER_GH_OWNER'
+]);
+function validateCredentials(value, source) {
+    if (value === undefined)
+        return;
+    if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+        throw new Error(`${source} must be a mapping of credential references`);
+    }
+    for (const [name, reference] of Object.entries(value)) {
+        if (!/^[A-Z][A-Z0-9_]*$/.test(name) ||
+            !credentialNames.has(name)) {
+            throw new Error(`${source}: credential name ${name} is not allowed`);
+        }
+        if (typeof reference !== 'string' ||
+            !/^(secret_backend|gh)\.secret\.[A-Za-z0-9_]+$/.test(reference)) {
+            throw new Error(`${source}.${name} must reference secret_backend.secret.<key> or gh.secret.<key>`);
+        }
+    }
+}
 /**
  * Merge multiple deploy-config documents into a single stacks list and a single
  * externalRepos map.
@@ -48872,6 +48899,7 @@ function mergeDeployConfigDocuments(docs) {
     const externalRepos = {};
     const externalReposSource = new Map();
     let deploymentBackend = 'gh';
+    const deploymentCredentials = {};
     for (const doc of docs) {
         const sourceFile = doc.sourceFile ?? '<unknown>';
         const docStacks = doc.stacks ?? [];
@@ -48879,6 +48907,8 @@ function mergeDeployConfigDocuments(docs) {
             validateSecretBackend(doc.deployment.secret_backend, `${sourceFile}: deployment.secret_backend`);
             deploymentBackend = doc.deployment.secret_backend;
         }
+        validateCredentials(doc.deployment?.credentials, `${sourceFile}: deployment.credentials`);
+        Object.assign(deploymentCredentials, doc.deployment?.credentials);
         for (const stack of docStacks) {
             const existingFile = idToFile.get(stack.id);
             if (existingFile !== undefined) {
@@ -48888,6 +48918,7 @@ function mergeDeployConfigDocuments(docs) {
             if (stack.secret_backend !== undefined) {
                 validateSecretBackend(stack.secret_backend, `${sourceFile}: stack "${stack.id}" secret_backend`);
             }
+            validateCredentials(stack.credentials, `${sourceFile}: stack "${stack.id}" credentials`);
             stacks.push(stack);
         }
         const docExternalRepos = (doc.externalRepos ?? {});
@@ -48906,10 +48937,15 @@ function mergeDeployConfigDocuments(docs) {
         }
     }
     return {
-        stacks: stacks.map((stack) => ({
-            ...stack,
-            secret_backend: stack.secret_backend ?? deploymentBackend
-        })),
+        stacks: stacks.map((stack) => {
+            const { credentials: stackCredentials, ...stackFields } = stack;
+            const credentials = { ...deploymentCredentials, ...stackCredentials };
+            return {
+                ...stackFields,
+                secret_backend: stack.secret_backend ?? deploymentBackend,
+                ...(Object.keys(credentials).length > 0 ? { credentials } : {})
+            };
+        }),
         externalRepos
     };
 }
@@ -49027,6 +49063,10 @@ function validatePackerConfig(config, warn = () => undefined) {
             (typeof config.hetzner.token !== 'string' ||
                 !/^(secret_backend|gh)\.secret\.[A-Za-z0-9_]+$/.test(config.hetzner.token))) {
             throw new Error(`Packer stack "${config.id}" hetzner.token must reference secret_backend.secret.<key> or gh.secret.<key>.`);
+        }
+        if (config.hetzner.token !== undefined &&
+            config.credentials?.HCLOUD_TOKEN !== undefined) {
+            throw new Error(`Packer stack "${config.id}" hetzner.token conflicts with credentials.HCLOUD_TOKEN.`);
         }
     }
     else if (config.hetzner !== undefined) {

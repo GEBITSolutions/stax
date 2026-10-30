@@ -20,6 +20,17 @@ export type InputType =
   | IInput
 
 export type SecretBackend = 'vault' | 'gh'
+export type CredentialName =
+  | 'AWS_ACCESS_KEY_ID'
+  | 'AWS_SECRET_ACCESS_KEY'
+  | 'AWS_SESSION_TOKEN'
+  | 'HCLOUD_TOKEN'
+  | 'INFRACOST_API_KEY'
+  | 'CI_GITHUB_PAT'
+  | 'CI_GITHUB_TOKEN_TERRAFORM'
+  | 'TF_PROVIDER_GH_OWNER'
+
+export type CredentialMappings = Partial<Record<CredentialName, string>>
 
 export interface ITerraformConfig {
   id: string
@@ -29,6 +40,7 @@ export interface ITerraformConfig {
   config_globals?: Record<string, InputType>
   type?: string
   secret_backend?: SecretBackend
+  credentials?: CredentialMappings
   if?: string
   input?: InputType[]
   'tf-vars'?: Record<string, string>
@@ -98,7 +110,10 @@ export type IExternalRepos = Record<string, IExternalRepoEntry[]>
 export interface IDeployConfigDocument {
   stacks: ITerraformConfig[]
   externalRepos?: IExternalRepos
-  deployment?: { secret_backend?: SecretBackend }
+  deployment?: {
+    secret_backend?: SecretBackend
+    credentials?: CredentialMappings
+  }
   sourceFile?: string
 }
 

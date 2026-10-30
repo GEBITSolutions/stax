@@ -66,6 +66,17 @@ test('accepts secret_backend as a config-only field without exporting a cloud va
   assert.equal(Object.hasOwn(resolve(azure, { variables: { SECRET_BACKEND: 'vault' } }), 'SECRET_BACKEND'), false);
 });
 
+test('accepts deployment credentials without exporting secret references as variables', () => {
+  const context = resolve({
+    ...azure,
+    credentials: { AWS_ACCESS_KEY_ID: 'gh.secret.AWS_ACCESS_KEY_ID' },
+  });
+  assert.equal(context.PROJECT, 'widget');
+  assert.equal(Object.hasOwn(context, 'CREDENTIALS'), false);
+  assert.equal(Object.hasOwn(context, 'AWS_ACCESS_KEY_ID'), false);
+  assert.throws(() => resolve({ ...azure, credentials: [] }), /deployment.credentials must be a mapping/);
+});
+
 test('rejects invalid backend even when a later selected deployment replaces it', () => {
   for (const value of ['invalid', '', null, false, 1, 'vault\nINJECTED=1']) {
     assert.throws(() => resolve({ ...azure, secret_backend: value }), /deployment.secret_backend/, String(value));
