@@ -51076,7 +51076,7 @@ async function resolveEnvValue(basePathValue, input, ghEnvironment, secretStore,
         const key = input.slice('secret_backend.secret.'.length);
         const backend = globalsContext?.secretBackend ?? 'gh';
         let value;
-        if (backend === 'vault') {
+        if (backend === 'keyvault') {
             const vaultStore = globalsContext?.vaultStore;
             if (!vaultStore) {
                 throw new Error(`Key Vault is not configured for secret_backend.secret.${key}`);
@@ -84381,6 +84381,13 @@ function convertKey(key, prefix) {
     return convertedKey.toLowerCase().replace(/_/g, '-').replace(/\./g, '-');
 }
 
+class KeyVaultReadError extends Error {
+    missing;
+    constructor(key, missing = false) {
+        super(`Failed to get secret ${key}`);
+        this.missing = missing;
+    }
+}
 /**
  * Fetches a GitHub Actions OIDC token for Azure AD federation.
  * Requires the workflow to have 'permissions: id-token: write'.
@@ -84456,16 +84463,21 @@ class KeyVaultStore {
             coreExports.info(`Getting secret: ${convertedKey}`);
             const secret = await this.client.getSecret(convertedKey);
             if (!secret.value) {
-                throw new Error(`Secret ${convertedKey} exists but has no value`);
+                throw new KeyVaultReadError(key, true);
             }
             coreExports.info(`Successfully retrieved secret: ${convertedKey}`);
             coreExports.setSecret(secret?.value);
             return secret.value;
         }
         catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            coreExports.error(`Failed to get secret ${key}: ${errorMessage}`);
-            throw new Error(`Failed to get secret ${key}: ${errorMessage}`);
+            const safeError = error instanceof KeyVaultReadError
+                ? error
+                : new KeyVaultReadError(key, error !== null &&
+                    typeof error === 'object' &&
+                    'statusCode' in error &&
+                    error.statusCode === 404);
+            coreExports.error(safeError.message);
+            throw safeError;
         }
     }
 }
@@ -98193,11 +98205,11 @@ async function run() {
         const aws_secret_access_key = coreExports.getInput('aws-secret-access-key');
         const aws_session_token = coreExports.getInput('aws-session-token');
         const secretBackend = coreExports.getInput('secret-backend') || 'gh';
-        if (secretBackend !== 'gh' && secretBackend !== 'vault') {
-            throw new Error(`Invalid secret-backend: ${secretBackend}. Expected gh or vault.`);
+        if (secretBackend !== 'gh' && secretBackend !== 'keyvault') {
+            throw new Error(`Invalid secret-backend: ${secretBackend}. Expected gh or keyvault.`);
         }
-        if (secretBackend === 'vault' && !key_vault_url) {
-            throw new Error('Key Vault URL is required for secret-backend: vault');
+        if (secretBackend === 'keyvault' && !key_vault_url) {
+            throw new Error('Key Vault URL is required for secret-backend: keyvault');
         }
         if (ssm_parameter_prefix && key_vault_url) {
             throw new Error('ssm-parameter-prefix and key-vault-url are mutually exclusive. Configure exactly one keystore backend.');

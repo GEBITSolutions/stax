@@ -33,7 +33,7 @@ inputs:
     required: false
     default: '{}'
   key-vault-url:
-    description: 'Environment Key Vault URL required for stacks using secret_backend: vault.'
+    description: 'Environment Key Vault URL required for stacks using secret_backend: keyvault.'
     required: false
 
 outputs:

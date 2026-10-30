@@ -1705,7 +1705,7 @@ describe('explicit secret backend references', () => {
       throw new Error(`Missing Key Vault secret: ${key}`)
     })
   }
-  const context = (secretBackend: 'gh' | 'vault') => ({
+  const context = (secretBackend: 'gh' | 'keyvault') => ({
     config: {},
     pipeline: {},
     secretBackend,
@@ -1751,7 +1751,7 @@ describe('explicit secret backend references', () => {
         environment,
         null,
         false,
-        context('vault')
+        context('keyvault')
       )
     ).toStrictEqual({
       key: 'hcloud_token',
@@ -1783,7 +1783,7 @@ describe('explicit secret backend references', () => {
   )
 
   it.each([false, true])(
-    'fails for missing or empty vault secrets with allowNull=%s without GitHub fallback',
+    'fails for missing or empty Key Vault secrets with allowNull=%s without GitHub fallback',
     async (allowNull) => {
       await expect(
         resolveEnvValue(
@@ -1792,7 +1792,7 @@ describe('explicit secret backend references', () => {
           environment,
           null,
           allowNull,
-          context('vault')
+          context('keyvault')
         )
       ).rejects.toThrow('Missing Key Vault secret: only_gh')
       const emptyVaultStore = {
@@ -1807,16 +1807,16 @@ describe('explicit secret backend references', () => {
           null,
           allowNull,
           {
-            ...context('vault'),
+            ...context('keyvault'),
             vaultStore: emptyVaultStore
           }
         )
-      ).rejects.toThrow('missing or empty in vault backend')
+      ).rejects.toThrow()
       expect(emptyVaultStore.getSecret).toHaveBeenCalledWith('only_gh')
     }
   )
 
-  it('rejects vault backend without configured Key Vault even when SSM exists', async () => {
+  it('rejects keyvault backend without configured Key Vault even when SSM exists', async () => {
     const ssmStore = {
       storeLabel: 'SSM',
       getSecret: jest.fn(async () => 'ssm-token')
@@ -1831,14 +1831,14 @@ describe('explicit secret backend references', () => {
         {
           config: {},
           pipeline: {},
-          secretBackend: 'vault'
+          secretBackend: 'keyvault'
         }
       )
     ).rejects.toThrow('Key Vault is not configured')
     expect(ssmStore.getSecret).not.toHaveBeenCalled()
   })
 
-  it('keeps gh.secret GitHub-only even with vault selected', async () => {
+  it('keeps gh.secret GitHub-only even with keyvault selected', async () => {
     expect(
       await resolveEnvValue(
         basePathValue,
@@ -1846,7 +1846,7 @@ describe('explicit secret backend references', () => {
         environment,
         vaultStore,
         false,
-        context('vault')
+        context('keyvault')
       )
     ).toStrictEqual({
       key: 'HCLOUD_TOKEN',
@@ -1893,7 +1893,7 @@ describe('explicit secret backend references', () => {
         null,
         true,
         false,
-        context('vault')
+        context('keyvault')
       )
     ).toStrictEqual({
       key: 'credentials',

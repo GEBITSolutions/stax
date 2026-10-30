@@ -66,6 +66,32 @@ function initEnv(f, extra = {}) {
 
 function commands(f) { return readFileSync(f.log, 'utf8'); }
 
+test('resolved static AWS credentials work with Azure OIDC while unmapped authentication stays unchanged', () => {
+  for (const [resolved, secret] of [['true', 'resolved-secret-key'], ['false', 'resolved-secret-key'], ['true', '']]) {
+    const f = fixture();
+    try {
+      const result = run(actionStep('aws-login'), f, {
+        OIDC_ENABLED: 'true', ACTION_AWS_STATIC_CREDENTIALS_RESOLVED: resolved,
+        ACTION_AWS_ACCESS_KEY_ID: 'resolved-access-key', ACTION_AWS_SECRET_ACCESS_KEY: secret,
+        ACTION_AWS_SESSION_TOKEN: '', ACTION_AWS_ROLE_ARN: '', ACTION_AWS_REGION: 'eu-central-2',
+        ACTION_AWS_SKIP_STS_CHECK: 'true', ACTION_AWS_ENDPOINTS_FILE: '',
+      });
+      const exported = readFileSync(f.env.GITHUB_ENV, 'utf8');
+      if (resolved === 'true' && secret) {
+        assert.equal(result.status, 0, result.output);
+        assert.match(exported, /^AWS_ACCESS_KEY_ID=resolved-access-key$/m);
+        assert.match(exported, /^AWS_SECRET_ACCESS_KEY=resolved-secret-key$/m);
+      } else {
+        assert.notEqual(result.status, 0);
+        assert.doesNotMatch(exported, /^AWS_(ACCESS_KEY_ID|SECRET_ACCESS_KEY)=/m);
+        if (resolved === 'true') assert.match(result.output, /required for static AWS authentication/);
+      }
+      const log = result.output.split('\n').filter(line => !line.startsWith('::add-mask::')).join('\n');
+      assert.doesNotMatch(log, /resolved-secret-key/);
+    } finally { f.close(); }
+  }
+});
+
 test('endpoint exports reach Terraform only, and native S3 locking stays enabled by default', () => {
   const f = fixture();
   try {

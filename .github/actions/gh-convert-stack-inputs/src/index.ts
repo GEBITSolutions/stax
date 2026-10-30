@@ -55,13 +55,13 @@ export async function run(): Promise<void> {
     const aws_secret_access_key = core.getInput('aws-secret-access-key')
     const aws_session_token = core.getInput('aws-session-token')
     const secretBackend = core.getInput('secret-backend') || 'gh'
-    if (secretBackend !== 'gh' && secretBackend !== 'vault') {
+    if (secretBackend !== 'gh' && secretBackend !== 'keyvault') {
       throw new Error(
-        `Invalid secret-backend: ${secretBackend}. Expected gh or vault.`
+        `Invalid secret-backend: ${secretBackend}. Expected gh or keyvault.`
       )
     }
-    if (secretBackend === 'vault' && !key_vault_url) {
-      throw new Error('Key Vault URL is required for secret-backend: vault')
+    if (secretBackend === 'keyvault' && !key_vault_url) {
+      throw new Error('Key Vault URL is required for secret-backend: keyvault')
     }
 
     if (ssm_parameter_prefix && key_vault_url) {

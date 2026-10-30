@@ -148,6 +148,14 @@ export function validatePackerConfig(
         `Packer stack "${config.id}" hetzner.token must reference secret_backend.secret.<key> or gh.secret.<key>.`
       )
     }
+    if (
+      config.hetzner.token !== undefined &&
+      config.credentials?.HCLOUD_TOKEN !== undefined
+    ) {
+      throw new Error(
+        `Packer stack "${config.id}" hetzner.token conflicts with credentials.HCLOUD_TOKEN.`
+      )
+    }
   } else if (config.hetzner !== undefined) {
     throw new Error(
       `Packer stack "${config.id}" hetzner does not apply when build_target is ${buildTarget}.`

@@ -177,9 +177,9 @@ export async function run(): Promise<void> {
     deploy_config = merged.stacks
     external_repos = merged.externalRepos
     for (const config of deploy_config) {
-      if (config.secret_backend === 'vault' && keyVaultUrl.trim() === '') {
+      if (config.secret_backend === 'keyvault' && keyVaultUrl.trim() === '') {
         throw new Error(
-          `Stack "${config.id}" uses secret_backend: vault but key-vault-url is not configured (set REPO_KEYSTORE_KEY_VAULT_URL).`
+          `Stack "${config.id}" uses secret_backend: keyvault but key-vault-url is not configured (set REPO_KEYSTORE_KEY_VAULT_URL).`
         )
       }
     }

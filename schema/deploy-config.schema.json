@@ -32,6 +32,16 @@
   "$defs": {
     "deploymentValue": { "type": ["string", "null"], "pattern": "^[^\\r\\n]*$" },
     "deploymentFlag": { "type": ["boolean", "string", "null"], "pattern": "^(?:true|false|[^\\S\\r\\n]*)$" },
+    "credentialReference": { "type": "string", "pattern": "^(secret_backend|gh)\\.secret\\.[A-Za-z0-9_]+$" },
+    "credentials": {
+      "description": "Explicit credential references. Only listed runtime credential names are accepted; values must reference GitHub or the selected secret backend.",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Z][A-Z0-9_]*$",
+        "enum": ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "HCLOUD_TOKEN", "INFRACOST_API_KEY", "CI_GITHUB_PAT", "CI_GITHUB_TOKEN_TERRAFORM", "TF_PROVIDER_GH_OWNER"]
+      },
+      "additionalProperties": { "$ref": "#/$defs/credentialReference" }
+    },
     "endpointUrl": {
       "type": ["string", "null"],
       "pattern": "^(?:[^\\S\\r\\n]*(?:https://[^\\s@/?#\\\\]+(?:/[^\\s@?#\\\\]*)?|http://(?:localhost|127\\.0\\.0\\.1|\\[::1\\])(?::[0-9]+)?(?:/[^\\s@?#\\\\]*)?)[^\\S\\r\\n]*|[^\\S\\r\\n]*)$"
@@ -41,7 +51,8 @@
       "additionalProperties": false,
       "properties": {
         "project": { "description": "Project name; falls back to GitHub PROJECT.", "$ref": "#/$defs/deploymentValue" },
-        "secret_backend": { "description": "Default secret store for secret_backend.secret.<key> references. Overridable per stack. Default gh.", "type": "string", "enum": ["vault", "gh"], "default": "gh" },
+        "secret_backend": { "description": "Default secret store for secret_backend.secret.<key> references. Overridable per stack. Default gh.", "type": "string", "enum": ["keyvault", "gh"], "default": "gh" },
+        "credentials": { "description": "Default credential references for stacks in this deployment. A stack can override individual names.", "$ref": "#/$defs/credentials" },
         "customer_id": { "description": "Customer identifier; falls back to CUSTOMER_ID.", "$ref": "#/$defs/deploymentValue" },
         "stage": { "description": "Deployment stage; falls back to STAGE.", "$ref": "#/$defs/deploymentValue" },
         "cloud": { "description": "Azure or AWS, case-insensitive; falls back to CLOUD.", "type": ["string", "null"], "pattern": "^(?:[aA][zZ][uU][rR][eE]|[aA][wW][sS]|[^\\S\\r\\n]*)$" },
@@ -103,7 +114,8 @@
         "depends_on": { "description": "Stack ids deployed before this one.", "$ref": "#/$defs/stringList", "examples": [[]], "x-stax-types": "all" },
         "stack-groups": { "description": "Groups for selecting stacks in the deploy form.", "$ref": "#/$defs/stringList", "examples": [["core"]], "x-stax-types": "all" },
         "runs-on": { "description": "Runner label.", "type": "string", "examples": ["ubuntu-24.04"], "x-stax-types": "all" },
-        "secret_backend": { "description": "Overrides deployment.secret_backend for this stack. Default inherits deployment, then gh.", "type": "string", "enum": ["vault", "gh"], "examples": ["gh"], "x-stax-types": "all" },
+        "secret_backend": { "description": "Overrides deployment.secret_backend for this stack. Default inherits deployment, then gh.", "type": "string", "enum": ["keyvault", "gh"], "examples": ["gh"], "x-stax-types": "all" },
+        "credentials": { "description": "Credential references merged over deployment.credentials by name. A mapped but missing secret fails deployment.", "$ref": "#/$defs/credentials", "examples": [{ "AWS_ACCESS_KEY_ID": "secret_backend.secret.aws_access_key_id" }], "x-stax-types": "all" },
         "input": {
           "description": "Inputs: reference strings (global.pipeline.var.<key>, stack.<id>.var.<key>, ...) or key/value maps.",
           "type": "array",
@@ -183,7 +195,7 @@
           "properties": {
             "location": { "description": "Hetzner location, for example fsn1.", "type": "string", "pattern": "^[a-z]{2,4}[0-9]?$", "examples": ["fsn1"] },
             "server_type": { "description": "Temporary build server type, for example cax11.", "type": "string", "pattern": "^[a-z][a-z0-9]{1,31}$", "examples": ["cax11"] },
-            "token": { "description": "Hetzner API token reference. When unset, the workflow uses the HCLOUD_TOKEN GitHub Environment secret.", "type": "string", "pattern": "^(secret_backend|gh)\\.secret\\.[A-Za-z0-9_]+$", "examples": ["secret_backend.secret.hcloud_token", "gh.secret.hcloud_token"], "x-stax-types": ["packer"] },
+            "token": { "description": "Hetzner API token reference; alias of credentials.HCLOUD_TOKEN. Do not set both, including an inherited deployment credential. When unset, the workflow uses the HCLOUD_TOKEN GitHub Environment secret.", "$ref": "#/$defs/credentialReference", "examples": ["secret_backend.secret.hcloud_token", "gh.secret.hcloud_token"], "x-stax-types": ["packer"] },
             "snapshot_name": { "description": "Snapshot name. Defaults to the stack id.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$", "examples": ["personal-assistant-golden"] },
             "snapshot_labels": {
               "description": "Extra snapshot labels. STAX adds stax_stack_id, stax_env, stax_git_sha, stax_build_target and managed_by=stax.",

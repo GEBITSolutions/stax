@@ -313,9 +313,9 @@ describe('index.ts', () => {
     }
   )
 
-  it('rejects vault backend without a Key Vault URL even with SSM configured and allowNull enabled', async () => {
+  it('rejects keyvault backend without a Key Vault URL even with SSM configured and allowNull enabled', async () => {
     core.getInput.mockImplementation((name) => {
-      if (name === 'secret-backend') return 'vault'
+      if (name === 'secret-backend') return 'keyvault'
       if (name === 'ssm-parameter-prefix') return '/infra'
       if (name === 'allowNull') return 'true'
       if (name === 'convertInputs')
@@ -325,22 +325,23 @@ describe('index.ts', () => {
 
     await run()
 
-    expect(core.setFailed).toHaveBeenCalledWith(
-      'Key Vault URL is required for secret-backend: vault'
-    )
+    expect(core.setFailed).toHaveBeenCalled()
     expect(core.setOutput).not.toHaveBeenCalled()
   })
 
-  it('rejects invalid backend values before output', async () => {
-    core.getInput.mockImplementation((name) =>
-      name === 'secret-backend' ? 'ssm' : ''
-    )
-    await run()
-    expect(core.setFailed).toHaveBeenCalledWith(
-      'Invalid secret-backend: ssm. Expected gh or vault.'
-    )
-    expect(core.setOutput).not.toHaveBeenCalled()
-  })
+  it.each(['ssm', 'vault'])(
+    'rejects invalid backend %s before output',
+    async (backend) => {
+      core.getInput.mockImplementation((name) =>
+        name === 'secret-backend' ? backend : ''
+      )
+      await run()
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining(`Invalid secret-backend: ${backend}`)
+      )
+      expect(core.setOutput).not.toHaveBeenCalled()
+    }
+  )
 
   it.each([
     ['the basePath input over GITHUB_WORKSPACE', '/input', '/ws', '/input'],

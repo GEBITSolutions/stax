@@ -140,6 +140,22 @@ describe('validatePackerConfig', () => {
     }
   )
 
+  it('rejects simultaneous Hetzner token alias and effective HCLOUD_TOKEN mapping', () => {
+    expect(() =>
+      validatePackerConfig(
+        validPackerConfig({
+          build_target: 'hetzner',
+          hetzner: {
+            location: 'fsn1',
+            server_type: 'cax11',
+            token: 'gh.secret.HCLOUD_TOKEN'
+          },
+          credentials: { HCLOUD_TOKEN: 'secret_backend.secret.OTHER' }
+        })
+      )
+    ).toThrow(/hetzner.token conflicts with credentials.HCLOUD_TOKEN/)
+  })
+
   it.each([
     '',
     'HCLOUD_TOKEN',

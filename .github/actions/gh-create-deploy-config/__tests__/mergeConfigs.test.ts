@@ -169,14 +169,14 @@ describe('mergeConfigs.ts', () => {
     const docs: IDeployConfigDocument[] = [
       {
         sourceFile: 'first.yaml',
-        deployment: { secret_backend: 'vault' },
+        deployment: { secret_backend: 'keyvault' },
         stacks: [{ id: 'early' }, { id: 'override', secret_backend: 'gh' }]
       },
       { sourceFile: 'middle.yaml', stacks: [{ id: 'middle' }] },
       {
         sourceFile: 'last.yaml',
         deployment: { secret_backend: 'gh' },
-        stacks: [{ id: 'last', secret_backend: 'vault' }]
+        stacks: [{ id: 'last', secret_backend: 'keyvault' }]
       }
     ]
 
@@ -187,41 +187,145 @@ describe('mergeConfigs.ts', () => {
       ['early', 'gh'],
       ['override', 'gh'],
       ['middle', 'gh'],
-      ['last', 'vault']
+      ['last', 'keyvault']
     ])
     expect(
       mergeDeployConfigDocuments(docs.slice(0, 2)).stacks.map(
         (stack) => stack.secret_backend
       )
-    ).toEqual(['vault', 'gh', 'vault'])
+    ).toEqual(['keyvault', 'gh', 'keyvault'])
     expect(docs[0].stacks[0].secret_backend).toBeUndefined()
   })
 
-  it.each([
-    [
+  it('merges defaults keywise across documents and overrides each stack independently', () => {
+    const docs: IDeployConfigDocument[] = [
       {
-        deployment: { secret_backend: 'other' },
-        stacks: [{ id: 'a' }],
-        sourceFile: 'bad.yaml'
+        sourceFile: 'first.yaml',
+        deployment: {
+          credentials: {
+            AWS_ACCESS_KEY_ID: 'gh.secret.FIRST',
+            AWS_SECRET_ACCESS_KEY: 'secret_backend.secret.ACCESS_SECRET'
+          }
+        },
+        stacks: [
+          {
+            id: 'one',
+            credentials: { AWS_ACCESS_KEY_ID: 'gh.secret.STACK' }
+          },
+          { id: 'two' }
+        ]
       },
-      /bad.yaml: deployment.secret_backend/
-    ],
-    [
       {
-        stacks: [{ id: 'a', secret_backend: 'other' }],
-        sourceFile: 'bad.yaml'
-      },
-      /bad.yaml: stack "a" secret_backend/
+        sourceFile: 'second.yaml',
+        deployment: {
+          credentials: {
+            AWS_ACCESS_KEY_ID: 'gh.secret.LAST',
+            AWS_SESSION_TOKEN: 'gh.secret.SESSION'
+          }
+        },
+        stacks: [{ id: 'three', credentials: {} }]
+      }
     ]
-  ])(
-    'rejects invalid backend in every selected document before a later override',
-    (document, message) => {
+
+    const merged = mergeDeployConfigDocuments(docs)
+    expect(merged.stacks[0].credentials).toEqual({
+      AWS_ACCESS_KEY_ID: 'gh.secret.STACK',
+      AWS_SECRET_ACCESS_KEY: 'secret_backend.secret.ACCESS_SECRET',
+      AWS_SESSION_TOKEN: 'gh.secret.SESSION'
+    })
+    expect(merged.stacks[1].credentials).toEqual({
+      AWS_ACCESS_KEY_ID: 'gh.secret.LAST',
+      AWS_SECRET_ACCESS_KEY: 'secret_backend.secret.ACCESS_SECRET',
+      AWS_SESSION_TOKEN: 'gh.secret.SESSION'
+    })
+    expect(merged.stacks[2].credentials).toEqual(merged.stacks[1].credentials)
+    expect(merged.stacks[0].credentials).not.toBe(merged.stacks[1].credentials)
+    expect(docs[0].stacks[0].credentials).toEqual({
+      AWS_ACCESS_KEY_ID: 'gh.secret.STACK'
+    })
+    expect(docs[0].stacks[1]).not.toHaveProperty('credentials')
+    expect(docs[0].deployment?.credentials).toEqual({
+      AWS_ACCESS_KEY_ID: 'gh.secret.FIRST',
+      AWS_SECRET_ACCESS_KEY: 'secret_backend.secret.ACCESS_SECRET'
+    })
+  })
+
+  it('omits credentials when neither defaults nor stack configure any', () => {
+    const result = mergeDeployConfigDocuments([
+      { stacks: [{ id: 'none' }, { id: 'empty', credentials: {} }] }
+    ])
+    expect(result.stacks[0]).not.toHaveProperty('credentials')
+    expect(result.stacks[1]).not.toHaveProperty('credentials')
+  })
+
+  it.each([
+    [{ ARM_CLIENT_SECRET: 'gh.secret.SAFE' }, 'ARM_CLIENT_SECRET'],
+    [{ REPO_KEYSTORE_TOKEN: 'gh.secret.SAFE' }, 'REPO_KEYSTORE_TOKEN'],
+    [{ OIDC_TOKEN: 'gh.secret.SAFE' }, 'OIDC_TOKEN'],
+    [{ UNKNOWN_TOKEN: 'gh.secret.SAFE' }, 'UNKNOWN_TOKEN'],
+    [{ aws_access_key_id: 'gh.secret.SAFE' }, 'aws_access_key_id'],
+    [{ AWS_ACCESS_KEY_ID: 'vault.secret.KEY' }, 'AWS_ACCESS_KEY_ID'],
+    [{ AWS_ACCESS_KEY_ID: 'gh.secret.' }, 'AWS_ACCESS_KEY_ID'],
+    [{ AWS_ACCESS_KEY_ID: 1 }, 'AWS_ACCESS_KEY_ID']
+  ] as const)(
+    'rejects invalid credential map %p in deployment and stacks',
+    (map, name) => {
+      for (const document of [
+        { deployment: { credentials: map }, stacks: [{ id: 'one' }] },
+        { stacks: [{ id: 'one', credentials: map }] }
+      ]) {
+        expect(() =>
+          mergeDeployConfigDocuments([
+            {
+              ...document,
+              sourceFile: 'invalid.yaml'
+            } as unknown as IDeployConfigDocument,
+            { stacks: [{ id: 'later' }] }
+          ])
+        ).toThrow(name)
+      }
+    }
+  )
+
+  it.each([null, [], 'gh.secret.KEY'])(
+    'rejects non-mapping credentials %p',
+    (credentials) => {
+      expect(() =>
+        mergeDeployConfigDocuments([
+          {
+            deployment: { credentials },
+            stacks: [{ id: 'one' }]
+          } as unknown as IDeployConfigDocument
+        ])
+      ).toThrow('deployment.credentials must be a mapping')
+    }
+  )
+
+  it.each([
+    ['other', 'deployment', /bad.yaml: deployment.secret_backend/],
+    ['vault', 'deployment', /bad.yaml: deployment.secret_backend/],
+    ['other', 'stack', /bad.yaml: stack "a" secret_backend/],
+    ['vault', 'stack', /bad.yaml: stack "a" secret_backend/]
+  ] as const)(
+    'rejects invalid %s backend at %s scope before a later override',
+    (backend, scope, message) => {
+      const document =
+        scope === 'deployment'
+          ? {
+              deployment: { secret_backend: backend },
+              stacks: [{ id: 'a' }],
+              sourceFile: 'bad.yaml'
+            }
+          : {
+              stacks: [{ id: 'a', secret_backend: backend }],
+              sourceFile: 'bad.yaml'
+            }
       expect(() =>
         mergeDeployConfigDocuments([
           document as IDeployConfigDocument,
           { deployment: { secret_backend: 'gh' }, stacks: [{ id: 'b' }] }
         ])
-      ).toThrow(message as RegExp)
+      ).toThrow(message)
     }
   )
 })

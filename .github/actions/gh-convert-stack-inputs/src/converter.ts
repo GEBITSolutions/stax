@@ -89,7 +89,7 @@ export async function resolveEnvValue(
     const key = input.slice('secret_backend.secret.'.length)
     const backend = globalsContext?.secretBackend ?? 'gh'
     let value: string | undefined
-    if (backend === 'vault') {
+    if (backend === 'keyvault') {
       const vaultStore = globalsContext?.vaultStore
       if (!vaultStore) {
         throw new Error(

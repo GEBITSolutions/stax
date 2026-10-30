@@ -712,14 +712,14 @@ describe('index.ts', () => {
     )
   })
 
-  it('materializes the selected backend before scheduling and requires the vault URL only for vault stacks', async () => {
+  it('materializes the selected backend before scheduling and requires the Key Vault URL only for keyvault stacks', async () => {
     generate_layerdeployment.mockImplementation(
       original_generate_layerdeployment
     )
     const docs = [
       {
         sourceFile: 'first.yaml',
-        deployment: { secret_backend: 'vault' },
+        deployment: { secret_backend: 'keyvault' },
         stacks: [{ id: 'early' }]
       },
       {
@@ -744,7 +744,7 @@ describe('index.ts', () => {
       >
     ).flat()
     expect(stacks.map((stack) => [stack.id, stack.secret_backend])).toEqual([
-      ['early', 'vault'],
+      ['early', 'keyvault'],
       ['override', 'gh']
     ])
 
@@ -763,7 +763,7 @@ describe('index.ts', () => {
       name === 'deploy-configs'
         ? JSON.stringify([
             {
-              deployment: { secret_backend: 'vault' },
+              deployment: { secret_backend: 'keyvault' },
               stacks: [{ id: 'override', secret_backend: 'gh' }]
             }
           ])
@@ -773,23 +773,171 @@ describe('index.ts', () => {
     expect(core.setFailed).not.toHaveBeenCalled()
   })
 
-  it('rejects invalid backend even when a stack overrides it', async () => {
+  it('schedules per-stack merged credential mappings', async () => {
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
     core.getInput.mockImplementation((name) =>
       name === 'deploy-configs'
         ? JSON.stringify([
             {
-              deployment: { secret_backend: 'invalid' },
-              stacks: [{ id: 'override', secret_backend: 'gh' }]
+              deployment: {
+                credentials: { AWS_ACCESS_KEY_ID: 'gh.secret.DEFAULT' }
+              },
+              stacks: [
+                {
+                  id: 'first',
+                  credentials: { AWS_ACCESS_KEY_ID: 'gh.secret.OVERRIDE' }
+                },
+                { id: 'second' }
+              ]
+            },
+            {
+              deployment: {
+                credentials: { AWS_SECRET_ACCESS_KEY: 'gh.secret.SECRET' }
+              },
+              stacks: [{ id: 'third' }]
+            }
+          ])
+        : ''
+    )
+    await run()
+    expect(core.setFailed).not.toHaveBeenCalled()
+    const output = (core.setOutput as jest.Mock).mock.calls.find(
+      ([name]) => name === 'layer-deployments'
+    )
+    const stacks = (
+      JSON.parse(output![1] as string) as Array<
+        Array<{ id: string; credentials?: Record<string, string> }>
+      >
+    ).flat()
+    expect(stacks.map(({ id, credentials }) => [id, credentials])).toEqual([
+      [
+        'first',
+        {
+          AWS_ACCESS_KEY_ID: 'gh.secret.OVERRIDE',
+          AWS_SECRET_ACCESS_KEY: 'gh.secret.SECRET'
+        }
+      ],
+      [
+        'second',
+        {
+          AWS_ACCESS_KEY_ID: 'gh.secret.DEFAULT',
+          AWS_SECRET_ACCESS_KEY: 'gh.secret.SECRET'
+        }
+      ],
+      [
+        'third',
+        {
+          AWS_ACCESS_KEY_ID: 'gh.secret.DEFAULT',
+          AWS_SECRET_ACCESS_KEY: 'gh.secret.SECRET'
+        }
+      ]
+    ])
+  })
+
+  it('rejects invalid credential names in action runtime without relying on schema', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-configs'
+        ? JSON.stringify([
+            {
+              deployment: {
+                credentials: { ARM_CLIENT_SECRET: 'gh.secret.KEY' }
+              },
+              stacks: [{ id: 'stack' }]
             }
           ])
         : ''
     )
     await run()
     expect(core.setFailed).toHaveBeenCalledWith(
-      expect.stringContaining('deployment.secret_backend')
+      expect.stringContaining('ARM_CLIENT_SECRET is not allowed')
     )
     expect(core.setOutput).not.toHaveBeenCalled()
   })
+
+  it('rejects a Hetzner token conflicting with inherited credentials', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-configs'
+        ? JSON.stringify([
+            {
+              deployment: {
+                credentials: { HCLOUD_TOKEN: 'gh.secret.DEFAULT' }
+              },
+              stacks: []
+            },
+            {
+              stacks: [
+                {
+                  id: 'packer',
+                  type: 'packer',
+                  build_target: 'hetzner',
+                  packer_directory: 'packer',
+                  packer_version: '1.14.0',
+                  credentials: { HCLOUD_TOKEN: 'gh.secret.OVERRIDE' },
+                  hetzner: {
+                    location: 'fsn1',
+                    server_type: 'cax11',
+                    token: 'gh.secret.OTHER'
+                  }
+                }
+              ]
+            }
+          ])
+        : ''
+    )
+    await run()
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'hetzner.token conflicts with credentials.HCLOUD_TOKEN'
+      )
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
+  })
+
+  it('requires a Key Vault URL for a keyvault stack with inherited credentials', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-configs'
+        ? JSON.stringify([
+            {
+              deployment: {
+                secret_backend: 'keyvault',
+                credentials: {
+                  AWS_ACCESS_KEY_ID: 'gh.secret.AWS_ACCESS_KEY_ID'
+                }
+              },
+              stacks: [{ id: 'stack' }]
+            }
+          ])
+        : ''
+    )
+    await run()
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('key-vault-url is not configured')
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
+  })
+
+  it.each(['invalid', 'vault'])(
+    'rejects invalid backend %s even when a stack overrides it',
+    async (backend) => {
+      core.getInput.mockImplementation((name) =>
+        name === 'deploy-configs'
+          ? JSON.stringify([
+              {
+                deployment: { secret_backend: backend },
+                stacks: [{ id: 'override', secret_backend: 'gh' }]
+              }
+            ])
+          : ''
+      )
+      await run()
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('deployment.secret_backend')
+      )
+      expect(core.setOutput).not.toHaveBeenCalled()
+    }
+  )
 
   it('rejects Hetzner token on non-Packer stacks before scheduling', async () => {
     core.getInput.mockImplementation((name) =>

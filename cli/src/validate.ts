@@ -3,7 +3,7 @@ import { join } from "node:path";
 import type { ErrorObject } from "ajv/dist/2020.js";
 import { isMap, isScalar, LineCounter, parseDocument, type Document } from "yaml";
 import { isRecord } from "./guards.ts";
-import { ajv, schema, validateDeployConfig as validateSchema } from "./schema.ts";
+import { ajv, CREDENTIAL_NAMES, schema, validateDeployConfig as validateSchema } from "./schema.ts";
 
 export type Severity = "error" | "warning";
 
@@ -96,10 +96,17 @@ function checkSchema(data: unknown, report: Reporter): void {
   for (const error of validateSchema.errors ?? []) {
     // "if" errors only say a "then" branch failed; the branch's own error carries the detail.
     if (error.keyword === "if") continue;
+    // Ajv reports both the name schema's enum/pattern error and its propertyNames wrapper.
+    // For credential maps, use the wrapper so the finding points to the offending YAML key.
+    if (error.schemaPath.includes("/$defs/credentials/propertyNames/")) continue;
     const path: Path = error.instancePath
       .split("/")
       .slice(1)
       .map((segment) => (/^\d+$/.test(segment) ? Number(segment) : segment.replaceAll("~1", "/").replaceAll("~0", "~")));
+    if (error.keyword === "propertyNames" && path.at(-1) === "credentials") {
+      report.add("error", [...path, String(error.params.propertyName)], `unsupported credential name; expected one of: ${CREDENTIAL_NAMES.join(", ")}`);
+      continue;
+    }
     report.add("error", path, schemaMessage(error, path));
   }
 }
@@ -390,6 +397,40 @@ function deploymentText(value: unknown): string {
   return value === undefined || value === null ? "" : String(value).trim();
 }
 
+/** Hetzner's token alias cannot coexist with an explicit HCLOUD_TOKEN mapping, including an inherited one. */
+function checkCredentialRules(data: Record<string, unknown>, report: Reporter): void {
+  const inherited = isRecord(data.deployment) && isRecord(data.deployment.credentials) ? data.deployment.credentials : undefined;
+  if (!Array.isArray(data.stacks)) return;
+  data.stacks.forEach((stack, index) => {
+    if (!isRecord(stack) || stack.type !== "packer" || stack.build_target !== "hetzner") return;
+    if (!isRecord(stack.hetzner) || stack.hetzner.token === undefined) return;
+    const mapped = isRecord(stack.credentials) && Object.hasOwn(stack.credentials, "HCLOUD_TOKEN")
+      ? stack.credentials
+      : inherited;
+    if (mapped && Object.hasOwn(mapped, "HCLOUD_TOKEN")) {
+      report.add("error", ["stacks", index, "hetzner", "token"], "conflicts with effective credentials.HCLOUD_TOKEN; use only one reference");
+    }
+  });
+}
+
+/** GitHub Environment variables are available only when the caller provides them (CLI defaults to its process). */
+function checkCredentialVaultUrl(data: Record<string, unknown>, report: Reporter, variables: Record<string, string | undefined>): void {
+  if (variables.REPO_KEYSTORE_KEY_VAULT_URL?.trim()) return;
+  const deployment = isRecord(data.deployment) ? data.deployment : undefined;
+  const defaults = deployment && isRecord(deployment.credentials) ? deployment.credentials : undefined;
+  const hasDefaults = defaults !== undefined && Object.keys(defaults).length > 0;
+  if (!Array.isArray(data.stacks)) return;
+  data.stacks.forEach((stack, index) => {
+    if (!isRecord(stack)) return;
+    const backend = stack.secret_backend ?? deployment?.secret_backend ?? "gh";
+    const overrides = isRecord(stack.credentials) ? stack.credentials : undefined;
+    if (backend !== "keyvault" || (!hasDefaults && !(overrides && Object.keys(overrides).length > 0))) return;
+    const path: Path = deployment?.secret_backend === "keyvault" && hasDefaults
+      ? ["deployment", "credentials"] : ["stacks", index, "credentials"];
+    report.add("error", path, "REPO_KEYSTORE_KEY_VAULT_URL is required for keyvault-backed credentials");
+  });
+}
+
 /** Mirrors the AWS option checks in .github/scripts/deployment-config.mjs and a-wf-setup-ci. */
 function checkDeploymentRules(data: Record<string, unknown>, report: Reporter): void {
   const deployment = data.deployment;
@@ -410,8 +451,8 @@ function checkDeploymentRules(data: Record<string, unknown>, report: Reporter): 
   }
 }
 
-/** Validates one deploy config. Findings are sorted by position. */
-export function validateConfigText(text: string): Finding[] {
+/** Validates one deploy config. Pass Environment variables explicitly when available; the CLI uses process.env. Findings are sorted by position. */
+export function validateConfigText(text: string, variables: Record<string, string | undefined> = process.env): Finding[] {
   const lineCounter = new LineCounter();
   const doc = parseDocument(text, { lineCounter, prettyErrors: false });
   const report = new Reporter(doc, lineCounter);
@@ -441,6 +482,8 @@ export function validateConfigText(text: string): Finding[] {
   if (Array.isArray(data.stacks)) {
     data.stacks.forEach((stack, index) => checkUnknownKeys(stack, KNOWN_KEYS.stack, ["stacks", index], report));
   }
+  checkCredentialRules(data, report);
+  checkCredentialVaultUrl(data, report, variables);
   checkDeploymentRules(data, report);
   checkPipelineRules(data, report);
 
