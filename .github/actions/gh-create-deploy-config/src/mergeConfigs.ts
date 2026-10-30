@@ -1,7 +1,8 @@
 import {
   IDeployConfigDocument,
   IExternalRepos,
-  ITerraformConfig
+  ITerraformConfig,
+  SecretBackend
 } from './types.js'
 
 /**
@@ -20,6 +21,15 @@ function stableStringify(value: unknown): string {
       .join(',')}}`
   }
   return JSON.stringify(value)
+}
+
+function validateSecretBackend(
+  value: unknown,
+  source: string
+): asserts value is SecretBackend {
+  if (value !== 'vault' && value !== 'gh') {
+    throw new Error(`${source} must be 'vault' or 'gh'`)
+  }
 }
 
 /**
@@ -45,10 +55,18 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
 
   const externalRepos: IExternalRepos = {}
   const externalReposSource = new Map<string, string>()
+  let deploymentBackend: SecretBackend = 'gh'
 
   for (const doc of docs) {
     const sourceFile = doc.sourceFile ?? '<unknown>'
     const docStacks = doc.stacks ?? []
+    if (doc.deployment?.secret_backend !== undefined) {
+      validateSecretBackend(
+        doc.deployment.secret_backend,
+        `${sourceFile}: deployment.secret_backend`
+      )
+      deploymentBackend = doc.deployment.secret_backend
+    }
 
     for (const stack of docStacks) {
       const existingFile = idToFile.get(stack.id)
@@ -58,6 +76,12 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
         )
       }
       idToFile.set(stack.id, sourceFile)
+      if (stack.secret_backend !== undefined) {
+        validateSecretBackend(
+          stack.secret_backend,
+          `${sourceFile}: stack "${stack.id}" secret_backend`
+        )
+      }
       stacks.push(stack)
     }
 
@@ -78,5 +102,11 @@ export function mergeDeployConfigDocuments(docs: IDeployConfigDocument[]): {
     }
   }
 
-  return { stacks, externalRepos }
+  return {
+    stacks: stacks.map((stack) => ({
+      ...stack,
+      secret_backend: stack.secret_backend ?? deploymentBackend
+    })),
+    externalRepos
+  }
 }

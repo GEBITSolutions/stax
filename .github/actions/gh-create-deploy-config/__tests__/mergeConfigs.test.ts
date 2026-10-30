@@ -12,6 +12,11 @@ describe('mergeConfigs.ts', () => {
     const merged = mergeDeployConfigDocuments(docs)
 
     expect(merged.stacks.map((s) => s.id)).toEqual(['a', 'b', 'c'])
+    expect(merged.stacks.map((s) => s.secret_backend)).toEqual([
+      'gh',
+      'gh',
+      'gh'
+    ])
     expect(merged.externalRepos).toEqual({})
   })
 
@@ -157,6 +162,66 @@ describe('mergeConfigs.ts', () => {
     const merged = mergeDeployConfigDocuments(docs)
 
     expect(merged.stacks.map((s) => s.id)).toEqual(['a'])
+    expect(merged.stacks[0].secret_backend).toBe('gh')
     expect(merged.externalRepos).toEqual({})
   })
+  it('uses the last explicitly selected deployment backend for every stack, except stack overrides', () => {
+    const docs: IDeployConfigDocument[] = [
+      {
+        sourceFile: 'first.yaml',
+        deployment: { secret_backend: 'vault' },
+        stacks: [{ id: 'early' }, { id: 'override', secret_backend: 'gh' }]
+      },
+      { sourceFile: 'middle.yaml', stacks: [{ id: 'middle' }] },
+      {
+        sourceFile: 'last.yaml',
+        deployment: { secret_backend: 'gh' },
+        stacks: [{ id: 'last', secret_backend: 'vault' }]
+      }
+    ]
+
+    const result = mergeDeployConfigDocuments(docs)
+    expect(
+      result.stacks.map((stack) => [stack.id, stack.secret_backend])
+    ).toEqual([
+      ['early', 'gh'],
+      ['override', 'gh'],
+      ['middle', 'gh'],
+      ['last', 'vault']
+    ])
+    expect(
+      mergeDeployConfigDocuments(docs.slice(0, 2)).stacks.map(
+        (stack) => stack.secret_backend
+      )
+    ).toEqual(['vault', 'gh', 'vault'])
+    expect(docs[0].stacks[0].secret_backend).toBeUndefined()
+  })
+
+  it.each([
+    [
+      {
+        deployment: { secret_backend: 'other' },
+        stacks: [{ id: 'a' }],
+        sourceFile: 'bad.yaml'
+      },
+      /bad.yaml: deployment.secret_backend/
+    ],
+    [
+      {
+        stacks: [{ id: 'a', secret_backend: 'other' }],
+        sourceFile: 'bad.yaml'
+      },
+      /bad.yaml: stack "a" secret_backend/
+    ]
+  ])(
+    'rejects invalid backend in every selected document before a later override',
+    (document, message) => {
+      expect(() =>
+        mergeDeployConfigDocuments([
+          document as IDeployConfigDocument,
+          { deployment: { secret_backend: 'gh' }, stacks: [{ id: 'b' }] }
+        ])
+      ).toThrow(message as RegExp)
+    }
+  )
 })

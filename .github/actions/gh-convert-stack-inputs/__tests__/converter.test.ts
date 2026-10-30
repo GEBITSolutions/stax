@@ -1,3 +1,4 @@
+import { jest } from '@jest/globals'
 import fs from 'fs'
 import path from 'path'
 import { stringify } from 'yaml'
@@ -1689,5 +1690,218 @@ describe('GlobalsContext resolution', () => {
         )
       ).rejects.toThrow('Config global not found: subdomains')
     })
+  })
+})
+
+describe('explicit secret backend references', () => {
+  const environment = {
+    var: {},
+    secret: { HCLOUD_TOKEN: 'github-token', ONLY_GH: 'github-only' }
+  }
+  const vaultStore = {
+    storeLabel: 'KeyVault',
+    getSecret: jest.fn(async (key: string) => {
+      if (key === 'hcloud_token') return 'vault-token'
+      throw new Error(`Missing Key Vault secret: ${key}`)
+    })
+  }
+  const context = (secretBackend: 'gh' | 'vault') => ({
+    config: {},
+    pipeline: {},
+    secretBackend,
+    vaultStore
+  })
+
+  beforeEach(() => vaultStore.getSecret.mockClear())
+
+  it('defaults to GitHub and selects GitHub despite a configured vault', async () => {
+    expect(
+      await resolveEnvValue(
+        basePathValue,
+        'secret_backend.secret.hcloud_token',
+        environment,
+        null,
+        false
+      )
+    ).toStrictEqual({
+      key: 'hcloud_token',
+      value: 'github-token'
+    })
+    expect(
+      await resolveEnvValue(
+        basePathValue,
+        'secret_backend.secret.hcloud_token',
+        environment,
+        vaultStore,
+        false,
+        context('gh')
+      )
+    ).toStrictEqual({
+      key: 'hcloud_token',
+      value: 'github-token'
+    })
+    expect(vaultStore.getSecret).not.toHaveBeenCalled()
+  })
+
+  it('selects only Key Vault and passes the original key for environment-aware naming', async () => {
+    expect(
+      await resolveEnvValue(
+        basePathValue,
+        'secret_backend.secret.hcloud_token',
+        environment,
+        null,
+        false,
+        context('vault')
+      )
+    ).toStrictEqual({
+      key: 'hcloud_token',
+      value: 'vault-token'
+    })
+    expect(vaultStore.getSecret).toHaveBeenCalledWith('hcloud_token')
+  })
+
+  it.each([false, true])(
+    'fails for missing or empty GitHub secrets with allowNull=%s',
+    async (allowNull) => {
+      for (const secret of [undefined, '']) {
+        await expect(
+          resolveEnvValue(
+            basePathValue,
+            'secret_backend.secret.missing',
+            {
+              var: {},
+              secret: secret === undefined ? {} : { MISSING: secret }
+            },
+            vaultStore,
+            allowNull,
+            context('gh')
+          )
+        ).rejects.toThrow('missing or empty in gh backend')
+      }
+      expect(vaultStore.getSecret).not.toHaveBeenCalled()
+    }
+  )
+
+  it.each([false, true])(
+    'fails for missing or empty vault secrets with allowNull=%s without GitHub fallback',
+    async (allowNull) => {
+      await expect(
+        resolveEnvValue(
+          basePathValue,
+          'secret_backend.secret.only_gh',
+          environment,
+          null,
+          allowNull,
+          context('vault')
+        )
+      ).rejects.toThrow('Missing Key Vault secret: only_gh')
+      const emptyVaultStore = {
+        storeLabel: 'KeyVault',
+        getSecret: jest.fn(async () => '')
+      }
+      await expect(
+        resolveEnvValue(
+          basePathValue,
+          'secret_backend.secret.only_gh',
+          environment,
+          null,
+          allowNull,
+          {
+            ...context('vault'),
+            vaultStore: emptyVaultStore
+          }
+        )
+      ).rejects.toThrow('missing or empty in vault backend')
+      expect(emptyVaultStore.getSecret).toHaveBeenCalledWith('only_gh')
+    }
+  )
+
+  it('rejects vault backend without configured Key Vault even when SSM exists', async () => {
+    const ssmStore = {
+      storeLabel: 'SSM',
+      getSecret: jest.fn(async () => 'ssm-token')
+    }
+    await expect(
+      resolveEnvValue(
+        basePathValue,
+        'secret_backend.secret.hcloud_token',
+        environment,
+        ssmStore,
+        true,
+        {
+          config: {},
+          pipeline: {},
+          secretBackend: 'vault'
+        }
+      )
+    ).rejects.toThrow('Key Vault is not configured')
+    expect(ssmStore.getSecret).not.toHaveBeenCalled()
+  })
+
+  it('keeps gh.secret GitHub-only even with vault selected', async () => {
+    expect(
+      await resolveEnvValue(
+        basePathValue,
+        'gh.secret.HCLOUD_TOKEN',
+        environment,
+        vaultStore,
+        false,
+        context('vault')
+      )
+    ).toStrictEqual({
+      key: 'HCLOUD_TOKEN',
+      value: 'github-token'
+    })
+    expect(vaultStore.getSecret).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'secret_backend',
+    'secret_backend.var.key',
+    'secret_backend.secret',
+    'secret_backend.secret.',
+    'secret_backend.secret.key.extra',
+    'secret_backend.secret.key[0]',
+    'secret_backend.secret.key/extra'
+  ])('rejects malformed reference %s', async (reference) => {
+    await expect(
+      resolveEnvValue(
+        basePathValue,
+        reference,
+        environment,
+        null,
+        true,
+        context('gh')
+      )
+    ).rejects.toThrow('Invalid secret backend reference')
+  })
+
+  it('resolves exact references nested in objects and arrays but not embedded in strings', async () => {
+    expect(
+      await createKeyValue(
+        basePathValue,
+        {
+          credentials: {
+            token: 'secret_backend.secret.hcloud_token',
+            variants: [
+              'secret_backend.secret.hcloud_token',
+              'prefix-secret_backend.secret.hcloud_token'
+            ]
+          }
+        },
+        environment,
+        null,
+        true,
+        false,
+        context('vault')
+      )
+    ).toStrictEqual({
+      key: 'credentials',
+      value: {
+        token: 'vault-token',
+        variants: ['vault-token', 'prefix-secret_backend.secret.hcloud_token']
+      }
+    })
+    expect(vaultStore.getSecret).toHaveBeenCalledTimes(2)
   })
 })

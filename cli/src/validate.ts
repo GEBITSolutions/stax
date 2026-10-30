@@ -270,6 +270,9 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
       if (stack.scan !== undefined) {
         report.add("warning", ["stacks", index, "scan"], "applies to packer stacks only");
       }
+      if (isRecord(stack.hetzner) && stack.hetzner.token !== undefined) {
+        report.add("error", ["stacks", index, "hetzner", "token"], "applies to packer stacks with build_target hetzner only");
+      }
     }
 
     // Mirrors validateGitHubPagesConfig and github-pages-config.mjs.

@@ -48847,6 +48847,11 @@ function stableStringify(value) {
     }
     return JSON.stringify(value);
 }
+function validateSecretBackend(value, source) {
+    if (value !== 'vault' && value !== 'gh') {
+        throw new Error(`${source} must be 'vault' or 'gh'`);
+    }
+}
 /**
  * Merge multiple deploy-config documents into a single stacks list and a single
  * externalRepos map.
@@ -48866,15 +48871,23 @@ function mergeDeployConfigDocuments(docs) {
     const idToFile = new Map();
     const externalRepos = {};
     const externalReposSource = new Map();
+    let deploymentBackend = 'gh';
     for (const doc of docs) {
         const sourceFile = doc.sourceFile ?? '<unknown>';
         const docStacks = doc.stacks ?? [];
+        if (doc.deployment?.secret_backend !== undefined) {
+            validateSecretBackend(doc.deployment.secret_backend, `${sourceFile}: deployment.secret_backend`);
+            deploymentBackend = doc.deployment.secret_backend;
+        }
         for (const stack of docStacks) {
             const existingFile = idToFile.get(stack.id);
             if (existingFile !== undefined) {
                 throw new Error(`Duplicate stack id "${stack.id}" found in "${existingFile}" and "${sourceFile}"`);
             }
             idToFile.set(stack.id, sourceFile);
+            if (stack.secret_backend !== undefined) {
+                validateSecretBackend(stack.secret_backend, `${sourceFile}: stack "${stack.id}" secret_backend`);
+            }
             stacks.push(stack);
         }
         const docExternalRepos = (doc.externalRepos ?? {});
@@ -48892,7 +48905,13 @@ function mergeDeployConfigDocuments(docs) {
             }
         }
     }
-    return { stacks, externalRepos };
+    return {
+        stacks: stacks.map((stack) => ({
+            ...stack,
+            secret_backend: stack.secret_backend ?? deploymentBackend
+        })),
+        externalRepos
+    };
 }
 
 /**
@@ -49004,6 +49023,11 @@ function validatePackerConfig(config, warn = () => undefined) {
         if (!config.hetzner.location || !config.hetzner.server_type) {
             throw new Error(`Packer stack "${config.id}" hetzner.location and hetzner.server_type are required.`);
         }
+        if (config.hetzner.token !== undefined &&
+            (typeof config.hetzner.token !== 'string' ||
+                !/^(secret_backend|gh)\.secret\.[A-Za-z0-9_]+$/.test(config.hetzner.token))) {
+            throw new Error(`Packer stack "${config.id}" hetzner.token must reference secret_backend.secret.<key> or gh.secret.<key>.`);
+        }
     }
     else if (config.hetzner !== undefined) {
         throw new Error(`Packer stack "${config.id}" hetzner does not apply when build_target is ${buildTarget}.`);
@@ -49013,6 +49037,69 @@ function validatePackerConfig(config, warn = () => undefined) {
     }
     if (buildTarget === 'aws' && !config.aws?.regions?.length) {
         throw new Error(`Packer stack "${config.id}" build_target aws requires aws.regions.`);
+    }
+    if (config.scan !== undefined) {
+        if (!config.scan ||
+            typeof config.scan !== 'object' ||
+            Array.isArray(config.scan)) {
+            throw new Error(`Packer stack "${config.id}" scan must be an object with trivy, lynis and/or goss.`);
+        }
+        const tools = ['trivy', 'lynis', 'goss'];
+        const keys = Object.keys(config.scan);
+        if (keys.length === 0) {
+            throw new Error(`Packer stack "${config.id}" scan requires at least one of trivy, lynis, or goss.`);
+        }
+        for (const key of keys) {
+            if (!tools.includes(key)) {
+                throw new Error(`Packer stack "${config.id}" scan has unknown tool "${key}".`);
+            }
+        }
+        if (config.scan.trivy !== undefined) {
+            const trivy = config.scan.trivy;
+            if (!trivy || typeof trivy !== 'object' || Array.isArray(trivy)) {
+                throw new Error(`Packer stack "${config.id}" scan.trivy must be an object.`);
+            }
+            if (trivy.severity !== undefined &&
+                (typeof trivy.severity !== 'string' ||
+                    !/^[A-Z]+(,[A-Z]+)*$/.test(trivy.severity))) {
+                throw new Error(`Packer stack "${config.id}" scan.trivy.severity must be a comma-separated list of uppercase severities.`);
+            }
+            if (trivy.scanners !== undefined) {
+                const allowed = new Set(['vuln', 'misconfig', 'secret', 'license']);
+                if (!Array.isArray(trivy.scanners) ||
+                    trivy.scanners.length === 0 ||
+                    trivy.scanners.some((item) => !allowed.has(item))) {
+                    throw new Error(`Packer stack "${config.id}" scan.trivy.scanners must be a nonempty list from vuln, misconfig, secret, license.`);
+                }
+            }
+        }
+        if (config.scan.lynis !== undefined) {
+            const lynis = config.scan.lynis;
+            if (!lynis || typeof lynis !== 'object' || Array.isArray(lynis)) {
+                throw new Error(`Packer stack "${config.id}" scan.lynis must be an object.`);
+            }
+            if (lynis.min_hardening_index !== undefined) {
+                const min = lynis.min_hardening_index;
+                if (!Number.isInteger(min) || min < 0 || min > 100) {
+                    throw new Error(`Packer stack "${config.id}" scan.lynis.min_hardening_index must be an integer from 0 to 100.`);
+                }
+            }
+        }
+        if (config.scan.goss !== undefined) {
+            const goss = config.scan.goss;
+            if (!goss || typeof goss !== 'object' || Array.isArray(goss)) {
+                throw new Error(`Packer stack "${config.id}" scan.goss must be an object.`);
+            }
+            if (typeof goss.spec !== 'string' || goss.spec.trim() === '') {
+                throw new Error(`Packer stack "${config.id}" scan.goss.spec must be a nonempty path relative to packer_directory.`);
+            }
+            if (goss.spec.startsWith('/') ||
+                goss.spec.includes('\\') ||
+                goss.spec.split('/').includes('..') ||
+                goss.spec.split('/').includes('')) {
+                throw new Error(`Packer stack "${config.id}" scan.goss.spec must be a repository-relative POSIX path without "..".`);
+            }
+        }
     }
 }
 
@@ -49074,6 +49161,9 @@ async function run() {
             required: false
         });
         const global_vars_JSON = coreExports.getInput('global-vars', {
+            required: false
+        });
+        const keyVaultUrl = coreExports.getInput('key-vault-url', {
             required: false
         });
         let deploy_depth_int;
@@ -49185,8 +49275,16 @@ async function run() {
         const merged = mergeDeployConfigDocuments(documents);
         deploy_config = merged.stacks;
         external_repos = merged.externalRepos;
+        for (const config of deploy_config) {
+            if (config.secret_backend === 'vault' && keyVaultUrl.trim() === '') {
+                throw new Error(`Stack "${config.id}" uses secret_backend: vault but key-vault-url is not configured (set REPO_KEYSTORE_KEY_VAULT_URL).`);
+            }
+        }
         validateGitHubPagesConfig(deploy_config, global_vars);
         for (const config of deploy_config) {
+            if (config.type !== 'packer' && config.hetzner?.token !== undefined) {
+                throw new Error(`Stack "${config.id}" hetzner.token applies only to Packer build_target hetzner.`);
+            }
             validatePackerConfig(config, (message) => coreExports.warning(message));
             validateStackFolder(config);
         }

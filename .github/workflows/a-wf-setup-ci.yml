@@ -493,6 +493,7 @@ jobs:
       uses: ./_shared_actions/.github/actions/gh-create-deploy-config
       with:
         deploy-depth: "14"
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
         stack-filter: ${{ inputs.stack_filter }}
         deploy-configs: ${{ steps.read-deploy-config.outputs.deploy-configs }}
         global-vars: ${{ steps.global-env-vars.outputs.global-vars }}

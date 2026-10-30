@@ -101,18 +101,18 @@ describe('index.ts', () => {
     await run()
 
     expect(generate_stackfilter).toHaveBeenCalledWith(
-      [{ id: 'stack-1' }],
+      [{ id: 'stack-1', secret_backend: 'gh' }],
       'stack-1',
       {}
     )
     expect(convert_implicit_to_explicit_dependencies).toHaveBeenCalledWith([
-      { id: 'stack-1' }
+      { id: 'stack-1', secret_backend: 'gh' }
     ])
     expect(prune_external_dependencies).toHaveBeenCalledWith([
-      { id: 'stack-1' }
+      { id: 'stack-1', secret_backend: 'gh' }
     ])
     expect(apply_stack_filter).toHaveBeenCalledWith(
-      [{ id: 'stack-1' }],
+      [{ id: 'stack-1', secret_backend: 'gh' }],
       ['stack-1']
     )
     // Verify call order: convert → prune → generate_stackfilter
@@ -136,19 +136,21 @@ describe('index.ts', () => {
     await run()
 
     expect(generate_stackfilter).toHaveBeenCalledWith(
-      [{ id: 'stack-1' }],
+      [{ id: 'stack-1', secret_backend: 'gh' }],
       '',
       {}
     )
     expect(convert_implicit_to_explicit_dependencies).toHaveBeenCalledWith([
-      { id: 'stack-1' }
+      { id: 'stack-1', secret_backend: 'gh' }
     ])
     expect(apply_stack_filter).not.toHaveBeenCalled()
   })
   it('excludes false conditions without a stack filter and rewires surviving dependencies', async () => {
     generate_stackfilter.mockImplementation(original_generate_stackfilter)
     apply_stack_filter.mockImplementation(original_apply_stack_filter)
-    generate_layerdeployment.mockImplementation(original_generate_layerdeployment)
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
 
     core.getInput.mockImplementation((name) => {
       if (name === 'deploy-config')
@@ -167,8 +169,15 @@ describe('index.ts', () => {
     expect(core.setOutput).toHaveBeenCalledWith(
       'layer-deployments',
       JSON.stringify([
-        [{ id: 'base', depends_on: [], layer: 0 }],
-        [{ id: 'consumer', depends_on: ['base'], layer: 1 }]
+        [{ id: 'base', secret_backend: 'gh', depends_on: [], layer: 0 }],
+        [
+          {
+            id: 'consumer',
+            depends_on: ['base'],
+            secret_backend: 'gh',
+            layer: 1
+          }
+        ]
       ])
     )
   })
@@ -176,7 +185,9 @@ describe('index.ts', () => {
   it('emits an empty deployment when all stack conditions are false without a filter', async () => {
     generate_stackfilter.mockImplementation(original_generate_stackfilter)
     apply_stack_filter.mockImplementation(original_apply_stack_filter)
-    generate_layerdeployment.mockImplementation(original_generate_layerdeployment)
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
 
     core.getInput.mockImplementation((name) => {
       if (name === 'deploy-config')
@@ -203,7 +214,9 @@ describe('index.ts', () => {
   it('does not fall back to all stacks when an explicit filter selects only false conditions', async () => {
     generate_stackfilter.mockImplementation(original_generate_stackfilter)
     apply_stack_filter.mockImplementation(original_apply_stack_filter)
-    generate_layerdeployment.mockImplementation(original_generate_layerdeployment)
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
 
     core.getInput.mockImplementation((name) => {
       if (name === 'deploy-config')
@@ -691,11 +704,113 @@ describe('index.ts', () => {
             type: 'terraform',
             folder: 'infra',
             site_source_type: 'custom',
+            secret_backend: 'gh',
             layer: 0
           }
         ]
       ])
     )
+  })
+
+  it('materializes the selected backend before scheduling and requires the vault URL only for vault stacks', async () => {
+    generate_layerdeployment.mockImplementation(
+      original_generate_layerdeployment
+    )
+    const docs = [
+      {
+        sourceFile: 'first.yaml',
+        deployment: { secret_backend: 'vault' },
+        stacks: [{ id: 'early' }]
+      },
+      {
+        sourceFile: 'second.yaml',
+        stacks: [{ id: 'override', secret_backend: 'gh' }]
+      }
+    ]
+    core.getInput.mockImplementation((name) => {
+      if (name === 'deploy-configs') return JSON.stringify(docs)
+      if (name === 'key-vault-url') return 'https://vault.vault.azure.net/'
+      return ''
+    })
+
+    await run()
+    expect(core.setFailed).not.toHaveBeenCalled()
+    const output = (core.setOutput as jest.Mock).mock.calls.find(
+      ([name]) => name === 'layer-deployments'
+    )
+    const stacks = (
+      JSON.parse(output![1] as string) as Array<
+        Array<{ id: string; secret_backend: string }>
+      >
+    ).flat()
+    expect(stacks.map((stack) => [stack.id, stack.secret_backend])).toEqual([
+      ['early', 'vault'],
+      ['override', 'gh']
+    ])
+
+    jest.clearAllMocks()
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-configs' ? JSON.stringify(docs) : ''
+    )
+    await run()
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('key-vault-url is not configured')
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
+
+    jest.clearAllMocks()
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-configs'
+        ? JSON.stringify([
+            {
+              deployment: { secret_backend: 'vault' },
+              stacks: [{ id: 'override', secret_backend: 'gh' }]
+            }
+          ])
+        : ''
+    )
+    await run()
+    expect(core.setFailed).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid backend even when a stack overrides it', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-configs'
+        ? JSON.stringify([
+            {
+              deployment: { secret_backend: 'invalid' },
+              stacks: [{ id: 'override', secret_backend: 'gh' }]
+            }
+          ])
+        : ''
+    )
+    await run()
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining('deployment.secret_backend')
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
+  })
+
+  it('rejects Hetzner token on non-Packer stacks before scheduling', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'deploy-config'
+        ? JSON.stringify([
+            {
+              id: 'infra',
+              type: 'terraform',
+              folder: 'infra',
+              hetzner: { token: 'gh.secret.hcloud_token' }
+            }
+          ])
+        : ''
+    )
+    await run()
+    expect(core.setFailed).toHaveBeenCalledWith(
+      expect.stringContaining(
+        'hetzner.token applies only to Packer build_target hetzner'
+      )
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
   })
 
   it('rejects two Pages stacks across merged files before scheduling', async () => {

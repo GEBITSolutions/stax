@@ -41,6 +41,7 @@
       "additionalProperties": false,
       "properties": {
         "project": { "description": "Project name; falls back to GitHub PROJECT.", "$ref": "#/$defs/deploymentValue" },
+        "secret_backend": { "description": "Default secret store for secret_backend.secret.<key> references. Overridable per stack. Default gh.", "type": "string", "enum": ["vault", "gh"], "default": "gh" },
         "customer_id": { "description": "Customer identifier; falls back to CUSTOMER_ID.", "$ref": "#/$defs/deploymentValue" },
         "stage": { "description": "Deployment stage; falls back to STAGE.", "$ref": "#/$defs/deploymentValue" },
         "cloud": { "description": "Azure or AWS, case-insensitive; falls back to CLOUD.", "type": ["string", "null"], "pattern": "^(?:[aA][zZ][uU][rR][eE]|[aA][wW][sS]|[^\\S\\r\\n]*)$" },
@@ -102,6 +103,7 @@
         "depends_on": { "description": "Stack ids deployed before this one.", "$ref": "#/$defs/stringList", "examples": [[]], "x-stax-types": "all" },
         "stack-groups": { "description": "Groups for selecting stacks in the deploy form.", "$ref": "#/$defs/stringList", "examples": [["core"]], "x-stax-types": "all" },
         "runs-on": { "description": "Runner label.", "type": "string", "examples": ["ubuntu-24.04"], "x-stax-types": "all" },
+        "secret_backend": { "description": "Overrides deployment.secret_backend for this stack. Default inherits deployment, then gh.", "type": "string", "enum": ["vault", "gh"], "examples": ["gh"], "x-stax-types": "all" },
         "input": {
           "description": "Inputs: reference strings (global.pipeline.var.<key>, stack.<id>.var.<key>, ...) or key/value maps.",
           "type": "array",
@@ -181,6 +183,7 @@
           "properties": {
             "location": { "description": "Hetzner location, for example fsn1.", "type": "string", "pattern": "^[a-z]{2,4}[0-9]?$", "examples": ["fsn1"] },
             "server_type": { "description": "Temporary build server type, for example cax11.", "type": "string", "pattern": "^[a-z][a-z0-9]{1,31}$", "examples": ["cax11"] },
+            "token": { "description": "Hetzner API token reference. When unset, the workflow uses the HCLOUD_TOKEN GitHub Environment secret.", "type": "string", "pattern": "^(secret_backend|gh)\\.secret\\.[A-Za-z0-9_]+$", "examples": ["secret_backend.secret.hcloud_token", "gh.secret.hcloud_token"], "x-stax-types": ["packer"] },
             "snapshot_name": { "description": "Snapshot name. Defaults to the stack id.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$", "examples": ["personal-assistant-golden"] },
             "snapshot_labels": {
               "description": "Extra snapshot labels. STAX adds stax_stack_id, stax_env, stax_git_sha, stax_build_target and managed_by=stax.",

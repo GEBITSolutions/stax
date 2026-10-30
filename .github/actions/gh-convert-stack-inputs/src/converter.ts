@@ -81,6 +81,33 @@ export async function resolveEnvValue(
   core.info(
     `Resolving Value for Input: ${input}, isComplexString: ${isComplexString}`
   )
+  if (input === 'secret_backend' || input.startsWith('secret_backend.')) {
+    if (!/^secret_backend\.secret\.[A-Za-z0-9_-]+$/.test(input)) {
+      throw new Error(`Invalid secret backend reference: ${input}`)
+    }
+
+    const key = input.slice('secret_backend.secret.'.length)
+    const backend = globalsContext?.secretBackend ?? 'gh'
+    let value: string | undefined
+    if (backend === 'vault') {
+      const vaultStore = globalsContext?.vaultStore
+      if (!vaultStore) {
+        throw new Error(
+          `Key Vault is not configured for secret_backend.secret.${key}`
+        )
+      }
+      value = await vaultStore.getSecret(key)
+    } else {
+      value = ghEnvironment.secret[key.toUpperCase()]
+    }
+
+    if (!value) {
+      throw new Error(`Secret ${key} is missing or empty in ${backend} backend`)
+    }
+    core.setSecret(value)
+    core.info(`✓ Resolved secret_backend.secret.${key} from ${backend} backend`)
+    return { key, value }
+  }
 
   if (isComplexString) {
     // --- globals.* (plural) deprecation shim ---
@@ -262,6 +289,7 @@ export async function resolveEnvValue(
           core.warning(`⚠ Using dummy value for gh.${type}.${key} (not found)`)
         }
       } else {
+        if (type === 'secret') core.setSecret(value)
         core.info(`✓ Resolved gh.${type}.${key} from GitHub Environment`)
       }
       return { key, value }

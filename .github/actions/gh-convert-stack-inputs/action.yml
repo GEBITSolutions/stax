@@ -49,6 +49,10 @@ inputs:
     description: 'Allow Null or not found variables and secrets'
     required: false
     default: 'false'
+  secret-backend:
+    description: 'Backend for secret_backend.secret.<key> references (gh or vault).'
+    required: false
+    default: 'gh'
   environment-name:
     description: 'Name of the github environment'
     required: false

@@ -19,6 +19,8 @@ export type InputType =
   | IInput[]
   | IInput
 
+export type SecretBackend = 'vault' | 'gh'
+
 export interface ITerraformConfig {
   id: string
   name?: string
@@ -26,6 +28,7 @@ export interface ITerraformConfig {
   globals?: Record<string, InputType>
   config_globals?: Record<string, InputType>
   type?: string
+  secret_backend?: SecretBackend
   if?: string
   input?: InputType[]
   'tf-vars'?: Record<string, string>
@@ -58,6 +61,7 @@ export interface ITerraformConfig {
     snapshot_name?: string
     snapshot_labels?: Record<string, string>
     keep_last?: number
+    token?: string
   }
   aws?: {
     regions?: string[]
@@ -94,6 +98,7 @@ export type IExternalRepos = Record<string, IExternalRepoEntry[]>
 export interface IDeployConfigDocument {
   stacks: ITerraformConfig[]
   externalRepos?: IExternalRepos
+  deployment?: { secret_backend?: SecretBackend }
   sourceFile?: string
 }
 

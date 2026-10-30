@@ -38,7 +38,7 @@ const requiredAws = ['state_bucket_name', 'state_region'];
 const requiredStateAzure = ['default_location', 'state_resource_group_name', 'state_storage_account_name'];
 const requiredStateAws = ['state_bucket_name'];
 const profiles = new Set(['deploy', 'state']);
-const fieldSet = new Set(fields);
+const fieldSet = new Set([...fields, 'secret_backend']);
 const booleanFields = new Set(['public_cloud_flag', 'aws_s3_compatible', 'aws_skip_sts_check', 'state_use_lockfile', 'state_use_path_style']);
 const endpointFields = ['aws_endpoint_url', 'aws_endpoint_url_s3', 'aws_endpoint_url_sts', 'aws_endpoint_url_iam'];
 // Optional AWS-only options with the value that keeps today's behaviour (AWS endpoints, S3 native locking, STS check).
@@ -64,6 +64,12 @@ function isAbsent(value) {
 function validateValue(field, value, source) {
   if (typeof value === 'string' && /[\r\n]/.test(value)) {
     throw new Error(`${source}.${field} must not contain newlines (unsafe for workflow environment data)`);
+  }
+  if (field === 'secret_backend') {
+    if (value !== 'vault' && value !== 'gh') {
+      throw new Error(`${source}.${field} must be 'vault' or 'gh'`);
+    }
+    return value;
   }
   if (isAbsent(value)) return undefined;
   if (booleanFields.has(field)) {

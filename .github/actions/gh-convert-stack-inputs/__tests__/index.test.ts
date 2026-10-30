@@ -1,10 +1,10 @@
 import { jest } from '@jest/globals'
 import * as core from '../__fixtures__/core.js'
-import { createKeyValue as originalCreateKeyValue } from '../src/converter.js'
-
-const createKeyValue = jest.fn(originalCreateKeyValue)
 
 jest.unstable_mockModule('@actions/core', () => core)
+const { createKeyValue: originalCreateKeyValue } =
+  await import('../src/converter.js')
+const createKeyValue = jest.fn(originalCreateKeyValue)
 jest.unstable_mockModule('../src/converter.js', () => ({ createKeyValue }))
 
 const { run } = await import('../src/index.js')
@@ -115,7 +115,7 @@ describe('index.ts', () => {
       null,
       true,
       false,
-      null
+      { config: {}, pipeline: {}, secretBackend: 'gh', vaultStore: null }
     )
     expect(core.setOutput).toHaveBeenCalledWith(
       'tf-vars-map',
@@ -147,7 +147,7 @@ describe('index.ts', () => {
       null,
       true,
       false,
-      null
+      { config: {}, pipeline: {}, secretBackend: 'gh', vaultStore: null }
     )
 
     expect(core.setOutput).toHaveBeenCalledWith(
@@ -209,7 +209,7 @@ describe('index.ts', () => {
       null,
       true,
       false,
-      null
+      { config: {}, pipeline: {}, secretBackend: 'gh', vaultStore: null }
     )
     expect(core.setOutput).toHaveBeenCalledWith(
       'tf-vars-map',
@@ -284,6 +284,62 @@ describe('index.ts', () => {
       'tf-vars-map',
       JSON.stringify([{ key: 'LEGACY_TOKEN', value: 'available' }])
     )
+  })
+
+  it.each(['', 'gh'])(
+    'resolves explicit secrets from GitHub with secret-backend=%s and masks the value',
+    async (backend) => {
+      createKeyValue.mockImplementation(originalCreateKeyValue)
+      core.getInput.mockImplementation((name) => {
+        if (name === 'secret-backend') return backend
+        if (name === 'secrets')
+          return JSON.stringify({ TOKEN: 'private-value' })
+        if (name === 'convertInputs')
+          return JSON.stringify([{ credential: 'secret_backend.secret.token' }])
+        return ''
+      })
+
+      await run()
+
+      expect(core.setFailed).not.toHaveBeenCalled()
+      expect(core.setSecret).toHaveBeenCalledWith('private-value')
+      expect(core.setOutput).toHaveBeenCalledWith(
+        'tf-vars-map',
+        JSON.stringify([{ key: 'credential', value: 'private-value' }])
+      )
+      expect(core.info.mock.calls.flat().join(' ')).not.toContain(
+        'private-value'
+      )
+    }
+  )
+
+  it('rejects vault backend without a Key Vault URL even with SSM configured and allowNull enabled', async () => {
+    core.getInput.mockImplementation((name) => {
+      if (name === 'secret-backend') return 'vault'
+      if (name === 'ssm-parameter-prefix') return '/infra'
+      if (name === 'allowNull') return 'true'
+      if (name === 'convertInputs')
+        return JSON.stringify(['secret_backend.secret.token'])
+      return ''
+    })
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      'Key Vault URL is required for secret-backend: vault'
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid backend values before output', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'secret-backend' ? 'ssm' : ''
+    )
+    await run()
+    expect(core.setFailed).toHaveBeenCalledWith(
+      'Invalid secret-backend: ssm. Expected gh or vault.'
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
   })
 
   it.each([
