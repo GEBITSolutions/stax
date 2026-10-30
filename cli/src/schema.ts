@@ -19,6 +19,7 @@ interface DeployConfigSchema {
   $id: string;
   properties: Record<string, unknown>;
   $defs: {
+    credentials: { propertyNames: { enum: string[]; pattern: string } };
     externalRepo: { properties: Record<string, unknown> };
     stack: {
       properties: Record<string, StackFieldSchema>;
@@ -39,6 +40,7 @@ ajv.addKeyword({
 
 export const validateDeployConfig = ajv.compile(schema);
 export const STACK_TYPES = schema.$defs.stack.properties.type?.enum ?? [];
+export const CREDENTIAL_NAMES = schema.$defs.credentials.propertyNames.enum;
 
 /**
  * Fields the schema requires for `type`, besides id and type, in schema order.
