@@ -268,6 +268,25 @@ jobs:
         ref: ${{ inputs.actions-version || 'main' }}
         clean: false
 
+    - name: Resolve credentials
+      id: resolve-credentials
+      uses: ./.github/actions/gh-resolve-credentials
+      with:
+        required: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_SESSION_TOKEN,INFRACOST_API_KEY,CI_GITHUB_TOKEN_TERRAFORM
+        credentials: ${{ toJson(fromJson(inputs.data)['credentials'] || fromJson('{}')) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
+        environment: ${{ env.ENVIRONMENT }}
+        gh-secrets: ${{ toJson(secrets) }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+        keystore-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        keystore-sp-client-secret: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+        keystore-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        keystore-oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
     - name: Merge stack to global-vars
       id: merge-global-vars
       uses: actions/github-script@v8
@@ -416,9 +435,9 @@ jobs:
         ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
         aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
         aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
-        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
-        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
-        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID || (vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '') }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '') }}
+        aws-session-token: ${{ env.AWS_SESSION_TOKEN || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '') }}
 
     - id: convert-inputs-key-vault
       name: Convert Inputs Key Vault (ARM SP)
@@ -504,18 +523,19 @@ jobs:
         relative-module-path: ${{inputs.relative-module-path}}
         stage: ${{ env.STAGE }}
         location: ${{ inputs.location || env.DEFAULT_LOCATION }}
-        TF_PROVIDER_GH_TOKEN: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+        TF_PROVIDER_GH_TOKEN: ${{ env.CI_GITHUB_TOKEN_TERRAFORM || secrets.CI_GITHUB_TOKEN_TERRAFORM }}
         TF_PROVIDER_GH_OWNER: ${{ vars.TF_PROVIDER_GH_OWNER || secrets.TF_PROVIDER_GH_OWNER || github.repository_owner }}
-        INFRACOST_API_KEY: ${{ secrets.INFRACOST_API_KEY }}
+        INFRACOST_API_KEY: ${{ env.INFRACOST_API_KEY || secrets.INFRACOST_API_KEY }}
         ARM_CLIENT_ID: ${{ env.ARM_CLIENT_ID }}
         ARM_CLIENT_SECRET: ${{ env.ARM_CLIENT_SECRET }}
         ARM_TENANT_ID: ${{ env.ARM_TENANT_ID }}
         ARM_SUBSCRIPTION_ID: ${{ env.ARM_SUBSCRIPTION_ID }}
         oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
         cloud: ${{ inputs.cloud }}
-        AWS_ACCESS_KEY_ID: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
-        AWS_SECRET_ACCESS_KEY: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
-        AWS_SESSION_TOKEN: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        aws-static-credentials-resolved: ${{ contains(fromJson(steps.resolve-credentials.outputs.resolved), 'AWS_ACCESS_KEY_ID') || contains(fromJson(steps.resolve-credentials.outputs.resolved), 'AWS_SECRET_ACCESS_KEY') || contains(fromJson(steps.resolve-credentials.outputs.resolved), 'AWS_SESSION_TOKEN') }}
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID || (vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '') }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '') }}
+        AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '') }}
         AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
         AWS_REGION: ${{ inputs.location || env.DEFAULT_LOCATION }}
 
@@ -584,6 +604,25 @@ jobs:
         repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
         ref: ${{ inputs.actions-version || 'main' }}
         clean: false
+
+    - name: Resolve credentials
+      id: resolve-credentials
+      uses: ./.github/actions/gh-resolve-credentials
+      with:
+        required: AWS_ACCESS_KEY_ID,AWS_SECRET_ACCESS_KEY,AWS_SESSION_TOKEN,INFRACOST_API_KEY,CI_GITHUB_TOKEN_TERRAFORM
+        credentials: ${{ toJson(fromJson(inputs.data)['credentials'] || fromJson('{}')) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
+        environment: ${{ env.ENVIRONMENT }}
+        gh-secrets: ${{ toJson(secrets) }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ env.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+        keystore-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        keystore-sp-client-secret: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+        keystore-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        keystore-oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
 
     - id: source-repo
       name: Determine source repository and token
@@ -729,9 +768,9 @@ jobs:
         ssm-parameter-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX }}
         aws-region: ${{ vars.REPO_KEYSTORE_SSM_REGION }}
         aws-role-arn: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
-        aws-access-key-id: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
-        aws-secret-access-key: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
-        aws-session-token: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID || (vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '') }}
+        aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '') }}
+        aws-session-token: ${{ env.AWS_SESSION_TOKEN || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '') }}
 
     - id: convert-inputs-key-vault
       name: Convert Inputs Key Vault (ARM SP)
@@ -820,7 +859,7 @@ jobs:
         gh-data-transfer-ssm-prefix: ${{ vars.REPO_KEYSTORE_SSM_PREFIX || '' }}
         gh-data-transfer-ssm-region: ${{ vars.REPO_KEYSTORE_SSM_REGION || '' }}
         gh-data-transfer-ssm-kms-key-id: ${{ vars.REPO_KEYSTORE_SSM_KMS_KEY_ID || '' }}
-        TF_PROVIDER_GH_TOKEN: ${{ secrets.CI_GITHUB_TOKEN_TERRAFORM }}
+        TF_PROVIDER_GH_TOKEN: ${{ env.CI_GITHUB_TOKEN_TERRAFORM || secrets.CI_GITHUB_TOKEN_TERRAFORM }}
         TF_PROVIDER_GH_OWNER: ${{ vars.TF_PROVIDER_GH_OWNER || secrets.TF_PROVIDER_GH_OWNER || github.repository_owner }}
         ENV_TRANSFER_GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.CI_ENV_TRANSFER_GH_TOKEN }}
         gh-environment-name: ${{ env.ENVIRONMENT }}
@@ -834,8 +873,9 @@ jobs:
         keystore-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID || '' }}
         keystore-oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
         cloud: ${{ inputs.cloud }}
-        AWS_ACCESS_KEY_ID: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '' }}
-        AWS_SECRET_ACCESS_KEY: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '' }}
-        AWS_SESSION_TOKEN: ${{ vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '' }}
+        aws-static-credentials-resolved: ${{ contains(fromJson(steps.resolve-credentials.outputs.resolved), 'AWS_ACCESS_KEY_ID') || contains(fromJson(steps.resolve-credentials.outputs.resolved), 'AWS_SECRET_ACCESS_KEY') || contains(fromJson(steps.resolve-credentials.outputs.resolved), 'AWS_SESSION_TOKEN') }}
+        AWS_ACCESS_KEY_ID: ${{ env.AWS_ACCESS_KEY_ID || (vars.OIDC_ENABLED != 'true' && secrets.AWS_ACCESS_KEY_ID || '') }}
+        AWS_SECRET_ACCESS_KEY: ${{ env.AWS_SECRET_ACCESS_KEY || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SECRET_ACCESS_KEY || '') }}
+        AWS_SESSION_TOKEN: ${{ env.AWS_SESSION_TOKEN || (vars.OIDC_ENABLED != 'true' && secrets.AWS_SESSION_TOKEN || '') }}
         AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN || secrets.AWS_ROLE_ARN }}
         AWS_REGION: ${{ inputs.location || env.DEFAULT_LOCATION }}

@@ -340,41 +340,6 @@ jobs:
           }
           core.setOutput('default-location', resolved.DEFAULT_LOCATION);
 
-    - name: Validate Environment
-      id: validate-env
-      uses: actions/github-script@v8
-      env:
-        SKIP_AZURE_CREDENTIALS_VALIDATION: ${{ inputs.skip-azure-credentials-validation }}
-        OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
-      with:
-        script: |
-          const env = process.env;
-          const skipCloudValidation = (env.SKIP_AZURE_CREDENTIALS_VALIDATION || 'false') === 'true';
-          const oidcEnabled = (env.OIDC_ENABLED || 'false') === 'true';
-          const cloud = env.CLOUD;
-          const required_vars = skipCloudValidation || cloud === 'aws'
-            ? [] : ['ARM_CLIENT_ID', 'ARM_TENANT_ID', 'ARM_SUBSCRIPTION_ID'];
-          const required_secrets = skipCloudValidation ? [] : cloud === 'aws'
-            ? (oidcEnabled ? ['AWS_ROLE_ARN'] : ['AWS_ACCESS_KEY_ID', 'AWS_SECRET_ACCESS_KEY'])
-            : (oidcEnabled ? [] : ['ARM_CLIENT_SECRET']);
-
-          const missing_vars = required_vars.filter((key) => !env[key]);
-          const missing_secrets = required_secrets.filter((key) => !env[key]);
-          if (missing_vars.length > 0) {
-            core.setFailed(`Required environment variables are missing: ${missing_vars.join(', ')}`);
-          }
-          if (missing_secrets.length > 0) {
-            core.setFailed(`Required environment secrets are missing: ${missing_secrets.join(', ')}`);
-          }
-
-          // OIDC exchanges a GitHub token (audience sts.amazonaws.com) at AWS STS; S3-compatible stores do not offer that.
-          if (cloud === 'aws' && oidcEnabled && (env.DEPLOYMENT_AWS_ENDPOINT_URL || env.DEPLOYMENT_AWS_ENDPOINT_URL_STS)) {
-            core.setFailed('OIDC_ENABLED cannot be combined with aws_endpoint_url / aws_endpoint_url_sts. Use static AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY secrets for S3-compatible endpoints.');
-          }
-          if (cloud === 'aws' && env.STATE_USE_LOCKFILE === 'false') {
-            core.warning('state_use_lockfile is false: Terraform state is not locked, so concurrent deployments of a stack can corrupt its state.');
-          }
-
     - name: Eval Branch or Tag Name
       id: get-tag
       run: |2
@@ -498,6 +463,16 @@ jobs:
         deploy-configs: ${{ steps.read-deploy-config.outputs.deploy-configs }}
         global-vars: ${{ steps.global-env-vars.outputs.global-vars }}
         external-repos: ${{ steps.read-deploy-config.outputs.external-repos }}
+
+    - name: Validate Environment
+      id: validate-env
+      uses: actions/github-script@v8
+      env:
+        SKIP_AZURE_CREDENTIALS_VALIDATION: ${{ inputs.skip-azure-credentials-validation }}
+        OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
+        LAYER_DEPLOYMENTS_JSON: ${{ steps.create-deploy-config.outputs.layer-deployments }}
+      with:
+        script: await (await import(require('node:url').pathToFileURL(`${process.env.GITHUB_WORKSPACE}/_shared_actions/.github/scripts/validate-environment.mjs`))).validateEnvironment({ core });
 
     - name: Build Layer JSON
       id: build-layers

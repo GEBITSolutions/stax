@@ -169,6 +169,10 @@ inputs:
     required: false
     description: "Enable OIDC (federated token) authentication instead of client secret"
     default: "false"
+  aws-static-credentials-resolved:
+    required: false
+    description: "Use explicitly resolved static AWS credentials without changing Azure or Key Vault OIDC authentication"
+    default: "false"
   ARM_CLIENT_ID:
     required: true
     description: "SECRET"
@@ -525,6 +529,7 @@ runs:
       ACTION_AWS_ROLE_ARN: ${{ inputs.AWS_ROLE_ARN }}
       ACTION_AWS_REGION: ${{ inputs.AWS_REGION }}
       OIDC_ENABLED: ${{ inputs.oidc-enabled }}
+      ACTION_AWS_STATIC_CREDENTIALS_RESOLVED: ${{ inputs.aws-static-credentials-resolved }}
       ACTION_AWS_SKIP_STS_CHECK: ${{ inputs.aws-skip-sts-check }}
       ACTION_AWS_ENDPOINTS_FILE: ${{ steps.aws-endpoints.outputs.env-file }}
     run: |
@@ -543,7 +548,7 @@ runs:
       export AWS_REGION="${ACTION_AWS_REGION}"
       export AWS_DEFAULT_REGION="${ACTION_AWS_REGION}"
 
-      if [ "${OIDC_ENABLED}" = "true" ]; then
+      if [ "${OIDC_ENABLED}" = "true" ] && [ "${ACTION_AWS_STATIC_CREDENTIALS_RESOLVED}" != "true" ]; then
         if [ -n "${ACTION_AWS_SECRET_ACCESS_KEY}" ]; then
           echo "::error::OIDC is enabled, but AWS_SECRET_ACCESS_KEY is set. Clear it and use role assumption instead."
           exit 1
