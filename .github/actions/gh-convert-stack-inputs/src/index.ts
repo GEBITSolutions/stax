@@ -54,6 +54,15 @@ export async function run(): Promise<void> {
     const aws_access_key_id = core.getInput('aws-access-key-id')
     const aws_secret_access_key = core.getInput('aws-secret-access-key')
     const aws_session_token = core.getInput('aws-session-token')
+    const secretBackend = core.getInput('secret-backend') || 'gh'
+    if (secretBackend !== 'gh' && secretBackend !== 'vault') {
+      throw new Error(
+        `Invalid secret-backend: ${secretBackend}. Expected gh or vault.`
+      )
+    }
+    if (secretBackend === 'vault' && !key_vault_url) {
+      throw new Error('Key Vault URL is required for secret-backend: vault')
+    }
 
     if (ssm_parameter_prefix && key_vault_url) {
       throw new Error(
@@ -187,7 +196,9 @@ export async function run(): Promise<void> {
 
     const globalsContext: GlobalsContext = {
       config: configGlobals,
-      pipeline: pipelineGlobals
+      pipeline: pipelineGlobals,
+      secretBackend,
+      vaultStore: null
     }
 
     const hasGlobals =
@@ -245,6 +256,7 @@ export async function run(): Promise<void> {
         },
         oidc_enabled
       )
+      globalsContext.vaultStore = secretStore
     }
 
     for (let i = 0; i < listInputs.length; i++) {
@@ -256,7 +268,7 @@ export async function run(): Promise<void> {
           secretStore,
           true,
           allowNull == 'true',
-          hasGlobals ? globalsContext : null
+          globalsContext
         )
       )
     }

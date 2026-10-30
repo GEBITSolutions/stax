@@ -51069,6 +51069,30 @@ async function resolveEnvValue(basePathValue, input, ghEnvironment, secretStore,
     const split = input.split('.');
     const isComplexString = shouldBeComplexString(input);
     coreExports.info(`Resolving Value for Input: ${input}, isComplexString: ${isComplexString}`);
+    if (input === 'secret_backend' || input.startsWith('secret_backend.')) {
+        if (!/^secret_backend\.secret\.[A-Za-z0-9_-]+$/.test(input)) {
+            throw new Error(`Invalid secret backend reference: ${input}`);
+        }
+        const key = input.slice('secret_backend.secret.'.length);
+        const backend = globalsContext?.secretBackend ?? 'gh';
+        let value;
+        if (backend === 'vault') {
+            const vaultStore = globalsContext?.vaultStore;
+            if (!vaultStore) {
+                throw new Error(`Key Vault is not configured for secret_backend.secret.${key}`);
+            }
+            value = await vaultStore.getSecret(key);
+        }
+        else {
+            value = ghEnvironment.secret[key.toUpperCase()];
+        }
+        if (!value) {
+            throw new Error(`Secret ${key} is missing or empty in ${backend} backend`);
+        }
+        coreExports.setSecret(value);
+        coreExports.info(`✓ Resolved secret_backend.secret.${key} from ${backend} backend`);
+        return { key, value };
+    }
     if (isComplexString) {
         // --- globals.* (plural) deprecation shim ---
         if (split[0] === 'globals' && split.length >= 2) {
@@ -51206,6 +51230,8 @@ async function resolveEnvValue(basePathValue, input, ghEnvironment, secretStore,
                 }
             }
             else {
+                if (type === 'secret')
+                    coreExports.setSecret(value);
                 coreExports.info(`✓ Resolved gh.${type}.${key} from GitHub Environment`);
             }
             return { key, value };
@@ -98166,6 +98192,13 @@ async function run() {
         const aws_access_key_id = coreExports.getInput('aws-access-key-id');
         const aws_secret_access_key = coreExports.getInput('aws-secret-access-key');
         const aws_session_token = coreExports.getInput('aws-session-token');
+        const secretBackend = coreExports.getInput('secret-backend') || 'gh';
+        if (secretBackend !== 'gh' && secretBackend !== 'vault') {
+            throw new Error(`Invalid secret-backend: ${secretBackend}. Expected gh or vault.`);
+        }
+        if (secretBackend === 'vault' && !key_vault_url) {
+            throw new Error('Key Vault URL is required for secret-backend: vault');
+        }
         if (ssm_parameter_prefix && key_vault_url) {
             throw new Error('ssm-parameter-prefix and key-vault-url are mutually exclusive. Configure exactly one keystore backend.');
         }
@@ -98288,7 +98321,9 @@ async function run() {
         }
         const globalsContext = {
             config: configGlobals,
-            pipeline: pipelineGlobals
+            pipeline: pipelineGlobals,
+            secretBackend,
+            vaultStore: null
         };
         const hasGlobals = Object.keys(configGlobals).length > 0 ||
             Object.keys(pipelineGlobals).length > 0;
@@ -98321,9 +98356,10 @@ async function run() {
                 clientSecret: key_vault_sp_client_secret,
                 tenantId: key_vault_sp_tenant_id
             }, oidc_enabled);
+            globalsContext.vaultStore = secretStore;
         }
         for (let i = 0; i < listInputs.length; i++) {
-            tf_input.push(await createKeyValue(basePathValue, listInputs[i], ghEnvironment, secretStore, true, allowNull == 'true', hasGlobals ? globalsContext : null));
+            tf_input.push(await createKeyValue(basePathValue, listInputs[i], ghEnvironment, secretStore, true, allowNull == 'true', globalsContext));
         }
         for (const [key, value] of Object.entries(additionalInputs)) {
             tf_input.push({ key, value });

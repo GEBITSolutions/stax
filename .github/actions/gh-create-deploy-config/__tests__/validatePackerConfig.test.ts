@@ -126,6 +126,53 @@ describe('validatePackerConfig', () => {
     expect(warnings.join('\n')).toMatch(/not implemented/)
   })
 
+  it.each(['secret_backend.secret.hcloud_token', 'gh.secret.HCLOUD_TOKEN'])(
+    'accepts Hetzner token reference %s',
+    (token) => {
+      expect(() =>
+        validatePackerConfig(
+          validPackerConfig({
+            build_target: 'hetzner',
+            hetzner: { location: 'fsn1', server_type: 'cax11', token }
+          })
+        )
+      ).not.toThrow()
+    }
+  )
+
+  it.each([
+    '',
+    'HCLOUD_TOKEN',
+    'vault.secret.hcloud_token',
+    'secret_backend.var.x',
+    'gh.secret.x.y',
+    'gh.secret.x-y',
+    'gh.secret.x\nBAD'
+  ])('rejects invalid Hetzner token reference %p', (token) => {
+    expect(() =>
+      validatePackerConfig(
+        validPackerConfig({
+          build_target: 'hetzner',
+          hetzner: { location: 'fsn1', server_type: 'cax11', token }
+        })
+      )
+    ).toThrow(/hetzner.token must reference/)
+  })
+
+  it('rejects a token on non-Hetzner Packer builds', () => {
+    expect(() =>
+      validatePackerConfig(
+        validPackerConfig({
+          hetzner: {
+            location: 'fsn1',
+            server_type: 'cax11',
+            token: 'gh.secret.hcloud_token'
+          }
+        })
+      )
+    ).toThrow(/hetzner does not apply when build_target is azure/)
+  })
+
   it('rejects a Hetzner target without its object and an Azure target that carries one', () => {
     expect(() =>
       validatePackerConfig(validPackerConfig({ build_target: 'hetzner' }))
@@ -192,9 +239,9 @@ describe('validatePackerConfig', () => {
       )
     ).not.toThrow()
 
-    expect(() =>
-      validatePackerConfig(validPackerConfig({ scan: {} }))
-    ).toThrow(/at least one/)
+    expect(() => validatePackerConfig(validPackerConfig({ scan: {} }))).toThrow(
+      /at least one/
+    )
 
     expect(() =>
       validatePackerConfig(

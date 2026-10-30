@@ -206,6 +206,9 @@ jobs:
     name: "TF Plan ${{ inputs.terraform-project }}"
     runs-on: ${{ inputs.runs-on || vars.RUNNER || 'ubuntu-22.04' }}
     environment: ${{ inputs.environment || 'dev' }}
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       # Test if outputs are valid
       plan-artifacts-name: ${{ steps.plan.outputs.plan-artifacts-name }}
@@ -389,6 +392,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -402,6 +406,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -423,6 +428,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -443,6 +449,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -517,6 +524,9 @@ jobs:
     runs-on: ${{ inputs.runs-on || vars.RUNNER || 'ubuntu-22.04' }}
     environment: ${{ inputs.environment || 'dev' }}
     name: ${{ (inputs.destroy == 'true') && 'TF Destroy' || 'TF Apply' }} ${{ inputs.terraform-project }}
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       apply-exit-code: ${{ steps.apply.outputs.apply-exit-code }}
     env:
@@ -695,6 +705,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -708,6 +719,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -729,6 +741,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}
@@ -749,6 +762,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ inputs.tf-vars-input }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         config-globals: ${{ inputs.globals }}

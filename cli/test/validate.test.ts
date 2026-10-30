@@ -48,6 +48,69 @@ stacks:
     expect(validateConfigText("deployment:\n  project: shop\n  cloud: Azure\n  public_cloud_flag: false\n  stage: null\nstacks:\n  - id: docs\n    type: github-pages-site-deploy\n")).toEqual([]);
   });
 
+  it('accepts deployment and per-stack secret backends with Hetzner token references', () => {
+    expect(validateConfigText(`deployment:
+  secret_backend: vault
+stacks:
+  - id: golden
+    type: packer
+    packer_directory: packer/golden
+    packer_version: "1.16.1"
+    build_target: hetzner
+    hetzner:
+      location: fsn1
+      server_type: cax11
+      token: secret_backend.secret.hcloud_token
+  - id: infra
+    type: opentofu
+    folder: infra
+    secret_backend: gh
+`)).toEqual([]);
+    expect(validateConfigText(`stacks:
+  - id: golden
+    type: packer
+    packer_directory: packer/golden
+    packer_version: "1.16.1"
+    build_target: hetzner
+    hetzner:
+      location: fsn1
+      server_type: cax11
+      token: gh.secret.hcloud_token
+`)).toEqual([]);
+  });
+
+  it.each(["vaults", "", "GH", "null"])('rejects invalid deployment secret_backend %p', (backend) => {
+    const config = `deployment:\n  secret_backend: ${JSON.stringify(backend)}\nstacks:\n  - id: docs\n    type: github-pages-site-deploy\n`;
+    expect(validateConfigText(config)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: "error", message: expect.stringContaining("deployment.secret_backend") }),
+    ]));
+  });
+
+  it('rejects invalid stack secret_backend', () => {
+    const findings = validateConfigText("stacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n    secret_backend: invalid\n");
+    expect(findings).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: "error", message: expect.stringContaining("stacks[0].secret_backend") }),
+    ]));
+  });
+
+  it.each(["HCLOUD_TOKEN", "vault.secret.hcloud_token", "gh.secret.", "gh.secret.bad-name", "secret_backend.var.x"])('rejects invalid Hetzner token reference %p', (token) => {
+    const config = `stacks:\n  - id: golden\n    type: packer\n    packer_directory: packer/golden\n    packer_version: "1.16.1"\n    build_target: hetzner\n    hetzner:\n      location: fsn1\n      server_type: cax11\n      token: ${token}\n`;
+    expect(validateConfigText(config)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: "error", message: expect.stringContaining("stacks[0].hetzner.token") }),
+    ]));
+  });
+
+  it('rejects Hetzner token on another Packer target or a non-Packer stack', () => {
+    const azure = validateConfigText("stacks:\n  - id: golden\n    type: packer\n    packer_directory: packer/golden\n    packer_version: 1.16.1\n    hetzner:\n      location: fsn1\n      server_type: cax11\n      token: gh.secret.hcloud_token\n");
+    expect(azure).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: "error", message: expect.stringContaining("hetzner: does not apply when build_target is azure") }),
+    ]));
+    const other = validateConfigText("stacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n    hetzner:\n      token: gh.secret.hcloud_token\n");
+    expect(other).toEqual(expect.arrayContaining([
+      expect.objectContaining({ severity: "error", message: expect.stringContaining("hetzner.token: applies to packer stacks") }),
+    ]));
+  });
+
   const wasabi = `deployment:
   cloud: aws
   aws_endpoint_url_s3: https://s3.eu-central-2.wasabisys.com
@@ -367,6 +430,18 @@ describe("stax validate config", () => {
   function run(cwd: string, args: string[]) {
     return spawnSync(process.execPath, [CLI, "validate", "config", ...args], { cwd, encoding: "utf8" });
   }
+
+  it('accepts a vault backend config and fails invalid backend and token references', () => {
+    const cwd = project({
+      'configs/valid.yaml': 'deployment:\n  secret_backend: vault\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n',
+      'configs/invalid.yaml': 'deployment:\n  secret_backend: typo\nstacks:\n  - id: golden\n    type: packer\n    packer_directory: packer/golden\n    packer_version: "1.16.1"\n    build_target: hetzner\n    hetzner:\n      location: fsn1\n      server_type: cax11\n      token: literal-token\n',
+    });
+    expect(run(cwd, ['configs/valid.yaml', '--strict']).status).toBe(0);
+    const invalid = run(cwd, ['configs/invalid.yaml']);
+    expect(invalid.status).toBe(1);
+    expect(invalid.stdout).toContain('deployment.secret_backend');
+    expect(invalid.stdout).toContain('stacks[0].hetzner.token');
+  });
 
   it("checks configs/ by default and only descends into subdirectories with -r", () => {
     const cwd = project({ "configs/a.yaml": VALID, "configs/team/b.yml": ERROR, "configs/notes.txt": "x" });

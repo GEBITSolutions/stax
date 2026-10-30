@@ -24,9 +24,13 @@ export type ghEnvironmentType = {
   secret: Record<string, string>
 }
 
+export type SecretBackend = 'gh' | 'vault'
+
 export type GlobalsContext = {
   config: Record<string, InputType>
   pipeline: Record<string, string | boolean>
+  secretBackend?: SecretBackend
+  vaultStore?: SecretReader | null
 }
 
 /**

@@ -383,6 +383,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
           '{}' }}
@@ -396,6 +397,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
           '{}' }}
@@ -416,6 +418,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
           '{}' }}
@@ -436,6 +439,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         config-globals: ${{ fromJson(inputs.data)['config_globals'] && toJson(fromJson(inputs.data)['config_globals']) ||
           '{}' }}

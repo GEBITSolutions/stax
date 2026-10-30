@@ -32,6 +32,9 @@ inputs:
     description: 'JSON object of external repository configurations (from deploy-config externalRepos).'
     required: false
     default: '{}'
+  key-vault-url:
+    description: 'Environment Key Vault URL required for stacks using secret_backend: vault.'
+    required: false
 
 outputs:
   layer-deployments:

@@ -188,6 +188,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         pipeline-globals: ${{ inputs.env }}
@@ -199,6 +200,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         pipeline-globals: ${{ inputs.env }}
@@ -218,6 +220,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         pipeline-globals: ${{ inputs.env }}
@@ -236,6 +239,7 @@ jobs:
       with:
         variables: ${{ toJson(vars) }}
         secrets: ${{ toJson(secrets) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
         convertInputs: ${{ toJson(fromJson(inputs.data)['input']) }}
         additionalInputs: ${{ steps.merge-global-vars.outputs.result }}
         pipeline-globals: ${{ inputs.env }}

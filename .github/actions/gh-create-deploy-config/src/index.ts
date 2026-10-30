@@ -46,6 +46,9 @@ export async function run(): Promise<void> {
     const global_vars_JSON: string = core.getInput('global-vars', {
       required: false
     })
+    const keyVaultUrl: string = core.getInput('key-vault-url', {
+      required: false
+    })
 
     let deploy_depth_int: number
     if (deploy_depth === '') {
@@ -173,9 +176,21 @@ export async function run(): Promise<void> {
     const merged = mergeDeployConfigDocuments(documents)
     deploy_config = merged.stacks
     external_repos = merged.externalRepos
+    for (const config of deploy_config) {
+      if (config.secret_backend === 'vault' && keyVaultUrl.trim() === '') {
+        throw new Error(
+          `Stack "${config.id}" uses secret_backend: vault but key-vault-url is not configured (set REPO_KEYSTORE_KEY_VAULT_URL).`
+        )
+      }
+    }
     validateGitHubPagesConfig(deploy_config, global_vars)
 
     for (const config of deploy_config) {
+      if (config.type !== 'packer' && config.hetzner?.token !== undefined) {
+        throw new Error(
+          `Stack "${config.id}" hetzner.token applies only to Packer build_target hetzner.`
+        )
+      }
       validatePackerConfig(config, (message) => core.warning(message))
       validateStackFolder(config)
     }

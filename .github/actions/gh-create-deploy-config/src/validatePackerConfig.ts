@@ -137,6 +137,17 @@ export function validatePackerConfig(
         `Packer stack "${config.id}" hetzner.location and hetzner.server_type are required.`
       )
     }
+    if (
+      config.hetzner.token !== undefined &&
+      (typeof config.hetzner.token !== 'string' ||
+        !/^(secret_backend|gh)\.secret\.[A-Za-z0-9_]+$/.test(
+          config.hetzner.token
+        ))
+    ) {
+      throw new Error(
+        `Packer stack "${config.id}" hetzner.token must reference secret_backend.secret.<key> or gh.secret.<key>.`
+      )
+    }
   } else if (config.hetzner !== undefined) {
     throw new Error(
       `Packer stack "${config.id}" hetzner does not apply when build_target is ${buildTarget}.`
@@ -155,7 +166,11 @@ export function validatePackerConfig(
   }
 
   if (config.scan !== undefined) {
-    if (!config.scan || typeof config.scan !== 'object' || Array.isArray(config.scan)) {
+    if (
+      !config.scan ||
+      typeof config.scan !== 'object' ||
+      Array.isArray(config.scan)
+    ) {
       throw new Error(
         `Packer stack "${config.id}" scan must be an object with trivy, lynis and/or goss.`
       )
@@ -177,7 +192,9 @@ export function validatePackerConfig(
     if (config.scan.trivy !== undefined) {
       const trivy = config.scan.trivy
       if (!trivy || typeof trivy !== 'object' || Array.isArray(trivy)) {
-        throw new Error(`Packer stack "${config.id}" scan.trivy must be an object.`)
+        throw new Error(
+          `Packer stack "${config.id}" scan.trivy must be an object.`
+        )
       }
       if (
         trivy.severity !== undefined &&
@@ -204,7 +221,9 @@ export function validatePackerConfig(
     if (config.scan.lynis !== undefined) {
       const lynis = config.scan.lynis
       if (!lynis || typeof lynis !== 'object' || Array.isArray(lynis)) {
-        throw new Error(`Packer stack "${config.id}" scan.lynis must be an object.`)
+        throw new Error(
+          `Packer stack "${config.id}" scan.lynis must be an object.`
+        )
       }
       if (lynis.min_hardening_index !== undefined) {
         const min = lynis.min_hardening_index
@@ -218,7 +237,9 @@ export function validatePackerConfig(
     if (config.scan.goss !== undefined) {
       const goss = config.scan.goss
       if (!goss || typeof goss !== 'object' || Array.isArray(goss)) {
-        throw new Error(`Packer stack "${config.id}" scan.goss must be an object.`)
+        throw new Error(
+          `Packer stack "${config.id}" scan.goss must be an object.`
+        )
       }
       if (typeof goss.spec !== 'string' || goss.spec.trim() === '') {
         throw new Error(
