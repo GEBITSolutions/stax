@@ -194,6 +194,12 @@ stacks:
     expect(validateConfigText("deployment:\n  secret_backend: vault\n  credentials: {}\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n", {})).toEqual([]);
   });
 
+  it("does not require a vault URL for unused vault defaults", () => {
+    const defaults = "deployment:\n  secret_backend: vault\n  credentials:\n    AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id\n";
+    expect(validateConfigText(`${defaults}stacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n    secret_backend: gh\n`, {})).toEqual([]);
+    expect(validateConfigText(`${defaults}stacks: []\n`, {}).filter(finding => finding.severity === "error")).toEqual([]);
+  });
+
   it("requires vault URL when a stack selects vault and inherits or adds credentials", () => {
     const inherited = `deployment:
   credentials:

@@ -419,17 +419,15 @@ function checkCredentialVaultUrl(data: Record<string, unknown>, report: Reporter
   const deployment = isRecord(data.deployment) ? data.deployment : undefined;
   const defaults = deployment && isRecord(deployment.credentials) ? deployment.credentials : undefined;
   const hasDefaults = defaults !== undefined && Object.keys(defaults).length > 0;
-  if (deployment?.secret_backend === "vault" && hasDefaults) {
-    report.add("error", ["deployment", "credentials"], "REPO_KEYSTORE_KEY_VAULT_URL is required for vault-backed credentials");
-  }
   if (!Array.isArray(data.stacks)) return;
   data.stacks.forEach((stack, index) => {
     if (!isRecord(stack)) return;
     const backend = stack.secret_backend ?? deployment?.secret_backend ?? "gh";
     const overrides = isRecord(stack.credentials) ? stack.credentials : undefined;
     if (backend !== "vault" || (!hasDefaults && !(overrides && Object.keys(overrides).length > 0))) return;
-    if (deployment?.secret_backend === "vault" && hasDefaults) return; // already reported for deployment defaults
-    report.add("error", ["stacks", index, "credentials"], "REPO_KEYSTORE_KEY_VAULT_URL is required for vault-backed credentials");
+    const path: Path = deployment?.secret_backend === "vault" && hasDefaults
+      ? ["deployment", "credentials"] : ["stacks", index, "credentials"];
+    report.add("error", path, "REPO_KEYSTORE_KEY_VAULT_URL is required for vault-backed credentials");
   });
 }
 
