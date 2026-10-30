@@ -1,0 +1,57 @@
+---
+name: Resolve deployment credentials
+description: Resolve mapped deployment credentials from GitHub secrets or Azure Key Vault.
+inputs:
+  required:
+    description: Comma-separated environment variable names required by this job.
+    required: true
+  credentials:
+    description: JSON object mapping allowed credential names to secret references.
+    required: false
+    default: '{}'
+  secret-backend:
+    description: Effective backend for secret_backend.secret references (gh or vault).
+    required: false
+    default: gh
+  environment:
+    description: GitHub Environment name used as Key Vault secret prefix.
+    required: false
+  gh-secrets:
+    description: JSON object of GitHub Environment secrets.
+    required: false
+    default: '{}'
+  key-vault-url:
+    description: Azure Key Vault URL.
+    required: false
+  key-vault-sp-client-id:
+    description: Azure Key Vault service principal client ID.
+    required: false
+  key-vault-sp-client-secret:
+    description: Azure Key Vault service principal client secret.
+    required: false
+  key-vault-sp-tenant-id:
+    description: Azure Key Vault service principal tenant ID.
+    required: false
+  oidc-enabled:
+    description: Use OIDC for the Key Vault service principal.
+    required: false
+    default: 'false'
+  keystore-sp-client-id:
+    description: Dedicated Key Vault service principal client ID; takes precedence when set.
+    required: false
+  keystore-sp-client-secret:
+    description: Dedicated Key Vault service principal client secret.
+    required: false
+  keystore-sp-tenant-id:
+    description: Dedicated Key Vault service principal tenant ID.
+    required: false
+  keystore-oidc-enabled:
+    description: Use OIDC for the dedicated Key Vault service principal.
+    required: false
+    default: 'false'
+outputs:
+  resolved:
+    description: JSON array of credential names resolved and exported (never secret values).
+runs:
+  using: node24
+  main: dist/index.js

@@ -1,0 +1,118 @@
+{
+  "name": "gh-resolve-credentials",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "license": "GPL-3.0-only",
+  "engines": {
+    "node": ">=24.0.0 <25.0.0",
+    "npm": ">=11.0.0 <12.0.0"
+  },
+  "scripts": {
+    "prebuild": "cat package.json | jq .typescriptConfig > tsconfig.json && cat package.json | jq .typescriptConfigBase > tsconfig.base.json && cat package.json | jq .typescriptConfigEslint > tsconfig.eslint.json",
+    "postbuild": "rm tsconfig.json tsconfig.eslint.json tsconfig.base.json",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules NODE_NO_WARNINGS=1 jest",
+    "format:write": "prettier --write .",
+    "format:check": "prettier --check .",
+    "lint": "eslint .",
+    "package": "rollup --config rollup.config.ts --configPlugin @rollup/plugin-typescript"
+  },
+  "dependencies": {
+    "@actions/core": "^2.0.3",
+    "@azure/identity": "^4.13.0",
+    "@azure/keyvault-secrets": "^4.10.0"
+  },
+  "devDependencies": {
+    "@eslint/compat": "^1.4.0",
+    "@eslint/eslintrc": "^3.2.0",
+    "@eslint/js": "^9.36.0",
+    "@jest/globals": "^30.2.0",
+    "@rollup/plugin-commonjs": "^28.0.6",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.1",
+    "@rollup/plugin-typescript": "^12.1.4",
+    "@types/node": "^24.6.2",
+    "@typescript-eslint/eslint-plugin": "^8.45.0",
+    "@typescript-eslint/parser": "^8.32.1",
+    "cross-env": "^10.1.0",
+    "eslint": "^9.36.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-import-resolver-typescript": "^4.4.4",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-jest": "^29.0.1",
+    "eslint-plugin-prettier": "^5.5.4",
+    "globals": "^16.4.0",
+    "jest": "^30.2.0",
+    "prettier": "^3.6.2",
+    "rollup": "^4.52.3",
+    "ts-jest": "^29.4.4",
+    "ts-jest-resolver": "^2.0.1",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  },
+  "typescriptConfigBase": {
+    "compilerOptions": {
+      "allowSyntheticDefaultImports": true,
+      "declaration": true,
+      "esModuleInterop": true,
+      "forceConsistentCasingInFileNames": true,
+      "lib": [
+        "ES2022"
+      ],
+      "module": "NodeNext",
+      "moduleResolution": "NodeNext",
+      "newLine": "lf",
+      "noImplicitAny": true,
+      "noUnusedLocals": true,
+      "noUnusedParameters": false,
+      "resolveJsonModule": true,
+      "strict": true,
+      "target": "ES2022",
+      "baseUrl": ".",
+      "paths": {
+        "@actions/*": [
+          "./node_modules/@actions/*"
+        ],
+        "@azure/*": [
+          "./node_modules/@azure/*"
+        ]
+      }
+    }
+  },
+  "typescriptConfig": {
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+      "outDir": "./dist",
+      "rootDir": "../../.."
+    },
+    "include": [
+      "src",
+      "../gh-convert-stack-inputs/src/keyvault-store.ts",
+      "../gh-convert-stack-inputs/src/keystore-key.ts"
+    ],
+    "exclude": [
+      "__tests__",
+      "coverage",
+      "dist",
+      "node_modules"
+    ]
+  },
+  "typescriptConfigEslint": {
+    "extends": "./tsconfig.base.json",
+    "compilerOptions": {
+      "allowJs": true,
+      "noEmit": true
+    },
+    "include": [
+      "src",
+      "__tests__",
+      "eslint.config.mjs",
+      "jest.config.js",
+      "rollup.config.ts"
+    ],
+    "exclude": [
+      "dist",
+      "node_modules"
+    ]
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "rootDir": "../../.."
+  },
+  "include": [
+    "src",
+    "../gh-convert-stack-inputs/src/keyvault-store.ts",
+    "../gh-convert-stack-inputs/src/keystore-key.ts"
+  ],
+  "exclude": ["__tests__", "coverage", "dist", "node_modules"]
+}

@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "allowJs": true,
+    "noEmit": true
+  },
+  "include": [
+    "src",
+    "__tests__",
+    "eslint.config.mjs",
+    "jest.config.js",
+    "rollup.config.ts"
+  ],
+  "exclude": ["dist", "node_modules"]
+}
