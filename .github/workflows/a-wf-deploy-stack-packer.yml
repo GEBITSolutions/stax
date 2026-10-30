@@ -85,20 +85,14 @@ jobs:
       ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
       ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
     steps:
-    - name: Prepare trusted actions checkout
-      shell: bash
-      run: |
-        set -euo pipefail
-        rm -rf -- "$GITHUB_WORKSPACE/trusted-actions"
-
-    - name: Checkout trusted actions
+    - name: Checkout Actions
       id: trusted-actions
       uses: actions/checkout@v7
       with:
-        repository: ${{ inputs.actions-repository }}
-        ref: ${{ inputs.actions-version }}
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
         path: trusted-actions
-        clean: true
+        clean: false
         persist-credentials: false
 
     - name: Resolve Hetzner token before preflight
@@ -977,13 +971,13 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ fromJson(inputs.env)['environment'] || 'dev' }}
     steps:
-    - name: Checkout trusted actions
+    - name: Checkout Actions
       uses: actions/checkout@v7
       with:
-        repository: ${{ inputs.actions-repository }}
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
         ref: ${{ needs.packer.outputs.actions_sha }}
         path: trusted-actions
-        clean: true
+        clean: false
         persist-credentials: false
 
     - name: Prepare requested output transfer
