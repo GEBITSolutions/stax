@@ -51,7 +51,7 @@
       "additionalProperties": false,
       "properties": {
         "project": { "description": "Project name; falls back to GitHub PROJECT.", "$ref": "#/$defs/deploymentValue" },
-        "secret_backend": { "description": "Default secret store for secret_backend.secret.<key> references. Overridable per stack. Default gh.", "type": "string", "enum": ["vault", "gh"], "default": "gh" },
+        "secret_backend": { "description": "Default secret store for secret_backend.secret.<key> references. Overridable per stack. Default gh.", "type": "string", "enum": ["keyvault", "gh"], "default": "gh" },
         "credentials": { "description": "Default credential references for stacks in this deployment. A stack can override individual names.", "$ref": "#/$defs/credentials" },
         "customer_id": { "description": "Customer identifier; falls back to CUSTOMER_ID.", "$ref": "#/$defs/deploymentValue" },
         "stage": { "description": "Deployment stage; falls back to STAGE.", "$ref": "#/$defs/deploymentValue" },
@@ -114,7 +114,7 @@
         "depends_on": { "description": "Stack ids deployed before this one.", "$ref": "#/$defs/stringList", "examples": [[]], "x-stax-types": "all" },
         "stack-groups": { "description": "Groups for selecting stacks in the deploy form.", "$ref": "#/$defs/stringList", "examples": [["core"]], "x-stax-types": "all" },
         "runs-on": { "description": "Runner label.", "type": "string", "examples": ["ubuntu-24.04"], "x-stax-types": "all" },
-        "secret_backend": { "description": "Overrides deployment.secret_backend for this stack. Default inherits deployment, then gh.", "type": "string", "enum": ["vault", "gh"], "examples": ["gh"], "x-stax-types": "all" },
+        "secret_backend": { "description": "Overrides deployment.secret_backend for this stack. Default inherits deployment, then gh.", "type": "string", "enum": ["keyvault", "gh"], "examples": ["gh"], "x-stax-types": "all" },
         "credentials": { "description": "Credential references merged over deployment.credentials by name. A mapped but missing secret fails deployment.", "$ref": "#/$defs/credentials", "examples": [{ "AWS_ACCESS_KEY_ID": "secret_backend.secret.aws_access_key_id" }], "x-stax-types": "all" },
         "input": {
           "description": "Inputs: reference strings (global.pipeline.var.<key>, stack.<id>.var.<key>, ...) or key/value maps.",

@@ -78,7 +78,7 @@ function createVaultReader(
 ): VaultReader {
   if (!inputs.keyVaultUrl) {
     throw new CredentialResolutionError(
-      'REPO_KEYSTORE_KEY_VAULT_URL is required for mapped vault credentials'
+      'REPO_KEYSTORE_KEY_VAULT_URL is required for mapped keyvault credentials'
     )
   }
   try {
@@ -100,7 +100,7 @@ function createVaultReader(
   }
   if (!inputs.environment) {
     throw new CredentialResolutionError(
-      'Environment is required for mapped vault credentials'
+      'Environment is required for mapped keyvault credentials'
     )
   }
   const keystore = !!inputs.keystoreSpClientId
@@ -145,8 +145,8 @@ export async function resolveCredentials({
 }): Promise<string[]> {
   const credentials = parseObject(inputs.credentials, 'credentials')
   const secrets = parseObject(inputs.ghSecrets, 'gh-secrets')
-  if (inputs.secretBackend !== 'gh' && inputs.secretBackend !== 'vault') {
-    throw new CredentialResolutionError('secret-backend must be gh or vault')
+  if (inputs.secretBackend !== 'gh' && inputs.secretBackend !== 'keyvault') {
+    throw new CredentialResolutionError('secret-backend must be gh or keyvault')
   }
   for (const [name, reference] of Object.entries(credentials)) {
     if (!NAME.test(name))

@@ -6,7 +6,7 @@ export type ghEnvironmentType = {
     var: Record<string, string>;
     secret: Record<string, string>;
 };
-export type SecretBackend = 'gh' | 'vault';
+export type SecretBackend = 'gh' | 'keyvault';
 export type GlobalsContext = {
     config: Record<string, InputType>;
     pipeline: Record<string, string | boolean>;

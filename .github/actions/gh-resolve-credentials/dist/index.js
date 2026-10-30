@@ -67880,7 +67880,7 @@ function vaultFactory(prefix, url, credentials, oidcEnabled) {
 }
 function createVaultReader(inputs, createVault) {
     if (!inputs.keyVaultUrl) {
-        throw new CredentialResolutionError('REPO_KEYSTORE_KEY_VAULT_URL is required for mapped vault credentials');
+        throw new CredentialResolutionError('REPO_KEYSTORE_KEY_VAULT_URL is required for mapped keyvault credentials');
     }
     try {
         const url = new URL(inputs.keyVaultUrl);
@@ -67897,7 +67897,7 @@ function createVaultReader(inputs, createVault) {
         throw new CredentialResolutionError('REPO_KEYSTORE_KEY_VAULT_URL must be an HTTPS vault origin');
     }
     if (!inputs.environment) {
-        throw new CredentialResolutionError('Environment is required for mapped vault credentials');
+        throw new CredentialResolutionError('Environment is required for mapped keyvault credentials');
     }
     const keystore = !!inputs.keystoreSpClientId;
     const clientId = keystore
@@ -67923,8 +67923,8 @@ function createVaultReader(inputs, createVault) {
 async function resolveCredentials({ inputs, actionCore = core$1, createVault = vaultFactory }) {
     const credentials = parseObject(inputs.credentials, 'credentials');
     const secrets = parseObject(inputs.ghSecrets, 'gh-secrets');
-    if (inputs.secretBackend !== 'gh' && inputs.secretBackend !== 'vault') {
-        throw new CredentialResolutionError('secret-backend must be gh or vault');
+    if (inputs.secretBackend !== 'gh' && inputs.secretBackend !== 'keyvault') {
+        throw new CredentialResolutionError('secret-backend must be gh or keyvault');
     }
     for (const [name, reference] of Object.entries(credentials)) {
         if (!NAME.test(name))

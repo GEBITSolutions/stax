@@ -29,8 +29,8 @@ function validateSecretBackend(
   value: unknown,
   source: string
 ): asserts value is SecretBackend {
-  if (value !== 'vault' && value !== 'gh') {
-    throw new Error(`${source} must be 'vault' or 'gh'`)
+  if (value !== 'keyvault' && value !== 'gh') {
+    throw new Error(`${source} must be 'keyvault' or 'gh'`)
   }
 }
 

@@ -2,7 +2,7 @@ export interface IInput {
     [key: string]: string | string[] | boolean | boolean[] | number | number[] | IInput[] | IInput;
 }
 export type InputType = string | string[] | boolean | boolean[] | number | number[] | IInput[] | IInput;
-export type SecretBackend = 'vault' | 'gh';
+export type SecretBackend = 'keyvault' | 'gh';
 export type CredentialName = 'AWS_ACCESS_KEY_ID' | 'AWS_SECRET_ACCESS_KEY' | 'AWS_SESSION_TOKEN' | 'HCLOUD_TOKEN' | 'INFRACOST_API_KEY' | 'CI_GITHUB_PAT' | 'CI_GITHUB_TOKEN_TERRAFORM' | 'TF_PROVIDER_GH_OWNER';
 export type CredentialMappings = Partial<Record<CredentialName, string>>;
 export interface ITerraformConfig {

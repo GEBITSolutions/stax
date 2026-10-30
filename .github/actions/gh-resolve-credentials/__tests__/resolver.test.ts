@@ -9,7 +9,7 @@ function fixture(overrides: Partial<ResolverInputs> = {}) {
       AWS_ACCESS_KEY_ID: 'gh.secret.wasabi_id',
       HCLOUD_TOKEN: 'secret_backend.secret.hcloud_token'
     }),
-    secretBackend: 'vault',
+    secretBackend: 'keyvault',
     environment: 'Prod_01',
     ghSecrets: JSON.stringify({
       WASABI_ID: 'github-id',
@@ -95,7 +95,7 @@ describe('mapped credential resolution', () => {
     expect(run.getSecret).toHaveBeenCalledWith('hcloud_token')
   })
 
-  test('gh.secret stays GitHub-only even under vault backend and normalizes key case', async () => {
+  test('gh.secret stays GitHub-only even under keyvault backend and normalizes key case', async () => {
     const run = fixture({
       required: 'HCLOUD_TOKEN',
       credentials: JSON.stringify({ HCLOUD_TOKEN: 'gh.secret.hcloud_token' }),
@@ -215,13 +215,15 @@ describe('mapped credential resolution', () => {
       await expect(run.execute()).rejects.toThrow()
       expect(run.exports).toEqual({})
     }
-    const invalidBackend = fixture({ secretBackend: 'ssm' })
-    await expect(invalidBackend.execute()).rejects.toThrow(
-      'secret-backend must be gh or vault'
-    )
+    for (const backend of ['ssm', 'vault']) {
+      const invalidBackend = fixture({ secretBackend: backend })
+      await expect(invalidBackend.execute()).rejects.toThrow()
+      expect(invalidBackend.exports).toEqual({})
+      expect(invalidBackend.createVault).not.toHaveBeenCalled()
+    }
   })
 
-  test('requires a vault URL only when an actually required reference selects vault', async () => {
+  test('requires a Key Vault URL only when an actually required reference selects keyvault', async () => {
     const run = fixture({ required: 'HCLOUD_TOKEN', keyVaultUrl: '' })
     await expect(run.execute()).rejects.toThrow(
       'REPO_KEYSTORE_KEY_VAULT_URL is required'

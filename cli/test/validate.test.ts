@@ -50,7 +50,7 @@ stacks:
 
   it('accepts deployment and per-stack secret backends with Hetzner token references', () => {
     expect(validateConfigText(`deployment:
-  secret_backend: vault
+  secret_backend: keyvault
 stacks:
   - id: golden
     type: packer
@@ -87,7 +87,7 @@ stacks:
   it("accepts all supported credential names and both reference kinds in defaults and stack overrides", () => {
     const defaults = credentialNames.map((name) => `    ${name}: secret_backend.secret.${name.toLowerCase()}`).join("\n");
     expect(validateConfigText(`deployment:
-  secret_backend: vault
+  secret_backend: keyvault
   credentials:
 ${defaults}
 stacks:
@@ -173,9 +173,9 @@ stacks:
       .replace("      token: gh.secret.hcloud_token\n", ""))).toEqual([]);
   });
 
-  it("requires vault URL for mapped credentials, but not legacy vault-only configuration", () => {
+  it("requires Key Vault URL for mapped credentials, but not legacy keyvault-only configuration", () => {
     const vaultDefaults = `deployment:
-  secret_backend: vault
+  secret_backend: keyvault
   credentials:
     AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id
 stacks:
@@ -190,17 +190,17 @@ stacks:
       expect.objectContaining({ severity: "error", message: expect.stringContaining("REPO_KEYSTORE_KEY_VAULT_URL is required") }),
     ]));
     expect(validateConfigText(vaultDefaults, { REPO_KEYSTORE_KEY_VAULT_URL: "https://vault.example.test" })).toEqual([]);
-    expect(validateConfigText("deployment:\n  secret_backend: vault\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n", {})).toEqual([]);
-    expect(validateConfigText("deployment:\n  secret_backend: vault\n  credentials: {}\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n", {})).toEqual([]);
+    expect(validateConfigText("deployment:\n  secret_backend: keyvault\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n", {})).toEqual([]);
+    expect(validateConfigText("deployment:\n  secret_backend: keyvault\n  credentials: {}\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n", {})).toEqual([]);
   });
 
-  it("does not require a vault URL for unused vault defaults", () => {
-    const defaults = "deployment:\n  secret_backend: vault\n  credentials:\n    AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id\n";
+  it("does not require a Key Vault URL for unused keyvault defaults", () => {
+    const defaults = "deployment:\n  secret_backend: keyvault\n  credentials:\n    AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id\n";
     expect(validateConfigText(`${defaults}stacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n    secret_backend: gh\n`, {})).toEqual([]);
     expect(validateConfigText(`${defaults}stacks: []\n`, {}).filter(finding => finding.severity === "error")).toEqual([]);
   });
 
-  it("requires vault URL when a stack selects vault and inherits or adds credentials", () => {
+  it("requires Key Vault URL when a stack selects keyvault and inherits or adds credentials", () => {
     const inherited = `deployment:
   credentials:
     AWS_ACCESS_KEY_ID: gh.secret.wasabi_access_key_id
@@ -208,13 +208,13 @@ stacks:
   - id: infra
     type: opentofu
     folder: infra
-    secret_backend: vault
+    secret_backend: keyvault
 `;
     const added = `stacks:
   - id: infra
     type: opentofu
     folder: infra
-    secret_backend: vault
+    secret_backend: keyvault
     credentials:
       AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id
 `;
@@ -224,18 +224,18 @@ stacks:
       ]));
       expect(validateConfigText(config, { REPO_KEYSTORE_KEY_VAULT_URL: "https://vault.example.test" })).toEqual([]);
     }
-    expect(validateConfigText(added.replace("    secret_backend: vault", "    secret_backend: gh"), {})).toEqual([]);
+    expect(validateConfigText(added.replace("    secret_backend: keyvault", "    secret_backend: gh"), {})).toEqual([]);
   });
 
-  it.each(["vaults", "", "GH", "null"])('rejects invalid deployment secret_backend %p', (backend) => {
+  it.each(["vault", "vaults", "", "GH", "null"])('rejects invalid deployment secret_backend %p', (backend) => {
     const config = `deployment:\n  secret_backend: ${JSON.stringify(backend)}\nstacks:\n  - id: docs\n    type: github-pages-site-deploy\n`;
     expect(validateConfigText(config)).toEqual(expect.arrayContaining([
       expect.objectContaining({ severity: "error", message: expect.stringContaining("deployment.secret_backend") }),
     ]));
   });
 
-  it('rejects invalid stack secret_backend', () => {
-    const findings = validateConfigText("stacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n    secret_backend: invalid\n");
+  it.each(["vault", "invalid"])('rejects invalid stack secret_backend %p', (backend) => {
+    const findings = validateConfigText(`stacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n    secret_backend: ${backend}\n`);
     expect(findings).toEqual(expect.arrayContaining([
       expect.objectContaining({ severity: "error", message: expect.stringContaining("stacks[0].secret_backend") }),
     ]));
@@ -581,9 +581,9 @@ describe("stax validate config", () => {
     });
   }
 
-  it('accepts a vault backend config and fails invalid backend and token references', () => {
+  it('accepts a keyvault backend config and fails invalid backend and token references', () => {
     const cwd = project({
-      'configs/valid.yaml': 'deployment:\n  secret_backend: vault\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n',
+      'configs/valid.yaml': 'deployment:\n  secret_backend: keyvault\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n',
       'configs/invalid.yaml': 'deployment:\n  secret_backend: typo\nstacks:\n  - id: golden\n    type: packer\n    packer_directory: packer/golden\n    packer_version: "1.16.1"\n    build_target: hetzner\n    hetzner:\n      location: fsn1\n      server_type: cax11\n      token: literal-token\n',
     });
     expect(run(cwd, ['configs/valid.yaml', '--strict']).status).toBe(0);
@@ -593,9 +593,9 @@ describe("stax validate config", () => {
     expect(invalid.stdout).toContain('stacks[0].hetzner.token');
   });
 
-  it("fails a mapped vault config without the actual URL in CLI environment", () => {
+  it("fails a mapped keyvault config without the actual URL in CLI environment", () => {
     const cwd = project({
-      "configs/vault.yaml": "deployment:\n  secret_backend: vault\n  credentials:\n    AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n",
+      "configs/vault.yaml": "deployment:\n  secret_backend: keyvault\n  credentials:\n    AWS_ACCESS_KEY_ID: secret_backend.secret.wasabi_access_key_id\nstacks:\n  - id: infra\n    type: opentofu\n    folder: infra\n",
     });
     const absent = run(cwd, ["configs/vault.yaml"]);
     expect(absent.status).toBe(1);

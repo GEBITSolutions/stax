@@ -169,14 +169,14 @@ describe('mergeConfigs.ts', () => {
     const docs: IDeployConfigDocument[] = [
       {
         sourceFile: 'first.yaml',
-        deployment: { secret_backend: 'vault' },
+        deployment: { secret_backend: 'keyvault' },
         stacks: [{ id: 'early' }, { id: 'override', secret_backend: 'gh' }]
       },
       { sourceFile: 'middle.yaml', stacks: [{ id: 'middle' }] },
       {
         sourceFile: 'last.yaml',
         deployment: { secret_backend: 'gh' },
-        stacks: [{ id: 'last', secret_backend: 'vault' }]
+        stacks: [{ id: 'last', secret_backend: 'keyvault' }]
       }
     ]
 
@@ -187,13 +187,13 @@ describe('mergeConfigs.ts', () => {
       ['early', 'gh'],
       ['override', 'gh'],
       ['middle', 'gh'],
-      ['last', 'vault']
+      ['last', 'keyvault']
     ])
     expect(
       mergeDeployConfigDocuments(docs.slice(0, 2)).stacks.map(
         (stack) => stack.secret_backend
       )
-    ).toEqual(['vault', 'gh', 'vault'])
+    ).toEqual(['keyvault', 'gh', 'keyvault'])
     expect(docs[0].stacks[0].secret_backend).toBeUndefined()
   })
 
@@ -302,30 +302,30 @@ describe('mergeConfigs.ts', () => {
   )
 
   it.each([
-    [
-      {
-        deployment: { secret_backend: 'other' },
-        stacks: [{ id: 'a' }],
-        sourceFile: 'bad.yaml'
-      },
-      /bad.yaml: deployment.secret_backend/
-    ],
-    [
-      {
-        stacks: [{ id: 'a', secret_backend: 'other' }],
-        sourceFile: 'bad.yaml'
-      },
-      /bad.yaml: stack "a" secret_backend/
-    ]
-  ])(
-    'rejects invalid backend in every selected document before a later override',
-    (document, message) => {
+    ['other', 'deployment', /bad.yaml: deployment.secret_backend/],
+    ['vault', 'deployment', /bad.yaml: deployment.secret_backend/],
+    ['other', 'stack', /bad.yaml: stack "a" secret_backend/],
+    ['vault', 'stack', /bad.yaml: stack "a" secret_backend/]
+  ] as const)(
+    'rejects invalid %s backend at %s scope before a later override',
+    (backend, scope, message) => {
+      const document =
+        scope === 'deployment'
+          ? {
+              deployment: { secret_backend: backend },
+              stacks: [{ id: 'a' }],
+              sourceFile: 'bad.yaml'
+            }
+          : {
+              stacks: [{ id: 'a', secret_backend: backend }],
+              sourceFile: 'bad.yaml'
+            }
       expect(() =>
         mergeDeployConfigDocuments([
           document as IDeployConfigDocument,
           { deployment: { secret_backend: 'gh' }, stacks: [{ id: 'b' }] }
         ])
-      ).toThrow(message as RegExp)
+      ).toThrow(message)
     }
   )
 })

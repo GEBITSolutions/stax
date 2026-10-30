@@ -10,7 +10,7 @@ inputs:
     required: false
     default: '{}'
   secret-backend:
-    description: Effective backend for secret_backend.secret references (gh or vault).
+    description: Effective backend for secret_backend.secret references (gh or keyvault).
     required: false
     default: gh
   environment:

@@ -66,8 +66,8 @@ function validateValue(field, value, source) {
     throw new Error(`${source}.${field} must not contain newlines (unsafe for workflow environment data)`);
   }
   if (field === 'secret_backend') {
-    if (value !== 'vault' && value !== 'gh') {
-      throw new Error(`${source}.${field} must be 'vault' or 'gh'`);
+    if (value !== 'keyvault' && value !== 'gh') {
+      throw new Error(`${source}.${field} must be 'keyvault' or 'gh'`);
     }
     return value;
   }

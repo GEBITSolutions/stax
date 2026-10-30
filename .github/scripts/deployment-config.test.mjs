@@ -49,7 +49,7 @@ test('exports all deployment fields as strings, normalizing cloud and Azure stor
 });
 
 test('accepts secret_backend as a config-only field without exporting a cloud variable', () => {
-  for (const backend of ['vault', 'gh']) {
+  for (const backend of ['keyvault', 'gh']) {
     const context = resolve({ ...azure, secret_backend: backend });
     assert.equal(context.PROJECT, 'widget');
     assert.equal(Object.hasOwn(context, 'SECRET_BACKEND'), false);
@@ -57,13 +57,13 @@ test('accepts secret_backend as a config-only field without exporting a cloud va
   assert.equal(Object.hasOwn(resolve(), 'SECRET_BACKEND'), false);
   const context = resolveDeploymentContext({
     documents: [
-      { sourceFile: 'first.yaml', deployment: { ...azure, secret_backend: 'vault' } },
+      { sourceFile: 'first.yaml', deployment: { ...azure, secret_backend: 'keyvault' } },
       { sourceFile: 'second.yaml', deployment: { secret_backend: 'gh' } },
     ],
   });
   assert.equal(context.PROJECT, 'widget');
   assert.equal(Object.hasOwn(context, 'SECRET_BACKEND'), false);
-  assert.equal(Object.hasOwn(resolve(azure, { variables: { SECRET_BACKEND: 'vault' } }), 'SECRET_BACKEND'), false);
+  assert.equal(Object.hasOwn(resolve(azure, { variables: { SECRET_BACKEND: 'keyvault' } }), 'SECRET_BACKEND'), false);
 });
 
 test('accepts deployment credentials without exporting secret references as variables', () => {
@@ -78,15 +78,17 @@ test('accepts deployment credentials without exporting secret references as vari
 });
 
 test('rejects invalid backend even when a later selected deployment replaces it', () => {
-  for (const value of ['invalid', '', null, false, 1, 'vault\nINJECTED=1']) {
+  for (const value of ['invalid', 'vault', '', null, false, 1, 'vault\nINJECTED=1']) {
     assert.throws(() => resolve({ ...azure, secret_backend: value }), /deployment.secret_backend/, String(value));
   }
-  assert.throws(() => resolveDeploymentContext({
-    documents: [
-      { sourceFile: 'first.yaml', deployment: { ...azure, secret_backend: 'invalid' } },
-      { sourceFile: 'second.yaml', deployment: { secret_backend: 'gh' } },
-    ],
-  }), /first.yaml.*deployment.secret_backend/);
+  for (const backend of ['invalid', 'vault']) {
+    assert.throws(() => resolveDeploymentContext({
+      documents: [
+        { sourceFile: 'first.yaml', deployment: { ...azure, secret_backend: backend } },
+        { sourceFile: 'second.yaml', deployment: { secret_backend: 'gh' } },
+      ],
+    }), /first.yaml.*deployment.secret_backend/);
+  }
 });
 
 test('merges selected mappings in order before falling back to GitHub variables', () => {

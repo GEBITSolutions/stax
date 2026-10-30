@@ -19,7 +19,7 @@ export type InputType =
   | IInput[]
   | IInput
 
-export type SecretBackend = 'vault' | 'gh'
+export type SecretBackend = 'keyvault' | 'gh'
 export type CredentialName =
   | 'AWS_ACCESS_KEY_ID'
   | 'AWS_SECRET_ACCESS_KEY'

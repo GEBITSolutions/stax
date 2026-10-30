@@ -48848,8 +48848,8 @@ function stableStringify(value) {
     return JSON.stringify(value);
 }
 function validateSecretBackend(value, source) {
-    if (value !== 'vault' && value !== 'gh') {
-        throw new Error(`${source} must be 'vault' or 'gh'`);
+    if (value !== 'keyvault' && value !== 'gh') {
+        throw new Error(`${source} must be 'keyvault' or 'gh'`);
     }
 }
 const credentialNames = new Set([
@@ -49316,8 +49316,8 @@ async function run() {
         deploy_config = merged.stacks;
         external_repos = merged.externalRepos;
         for (const config of deploy_config) {
-            if (config.secret_backend === 'vault' && keyVaultUrl.trim() === '') {
-                throw new Error(`Stack "${config.id}" uses secret_backend: vault but key-vault-url is not configured (set REPO_KEYSTORE_KEY_VAULT_URL).`);
+            if (config.secret_backend === 'keyvault' && keyVaultUrl.trim() === '') {
+                throw new Error(`Stack "${config.id}" uses secret_backend: keyvault but key-vault-url is not configured (set REPO_KEYSTORE_KEY_VAULT_URL).`);
             }
         }
         validateGitHubPagesConfig(deploy_config, global_vars);

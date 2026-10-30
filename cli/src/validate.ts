@@ -424,10 +424,10 @@ function checkCredentialVaultUrl(data: Record<string, unknown>, report: Reporter
     if (!isRecord(stack)) return;
     const backend = stack.secret_backend ?? deployment?.secret_backend ?? "gh";
     const overrides = isRecord(stack.credentials) ? stack.credentials : undefined;
-    if (backend !== "vault" || (!hasDefaults && !(overrides && Object.keys(overrides).length > 0))) return;
-    const path: Path = deployment?.secret_backend === "vault" && hasDefaults
+    if (backend !== "keyvault" || (!hasDefaults && !(overrides && Object.keys(overrides).length > 0))) return;
+    const path: Path = deployment?.secret_backend === "keyvault" && hasDefaults
       ? ["deployment", "credentials"] : ["stacks", index, "credentials"];
-    report.add("error", path, "REPO_KEYSTORE_KEY_VAULT_URL is required for vault-backed credentials");
+    report.add("error", path, "REPO_KEYSTORE_KEY_VAULT_URL is required for keyvault-backed credentials");
   });
 }
 
