@@ -293,67 +293,48 @@ describe('KeyVaultStore', () => {
       expect(mockCoreSetSecret).toHaveBeenCalledWith(secretValue)
     })
 
-    it('should throw error when secret exists but has no value', async () => {
-      mockGetSecret.mockResolvedValue({ value: undefined })
+    it.each([undefined, ''])(
+      'rejects an empty vault value %p',
+      async (value) => {
+        mockGetSecret.mockResolvedValue({ value })
+        const store = new KeyVaultStore(
+          testProjectPrefix,
+          testKeyVaultUrl,
+          testCredentials
+        )
 
-      const store = new KeyVaultStore(
-        testProjectPrefix,
-        testKeyVaultUrl,
-        testCredentials
-      )
+        await expect(store.getSecret('EMPTY_SECRET')).rejects.toThrow(
+          'EMPTY_SECRET'
+        )
+        expect(mockCoreSetSecret).not.toHaveBeenCalled()
+      }
+    )
 
-      const secretKey = 'EMPTY_SECRET'
-      const expectedConvertedKey = 'myproject---empty-secret'
+    it.each([new Error('sensitive-sdk-response'), 'sensitive-sdk-response'])(
+      'does not expose SDK response content on lookup failure (%p)',
+      async (failure) => {
+        mockGetSecret.mockRejectedValue(failure)
+        const store = new KeyVaultStore(
+          testProjectPrefix,
+          testKeyVaultUrl,
+          testCredentials
+        )
 
-      await expect(store.getSecret(secretKey)).rejects.toThrow(
-        `Failed to get secret ${secretKey}: Secret ${expectedConvertedKey} exists but has no value`
-      )
-
-      expect(mockCoreError).toHaveBeenCalledWith(
-        expect.stringContaining(`Failed to get secret ${secretKey}`)
-      )
-      expect(mockCoreSetSecret).not.toHaveBeenCalled()
-    })
-
-    it('should throw error when secret retrieval fails', async () => {
-      const errorMessage = 'Secret not found'
-      mockGetSecret.mockRejectedValue(new Error(errorMessage))
-
-      const store = new KeyVaultStore(
-        testProjectPrefix,
-        testKeyVaultUrl,
-        testCredentials
-      )
-
-      const secretKey = 'NONEXISTENT_SECRET'
-
-      await expect(store.getSecret(secretKey)).rejects.toThrow(
-        `Failed to get secret ${secretKey}: ${errorMessage}`
-      )
-
-      expect(mockCoreError).toHaveBeenCalledWith(
-        `Failed to get secret ${secretKey}: ${errorMessage}`
-      )
-      expect(mockCoreSetSecret).not.toHaveBeenCalled()
-    })
-
-    it('should handle non-Error exceptions', async () => {
-      const errorMessage = 'Unknown error occurred'
-      mockGetSecret.mockRejectedValue(errorMessage)
-
-      const store = new KeyVaultStore(
-        testProjectPrefix,
-        testKeyVaultUrl,
-        testCredentials
-      )
-
-      const secretKey = 'FAILING_SECRET'
-
-      await expect(store.getSecret(secretKey)).rejects.toThrow(
-        `Failed to get secret ${secretKey}: ${errorMessage}`
-      )
-      expect(mockCoreSetSecret).not.toHaveBeenCalled()
-    })
+        const error = await store
+          .getSecret('FAILING_SECRET')
+          .catch((cause) => cause)
+        expect(error).toBeInstanceOf(Error)
+        expect(error.message).toContain('FAILING_SECRET')
+        expect(error.message).not.toContain('sensitive-sdk-response')
+        expect(JSON.stringify(mockCoreInfo.mock.calls)).not.toContain(
+          'sensitive-sdk-response'
+        )
+        expect(JSON.stringify(mockCoreError.mock.calls)).not.toContain(
+          'sensitive-sdk-response'
+        )
+        expect(mockCoreSetSecret).not.toHaveBeenCalled()
+      }
+    )
 
     it('should work with different project prefixes', async () => {
       const secretValue = 'prefixed-secret'
@@ -388,26 +369,6 @@ describe('KeyVaultStore', () => {
       const expectedKey = 'myproject---already-formatted-key'
       expect(mockGetSecret).toHaveBeenCalledWith(expectedKey)
       expect(mockCoreSetSecret).toHaveBeenCalledWith(secretValue)
-    })
-
-    it('should handle empty secret values (empty string) as invalid', async () => {
-      mockGetSecret.mockResolvedValue({ value: '' })
-
-      const store = new KeyVaultStore(
-        testProjectPrefix,
-        testKeyVaultUrl,
-        testCredentials
-      )
-
-      const secretKey = 'EMPTY_STRING_SECRET'
-      const expectedConvertedKey = 'myproject---empty-string-secret'
-
-      // Empty string should be treated as having no value
-      await expect(store.getSecret(secretKey)).rejects.toThrow(
-        `Failed to get secret ${secretKey}: Secret ${expectedConvertedKey} exists but has no value`
-      )
-      // setSecret is NOT called because validation fails before it
-      expect(mockCoreSetSecret).not.toHaveBeenCalled()
     })
   })
 

@@ -84462,10 +84462,10 @@ class KeyVaultStore {
             coreExports.setSecret(secret?.value);
             return secret.value;
         }
-        catch (error) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            coreExports.error(`Failed to get secret ${key}: ${errorMessage}`);
-            throw new Error(`Failed to get secret ${key}: ${errorMessage}`);
+        catch {
+            const message = `Failed to get secret ${key}`;
+            coreExports.error(message);
+            throw new Error(message);
         }
     }
 }

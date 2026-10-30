@@ -128,11 +128,10 @@ export class KeyVaultStore implements SecretReader {
       core.setSecret(secret?.value)
 
       return secret.value
-    } catch (error) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error)
-      core.error(`Failed to get secret ${key}: ${errorMessage}`)
-      throw new Error(`Failed to get secret ${key}: ${errorMessage}`)
+    } catch {
+      const message = `Failed to get secret ${key}`
+      core.error(message)
+      throw new Error(message)
     }
   }
 }
