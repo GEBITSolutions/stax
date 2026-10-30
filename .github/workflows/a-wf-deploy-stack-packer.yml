@@ -85,7 +85,102 @@ jobs:
       ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
       ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
     steps:
-    # This runs before preflight because the trusted-actions checkout comes later.
+    - name: Resolve trusted actions revision
+      id: resolve-actions-ref
+      shell: bash
+      env:
+        ACTIONS_REPOSITORY: ${{ inputs.actions-repository }}
+        ACTIONS_VERSION: ${{ inputs.actions-version }}
+      run: |
+        set -euo pipefail
+        if [[ "$ACTIONS_REPOSITORY" != "GEBITSolutions/stax" ]]; then
+          echo "::error::Packer trusted actions must come from GEBITSolutions/stax."
+          exit 1
+        fi
+        if [[ "$ACTIONS_VERSION" != "main" && ! "$ACTIONS_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ && ! "$ACTIONS_VERSION" =~ ^[0-9a-fA-F]{40}$ ]]; then
+          echo "::error::actions-version must be main, a numeric semantic version tag with optional v prefix, or a full 40-character commit SHA."
+          exit 1
+        fi
+
+
+        github_api() {
+          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
+            --header "Accept: application/vnd.github+json" \
+            --header "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/GEBITSolutions/stax/$1"
+        }
+
+        if [[ "$ACTIONS_VERSION" == "main" ]]; then
+          response="$(github_api "git/ref/heads/main")" || {
+            echo "::error::Unable to resolve the approved trusted actions main branch."
+            exit 1
+          }
+          resolved_sha="$(jq -er '.object | select(.type == "commit") | .sha | select(type == "string")' <<< "$response")" || {
+            echo "::error::GitHub returned an invalid trusted actions main revision."
+            exit 1
+          }
+        elif [[ "$ACTIONS_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          response="$(github_api "git/ref/tags/${ACTIONS_VERSION}")" || {
+            echo "::error::Unable to resolve the approved trusted actions version tag."
+            exit 1
+          }
+          object_type="$(jq -er '.object.type | select(type == "string")' <<< "$response")"
+          object_sha="$(jq -er '.object.sha | select(type == "string")' <<< "$response")"
+          resolved_sha=""
+          for ((depth = 0; depth < 10; depth++)); do
+            if [[ "$object_type" == "commit" ]]; then
+              resolved_sha="$object_sha"
+              break
+            fi
+            if [[ "$object_type" != "tag" || ! "$object_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+              break
+            fi
+            response="$(github_api "git/tags/${object_sha}")" || {
+              echo "::error::Unable to resolve the approved annotated trusted actions tag."
+              exit 1
+            }
+            object_type="$(jq -er '.object.type | select(type == "string")' <<< "$response")"
+            object_sha="$(jq -er '.object.sha | select(type == "string")' <<< "$response")"
+          done
+        else
+          response="$(github_api "commits/${ACTIONS_VERSION}")" || {
+            echo "::error::Unable to resolve the approved trusted actions commit SHA."
+            exit 1
+          }
+          resolved_sha="$(jq -er '.sha | select(type == "string")' <<< "$response")" || {
+            echo "::error::GitHub returned an invalid trusted actions commit revision."
+            exit 1
+          }
+          if [[ "${resolved_sha,,}" != "${ACTIONS_VERSION,,}" ]]; then
+            echo "::error::actions-version must identify the exact trusted actions commit."
+            exit 1
+          fi
+        fi
+
+        if [[ ! "$resolved_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
+          echo "::error::GitHub did not resolve the trusted actions revision to a full commit SHA."
+          exit 1
+        fi
+        resolved_sha="${resolved_sha,,}"
+        echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
+        # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
+        printf '### Trusted actions\n\n- Resolved SHA: `%s`\n' "$resolved_sha" >> "$GITHUB_STEP_SUMMARY"
+
+    - name: Prepare trusted actions checkout
+      shell: bash
+      run: |
+        set -euo pipefail
+        rm -rf -- "$GITHUB_WORKSPACE/trusted-actions"
+
+    - name: Checkout trusted actions
+      uses: actions/checkout@v7
+      with:
+        repository: GEBITSolutions/stax
+        ref: ${{ steps.resolve-actions-ref.outputs.sha }}
+        path: trusted-actions
+        clean: true
+        persist-credentials: false
+
     - name: Resolve Hetzner token before preflight
       id: resolve-hcloud-token
       uses: actions/github-script@v8
@@ -102,107 +197,15 @@ jobs:
         ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
         ARM_OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
       with:
-        script: |
-          const data = JSON.parse(process.env.DATA_JSON);
-          const pipeline = JSON.parse(process.env.PIPELINE_ENV_JSON);
-          const target = data.build_target ?? 'azure';
-          if (target !== 'hetzner') {
-            core.exportVariable('HCLOUD_TOKEN', '');
-            core.exportVariable('HCLOUD_TOKEN_AVAILABLE', 'false');
-            core.setOutput('source', 'unused');
-            return;
-          }
+        script: await (await import(require('node:url').pathToFileURL(`${process.env.GITHUB_WORKSPACE}/trusted-actions/.github/scripts/packer-hcloud-token.mjs`))).resolveHcloudToken({ core });
 
-          const dryRun = pipeline.dry_run === undefined || pipeline.dry_run === true || pipeline.dry_run === 'true';
-          const publish = (value, source) => {
-            if (value) {
-              core.setSecret(value);
-              core.exportVariable('HCLOUD_TOKEN', value);
-            }
-            core.exportVariable('HCLOUD_TOKEN_AVAILABLE', value ? 'true' : 'false');
-            core.setOutput('source', source);
-          };
-          if (dryRun) {
-            publish('dry-run-not-a-token', 'dry-run');
-            return;
-          }
-
-          const reference = data.hetzner?.token;
-          if (reference === undefined) {
-            publish(process.env.LEGACY_HCLOUD_TOKEN, 'github-secret');
-            return;
-          }
-          const match = /^(secret_backend|gh)\.secret\.([A-Za-z0-9_]+)$/.exec(reference);
-          if (!match) throw new Error('hetzner.token must be a secret_backend.secret.KEY or gh.secret.KEY reference');
-          const [, namespace, key] = match;
-          const backend = namespace === 'gh' ? 'gh' : (data.secret_backend ?? 'gh');
-          if (backend !== 'gh' && backend !== 'vault') throw new Error('Invalid effective secret_backend');
-          if (backend === 'gh') {
-            const name = key.toUpperCase();
-            const value = JSON.parse(process.env.SECRETS_JSON || '{}')[name];
-            if (typeof value !== 'string' || value.length === 0) {
-              throw new Error(`GitHub secret ${name} is missing or empty for hetzner.token`);
-            }
-            publish(value, 'resolved-ref');
-            return;
-          }
-
-          if (!process.env.KEY_VAULT_URL) throw new Error('secret_backend is vault but REPO_KEYSTORE_KEY_VAULT_URL is not set');
-          const vault = new URL(process.env.KEY_VAULT_URL);
-          if (vault.protocol !== 'https:' || vault.username || vault.password || vault.pathname !== '/') {
-            throw new Error('REPO_KEYSTORE_KEY_VAULT_URL must be an HTTPS vault origin');
-          }
-          const keystore = !!process.env.KEYSTORE_CLIENT_ID;
-          const clientId = keystore ? process.env.KEYSTORE_CLIENT_ID : process.env.ARM_CLIENT_ID;
-          const tenantId = keystore ? process.env.KEYSTORE_TENANT_ID : process.env.ARM_TENANT_ID;
-          const oidc = (keystore ? process.env.KEYSTORE_OIDC_ENABLED : process.env.ARM_OIDC_ENABLED) === 'true';
-          const clientSecret = keystore ? process.env.KEYSTORE_CLIENT_SECRET : process.env.ARM_CLIENT_SECRET;
-          if (!clientId || !tenantId || (!oidc && !clientSecret)) {
-            throw new Error('Key Vault service principal credentials are incomplete for hetzner.token');
-          }
-          const body = new URLSearchParams({
-            client_id: clientId,
-            scope: 'https://vault.azure.net/.default',
-            grant_type: 'client_credentials',
-          });
-          if (oidc) {
-            const assertion = await core.getIDToken('api://AzureADTokenExchange');
-            core.setSecret(assertion);
-            body.set('client_assertion_type', 'urn:ietf:params:oauth:client-assertion-type:jwt-bearer');
-            body.set('client_assertion', assertion);
-          } else {
-            body.set('client_secret', clientSecret);
-          }
-          const tokenResponse = await fetch(`https://login.microsoftonline.com/${encodeURIComponent(tenantId)}/oauth2/v2.0/token`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body,
-          });
-          if (!tokenResponse.ok) throw new Error(`Key Vault authentication failed (HTTP ${tokenResponse.status})`);
-          const accessToken = (await tokenResponse.json()).access_token;
-          if (!accessToken) throw new Error('Key Vault authentication did not return an access token');
-          core.setSecret(accessToken);
-
-          // Same convertKey rule as gh-convert-stack-inputs: env---key, lowercase, _ and . to -.
-          const secretName = `${process.env.ENVIRONMENT}---${key}`.toLowerCase().replace(/[_.]/g, '-');
-          const secretUrl = new URL(`secrets/${encodeURIComponent(secretName)}?api-version=7.4`, vault);
-          const response = await fetch(secretUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-          if (!response.ok) throw new Error(`Key Vault secret ${secretName} is missing or unavailable (HTTP ${response.status})`);
-          const value = (await response.json()).value;
-          if (typeof value !== 'string' || value.length === 0) {
-            throw new Error(`Key Vault secret ${secretName} is missing or empty`);
-          }
-          publish(value, 'resolved-ref');
-
-    - name: Validate request before checkout
+    - name: Validate request before source checkout
       id: preflight
       shell: bash
       env:
         DATA_JSON: ${{ inputs.data }}
         PIPELINE_ENV_JSON: ${{ inputs.env }}
         EXTERNAL_REPOS_JSON: ${{ inputs.external-repos || '[]' }}
-        ACTIONS_REPOSITORY: ${{ inputs.actions-repository }}
-        ACTIONS_VERSION: ${{ inputs.actions-version }}
         KEY_VAULT_URL: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
         TRANSFER_PAT_AVAILABLE: ${{ secrets.CI_ENV_TRANSFER_GH_TOKEN != '' && 'true' || 'false' }}
         TRANSFER_APP_CREDENTIALS_AVAILABLE: ${{ (vars.RELEASE_APP_CLIENT_ID != '' || vars.RELEASE_GH_APP_ID != '') && (secrets.RELEASE_APP_CLIENT_SECRET
@@ -220,15 +223,6 @@ jobs:
           echo "::error::Packer env must be a JSON object."
           exit 1
         }
-
-        if [[ "$ACTIONS_REPOSITORY" != "GEBITSolutions/stax" ]]; then
-          echo "::error::Packer trusted actions must come from GEBITSolutions/stax."
-          exit 1
-        fi
-        if [[ "$ACTIONS_VERSION" != "main" && ! "$ACTIONS_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ && ! "$ACTIONS_VERSION" =~ ^[0-9a-fA-F]{40}$ ]]; then
-          echo "::error::actions-version must be main, a numeric semantic version tag with optional v prefix, or a full 40-character commit SHA."
-          exit 1
-        fi
 
         parse_flag() {
           local key="$1"
@@ -372,7 +366,6 @@ jobs:
           echo "build-target=$build_target"
           echo "packer-version=$packer_version"
           echo "transfer-requested=$output_requested"
-          echo "actions-version=$ACTIONS_VERSION"
           echo "excluded-secret-names=$excluded_secret_names"
         } >> "$GITHUB_OUTPUT"
 
@@ -405,92 +398,6 @@ jobs:
         owner: ${{ github.repository_owner }}
         repositories: ${{ steps.token-scope.outputs.repositories }}
         permission-contents: read
-
-    - name: Resolve trusted actions revision
-      id: resolve-actions-ref
-      shell: bash
-      env:
-        ACTIONS_VERSION: ${{ steps.preflight.outputs.actions-version }}
-      run: |
-        set -euo pipefail
-
-        github_api() {
-          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/GEBITSolutions/stax/$1"
-        }
-
-        if [[ "$ACTIONS_VERSION" == "main" ]]; then
-          response="$(github_api "git/ref/heads/main")" || {
-            echo "::error::Unable to resolve the approved trusted actions main branch."
-            exit 1
-          }
-          resolved_sha="$(jq -er '.object | select(.type == "commit") | .sha | select(type == "string")' <<< "$response")" || {
-            echo "::error::GitHub returned an invalid trusted actions main revision."
-            exit 1
-          }
-        elif [[ "$ACTIONS_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          response="$(github_api "git/ref/tags/${ACTIONS_VERSION}")" || {
-            echo "::error::Unable to resolve the approved trusted actions version tag."
-            exit 1
-          }
-          object_type="$(jq -er '.object.type | select(type == "string")' <<< "$response")"
-          object_sha="$(jq -er '.object.sha | select(type == "string")' <<< "$response")"
-          resolved_sha=""
-          for ((depth = 0; depth < 10; depth++)); do
-            if [[ "$object_type" == "commit" ]]; then
-              resolved_sha="$object_sha"
-              break
-            fi
-            if [[ "$object_type" != "tag" || ! "$object_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-              break
-            fi
-            response="$(github_api "git/tags/${object_sha}")" || {
-              echo "::error::Unable to resolve the approved annotated trusted actions tag."
-              exit 1
-            }
-            object_type="$(jq -er '.object.type | select(type == "string")' <<< "$response")"
-            object_sha="$(jq -er '.object.sha | select(type == "string")' <<< "$response")"
-          done
-        else
-          response="$(github_api "commits/${ACTIONS_VERSION}")" || {
-            echo "::error::Unable to resolve the approved trusted actions commit SHA."
-            exit 1
-          }
-          resolved_sha="$(jq -er '.sha | select(type == "string")' <<< "$response")" || {
-            echo "::error::GitHub returned an invalid trusted actions commit revision."
-            exit 1
-          }
-          if [[ "${resolved_sha,,}" != "${ACTIONS_VERSION,,}" ]]; then
-            echo "::error::actions-version must identify the exact trusted actions commit."
-            exit 1
-          fi
-        fi
-
-        if [[ ! "$resolved_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-          echo "::error::GitHub did not resolve the trusted actions revision to a full commit SHA."
-          exit 1
-        fi
-        resolved_sha="${resolved_sha,,}"
-        echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
-        # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
-        printf '### Trusted actions\n\n- Resolved SHA: `%s`\n' "$resolved_sha" >> "$GITHUB_STEP_SUMMARY"
-
-    - name: Prepare trusted actions checkout
-      shell: bash
-      run: |
-        set -euo pipefail
-        rm -rf -- "$GITHUB_WORKSPACE/trusted-actions"
-
-    - name: Checkout trusted actions
-      uses: actions/checkout@v7
-      with:
-        repository: GEBITSolutions/stax
-        ref: ${{ steps.resolve-actions-ref.outputs.sha }}
-        path: trusted-actions
-        clean: true
-        persist-credentials: false
 
     - name: Prepare source checkout roots
       shell: bash

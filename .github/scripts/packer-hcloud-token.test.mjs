@@ -1,16 +1,7 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 
-// Run the actual pre-checkout github-script body, with GitHub Core and HTTP replaced
-// by deterministic fakes. A separate helper cannot be loaded before checkout.
-const workflow = readFileSync(new URL('../workflows/a-wf-deploy-stack-packer.yml', import.meta.url), 'utf8');
-const step = workflow.split('    - name: Resolve Hetzner token before preflight\n')[1]
-  .split('    - name: Validate request before checkout\n')[0];
-const script = step.split('        script: |\n')[1].split('\n')
-  .map((line) => line.startsWith('          ') ? line.slice(10) : line).join('\n');
-const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-const resolve = new AsyncFunction('core', 'fetch', 'process', script);
+import { resolveHcloudToken } from './packer-hcloud-token.mjs';
 
 function run({
   data = { build_target: 'hetzner', hetzner: { token: 'secret_backend.secret.hcloud_token' }, secret_backend: 'vault' },
@@ -38,7 +29,7 @@ function run({
     if (requests.length === 1) return new Response(JSON.stringify({ access_token: 'azure-access-token' }), { status: authStatus });
     return new Response(JSON.stringify({ value: vaultValue }), { status: vaultStatus });
   };
-  return { execute: () => resolve(core, fetch, { env: vars }), vars, outputs, masked, requests, assertions };
+  return { execute: () => resolveHcloudToken({ core, fetch, env: vars }), vars, outputs, masked, requests, assertions };
 }
 
 test('dry run uses placeholder without touching OIDC, vault or legacy secret', async () => {
