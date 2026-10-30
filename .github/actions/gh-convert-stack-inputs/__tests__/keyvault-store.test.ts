@@ -303,9 +303,11 @@ describe('KeyVaultStore', () => {
           testCredentials
         )
 
-        await expect(store.getSecret('EMPTY_SECRET')).rejects.toThrow(
-          'EMPTY_SECRET'
-        )
+        const error = await store
+          .getSecret('EMPTY_SECRET')
+          .catch((cause) => cause)
+        expect(error).toBeInstanceOf(Error)
+        expect(error.missing).toBe(true)
         expect(mockCoreSetSecret).not.toHaveBeenCalled()
       }
     )
@@ -333,6 +335,27 @@ describe('KeyVaultStore', () => {
           'sensitive-sdk-response'
         )
         expect(mockCoreSetSecret).not.toHaveBeenCalled()
+      }
+    )
+
+    it.each([
+      [404, true],
+      [403, false]
+    ])(
+      'preserves safe missing classification for HTTP %s',
+      async (statusCode, missing) => {
+        mockGetSecret.mockRejectedValue(
+          Object.assign(new Error('SDK response body'), { statusCode })
+        )
+        const store = new KeyVaultStore(
+          testProjectPrefix,
+          testKeyVaultUrl,
+          testCredentials
+        )
+        const error = await store.getSecret('STATE_KEY').catch((cause) => cause)
+        expect(error).toBeInstanceOf(Error)
+        expect(error.missing).toBe(missing)
+        expect(error.message).not.toContain('SDK response body')
       }
     )
 

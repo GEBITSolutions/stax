@@ -7,6 +7,10 @@ export interface ServicePrincipalCredentials {
     clientId: string;
     clientSecret: string;
 }
+export declare class KeyVaultReadError extends Error {
+    readonly missing: boolean;
+    constructor(key: string, missing?: boolean);
+}
 /**
  * KeyVaultStore class for managing Azure Key Vault operations
  * Uses service principal authentication to connect to Azure Key Vault

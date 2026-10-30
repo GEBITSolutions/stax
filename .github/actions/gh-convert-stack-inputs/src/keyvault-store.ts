@@ -17,6 +17,15 @@ export interface ServicePrincipalCredentials {
   clientSecret: string
 }
 
+export class KeyVaultReadError extends Error {
+  constructor(
+    key: string,
+    readonly missing: boolean = false
+  ) {
+    super(`Failed to get secret ${key}`)
+  }
+}
+
 /**
  * Fetches a GitHub Actions OIDC token for Azure AD federation.
  * Requires the workflow to have 'permissions: id-token: write'.
@@ -121,17 +130,26 @@ export class KeyVaultStore implements SecretReader {
       const secret = await this.client.getSecret(convertedKey)
 
       if (!secret.value) {
-        throw new Error(`Secret ${convertedKey} exists but has no value`)
+        throw new KeyVaultReadError(key, true)
       }
 
       core.info(`Successfully retrieved secret: ${convertedKey}`)
       core.setSecret(secret?.value)
 
       return secret.value
-    } catch {
-      const message = `Failed to get secret ${key}`
-      core.error(message)
-      throw new Error(message)
+    } catch (error) {
+      const safeError =
+        error instanceof KeyVaultReadError
+          ? error
+          : new KeyVaultReadError(
+              key,
+              error !== null &&
+                typeof error === 'object' &&
+                'statusCode' in error &&
+                error.statusCode === 404
+            )
+      core.error(safeError.message)
+      throw safeError
     }
   }
 }

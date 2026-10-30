@@ -1,5 +1,6 @@
 import { jest, describe, expect, test } from '@jest/globals'
 import { resolveCredentials, type ResolverInputs } from '../src/resolver.js'
+import { KeyVaultReadError } from '../../gh-convert-stack-inputs/src/keyvault-store.js'
 
 function fixture(overrides: Partial<ResolverInputs> = {}) {
   const inputs: ResolverInputs = {
@@ -142,7 +143,7 @@ describe('mapped credential resolution', () => {
   test('missing and empty Key Vault values hard-fail with converted name, never leaking SDK errors', async () => {
     const missing = fixture({ required: 'HCLOUD_TOKEN' })
     missing.getSecret.mockRejectedValueOnce(
-      new Error('SDK error with sensitive body')
+      new KeyVaultReadError('hcloud_token', true)
     )
     await expect(missing.execute()).rejects.toThrow(
       'Credential HCLOUD_TOKEN: Key Vault secret prod-01---hcloud-token is missing'
@@ -154,6 +155,19 @@ describe('mapped credential resolution', () => {
       'Credential HCLOUD_TOKEN: Key Vault secret prod-01---hcloud-token is missing'
     )
     expect(empty.exports).toEqual({})
+  })
+
+  test('vault authentication and transport failures retain a safe unavailable signal', async () => {
+    const run = fixture({ required: 'HCLOUD_TOKEN' })
+    run.getSecret.mockRejectedValueOnce(
+      new Error('SDK error with sensitive body')
+    )
+    const error = await run.execute().catch((cause) => cause)
+    expect(error.message).toBe(
+      'Credential HCLOUD_TOKEN: Key Vault secret prod-01---hcloud-token could not be read'
+    )
+    expect(error.message).not.toContain('sensitive body')
+    expect(run.exports).toEqual({})
   })
 
   test('selects dedicated keystore SP and OIDC if its client ID is configured', async () => {

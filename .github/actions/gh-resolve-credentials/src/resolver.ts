@@ -1,5 +1,8 @@
 import * as core from '@actions/core'
-import { KeyVaultStore } from '../../gh-convert-stack-inputs/src/keyvault-store.js'
+import {
+  KeyVaultStore,
+  KeyVaultReadError
+} from '../../gh-convert-stack-inputs/src/keyvault-store.js'
 import { convertKey } from '../../gh-convert-stack-inputs/src/keystore-key.js'
 
 const ALLOWED_CREDENTIALS = new Set([
@@ -200,9 +203,13 @@ export async function resolveCredentials({
       vault ??= createVaultReader(inputs, createVault)
       try {
         value = await vault.getSecret(key)
-      } catch {
+      } catch (error) {
+        const reason =
+          error instanceof KeyVaultReadError && error.missing
+            ? 'is missing'
+            : 'could not be read'
         throw new CredentialResolutionError(
-          `Credential ${name}: Key Vault secret ${secretName} is missing`
+          `Credential ${name}: Key Vault secret ${secretName} ${reason}`
         )
       }
       if (typeof value !== 'string' || !value) {

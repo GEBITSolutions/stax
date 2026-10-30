@@ -84381,6 +84381,13 @@ function convertKey(key, prefix) {
     return convertedKey.toLowerCase().replace(/_/g, '-').replace(/\./g, '-');
 }
 
+class KeyVaultReadError extends Error {
+    missing;
+    constructor(key, missing = false) {
+        super(`Failed to get secret ${key}`);
+        this.missing = missing;
+    }
+}
 /**
  * Fetches a GitHub Actions OIDC token for Azure AD federation.
  * Requires the workflow to have 'permissions: id-token: write'.
@@ -84456,16 +84463,21 @@ class KeyVaultStore {
             coreExports.info(`Getting secret: ${convertedKey}`);
             const secret = await this.client.getSecret(convertedKey);
             if (!secret.value) {
-                throw new Error(`Secret ${convertedKey} exists but has no value`);
+                throw new KeyVaultReadError(key, true);
             }
             coreExports.info(`Successfully retrieved secret: ${convertedKey}`);
             coreExports.setSecret(secret?.value);
             return secret.value;
         }
-        catch {
-            const message = `Failed to get secret ${key}`;
-            coreExports.error(message);
-            throw new Error(message);
+        catch (error) {
+            const safeError = error instanceof KeyVaultReadError
+                ? error
+                : new KeyVaultReadError(key, error !== null &&
+                    typeof error === 'object' &&
+                    'statusCode' in error &&
+                    error.statusCode === 404);
+            coreExports.error(safeError.message);
+            throw safeError;
         }
     }
 }
