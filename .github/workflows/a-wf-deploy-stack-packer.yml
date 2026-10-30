@@ -95,21 +95,34 @@ jobs:
         clean: false
         persist-credentials: false
 
+    - name: Resolve credentials
+      id: resolve-credentials
+      if: ${{ fromJson(inputs.data)['build_target'] == 'hetzner' && format('{0}', fromJson(inputs.env)['dry_run']) == 'false' }}
+      uses: ./trusted-actions/.github/actions/gh-resolve-credentials
+      with:
+        required: HCLOUD_TOKEN
+        credentials: ${{ fromJson(inputs.data)['hetzner']['token'] && format('{{"HCLOUD_TOKEN":{0}}}', toJson(fromJson(inputs.data)['hetzner']['token'])) || toJson(fromJson(inputs.data)['credentials'] || fromJson('{}')) }}
+        secret-backend: ${{ fromJson(inputs.data)['secret_backend'] || 'gh' }}
+        environment: ${{ env.ENVIRONMENT }}
+        gh-secrets: ${{ toJson(secrets) }}
+        key-vault-url: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+        key-vault-sp-client-id: ${{ env.ARM_CLIENT_ID }}
+        key-vault-sp-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+        key-vault-sp-tenant-id: ${{ env.ARM_TENANT_ID }}
+        oidc-enabled: ${{ vars.OIDC_ENABLED || 'false' }}
+        keystore-sp-client-id: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
+        keystore-sp-client-secret: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
+        keystore-sp-tenant-id: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
+        keystore-oidc-enabled: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
+
     - name: Resolve Hetzner token before preflight
       id: resolve-hcloud-token
       uses: actions/github-script@v8
       env:
         DATA_JSON: ${{ inputs.data }}
         PIPELINE_ENV_JSON: ${{ inputs.env }}
-        SECRETS_JSON: ${{ toJson(secrets) }}
+        RESOLVED_CREDENTIALS_JSON: ${{ steps.resolve-credentials.outputs.resolved || '[]' }}
         LEGACY_HCLOUD_TOKEN: ${{ secrets.HCLOUD_TOKEN }}
-        KEY_VAULT_URL: ${{ vars.REPO_KEYSTORE_KEY_VAULT_URL }}
-        KEYSTORE_CLIENT_ID: ${{ vars.REPO_KEYSTORE_SP_CLIENT_ID }}
-        KEYSTORE_TENANT_ID: ${{ vars.REPO_KEYSTORE_SP_TENANT_ID }}
-        KEYSTORE_CLIENT_SECRET: ${{ secrets.REPO_KEYSTORE_SP_CLIENT_SECRET }}
-        KEYSTORE_OIDC_ENABLED: ${{ vars.REPO_KEYSTORE_OIDC_ENABLED || 'false' }}
-        ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-        ARM_OIDC_ENABLED: ${{ vars.OIDC_ENABLED || 'false' }}
       with:
         script: await (await import(require('node:url').pathToFileURL(`${process.env.GITHUB_WORKSPACE}/trusted-actions/.github/scripts/packer-hcloud-token.mjs`))).resolveHcloudToken({ core });
 
