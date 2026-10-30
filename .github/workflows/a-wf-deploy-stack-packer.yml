@@ -76,7 +76,7 @@ jobs:
       labels: ${{ steps.publish-azure.outputs.labels || steps.publish-hetzner.outputs.labels }}
       git_sha: ${{ steps.publish-azure.outputs.git_sha || steps.publish-hetzner.outputs.git_sha || steps.source-sha.outputs.sha }}
       transfer_requested: ${{ steps.preflight.outputs.transfer-requested }}
-      actions_sha: ${{ steps.resolve-actions-ref.outputs.sha }}
+      actions_sha: ${{ steps.trusted-actions.outputs.commit }}
     env:
       ENVIRONMENT: ${{ fromJson(inputs.env)['environment'] || 'dev' }}
       ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID || secrets.ARM_CLIENT_ID }}
@@ -85,8 +85,7 @@ jobs:
       ARM_USE_OIDC: ${{ vars.OIDC_ENABLED || 'false' }}
       ARM_USE_AZUREAD: ${{ vars.OIDC_ENABLED || 'false' }}
     steps:
-    - name: Resolve trusted actions revision
-      id: resolve-actions-ref
+    - name: Validate trusted actions ref
       shell: bash
       env:
         ACTIONS_REPOSITORY: ${{ inputs.actions-repository }}
@@ -102,70 +101,6 @@ jobs:
           exit 1
         fi
 
-
-        github_api() {
-          curl --proto '=https' --tlsv1.2 --fail --silent --show-error \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/GEBITSolutions/stax/$1"
-        }
-
-        if [[ "$ACTIONS_VERSION" == "main" ]]; then
-          response="$(github_api "git/ref/heads/main")" || {
-            echo "::error::Unable to resolve the approved trusted actions main branch."
-            exit 1
-          }
-          resolved_sha="$(jq -er '.object | select(.type == "commit") | .sha | select(type == "string")' <<< "$response")" || {
-            echo "::error::GitHub returned an invalid trusted actions main revision."
-            exit 1
-          }
-        elif [[ "$ACTIONS_VERSION" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-          response="$(github_api "git/ref/tags/${ACTIONS_VERSION}")" || {
-            echo "::error::Unable to resolve the approved trusted actions version tag."
-            exit 1
-          }
-          object_type="$(jq -er '.object.type | select(type == "string")' <<< "$response")"
-          object_sha="$(jq -er '.object.sha | select(type == "string")' <<< "$response")"
-          resolved_sha=""
-          for ((depth = 0; depth < 10; depth++)); do
-            if [[ "$object_type" == "commit" ]]; then
-              resolved_sha="$object_sha"
-              break
-            fi
-            if [[ "$object_type" != "tag" || ! "$object_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-              break
-            fi
-            response="$(github_api "git/tags/${object_sha}")" || {
-              echo "::error::Unable to resolve the approved annotated trusted actions tag."
-              exit 1
-            }
-            object_type="$(jq -er '.object.type | select(type == "string")' <<< "$response")"
-            object_sha="$(jq -er '.object.sha | select(type == "string")' <<< "$response")"
-          done
-        else
-          response="$(github_api "commits/${ACTIONS_VERSION}")" || {
-            echo "::error::Unable to resolve the approved trusted actions commit SHA."
-            exit 1
-          }
-          resolved_sha="$(jq -er '.sha | select(type == "string")' <<< "$response")" || {
-            echo "::error::GitHub returned an invalid trusted actions commit revision."
-            exit 1
-          }
-          if [[ "${resolved_sha,,}" != "${ACTIONS_VERSION,,}" ]]; then
-            echo "::error::actions-version must identify the exact trusted actions commit."
-            exit 1
-          fi
-        fi
-
-        if [[ ! "$resolved_sha" =~ ^[0-9a-fA-F]{40}$ ]]; then
-          echo "::error::GitHub did not resolve the trusted actions revision to a full commit SHA."
-          exit 1
-        fi
-        resolved_sha="${resolved_sha,,}"
-        echo "sha=$resolved_sha" >> "$GITHUB_OUTPUT"
-        # shellcheck disable=SC2016 # Backticks are literal Markdown delimiters.
-        printf '### Trusted actions\n\n- Resolved SHA: `%s`\n' "$resolved_sha" >> "$GITHUB_STEP_SUMMARY"
-
     - name: Prepare trusted actions checkout
       shell: bash
       run: |
@@ -173,10 +108,11 @@ jobs:
         rm -rf -- "$GITHUB_WORKSPACE/trusted-actions"
 
     - name: Checkout trusted actions
+      id: trusted-actions
       uses: actions/checkout@v7
       with:
         repository: GEBITSolutions/stax
-        ref: ${{ steps.resolve-actions-ref.outputs.sha }}
+        ref: ${{ inputs.actions-version }}
         path: trusted-actions
         clean: true
         persist-credentials: false
