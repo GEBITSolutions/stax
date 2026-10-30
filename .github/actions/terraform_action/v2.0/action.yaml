@@ -600,7 +600,11 @@ runs:
         SESSION_TOKEN=$(echo "$CREDS" | jq -r '.SessionToken')
       else
         if [ -z "${ACTION_AWS_ACCESS_KEY_ID}" ] || [ -z "${ACTION_AWS_SECRET_ACCESS_KEY}" ]; then
-          echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required when cloud is 'aws' and oidc-enabled is false."
+          if [ "${ACTION_AWS_STATIC_CREDENTIALS_RESOLVED}" = "true" ]; then
+            echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required for static AWS authentication."
+          else
+            echo "::error::AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY are required when cloud is 'aws' and oidc-enabled is false."
+          fi
           exit 1
         fi
         ACCESS_KEY_ID="${ACTION_AWS_ACCESS_KEY_ID}"

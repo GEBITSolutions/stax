@@ -1,9 +1,11 @@
+const CREDENTIAL_AWARE_STACK_TYPES = new Set(['terraform', 'opentofu', 'packer']);
+
 export function validateEnvironment({ core, env = process.env }) {
   const skipCloudValidation = env.SKIP_AZURE_CREDENTIALS_VALIDATION === 'true';
   const oidcEnabled = env.OIDC_ENABLED === 'true';
   const cloud = env.CLOUD;
   const stacks = JSON.parse(env.LAYER_DEPLOYMENTS_JSON || '[]').flat();
-  const mappedForEveryStack = name => stacks.length > 0 && stacks.every(stack => stack.credentials?.[name] !== undefined);
+  const mappedForEveryStack = name => stacks.length > 0 && stacks.every(stack => CREDENTIAL_AWARE_STACK_TYPES.has(stack.type) && stack.credentials?.[name] !== undefined);
   const staticAwsMapped = mappedForEveryStack('AWS_ACCESS_KEY_ID') && mappedForEveryStack('AWS_SECRET_ACCESS_KEY');
   const awsOidc = oidcEnabled && !staticAwsMapped;
   const requiredVars = skipCloudValidation || cloud === 'aws'
