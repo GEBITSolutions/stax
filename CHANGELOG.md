@@ -9,6 +9,12 @@
   - Packer stacks accept `build_target`: `azure` (the default, unchanged Compute Gallery publish), `hetzner` (labelled snapshots with `keep_last` retention) and `aws` (reserved; the workflow rejects it). Normalized outputs are `image_id`, `image_ref`, `build_target`, `version`, `labels` and `git_sha`.
   - Top-level Gallery fields remain deprecated aliases of `azure.*`. Existing Packer stacks that pass those fields as inputs keep the same var-file and still publish `image_id`.
 
+### 📝 Documentation
+  - Add the guides Your first config, Running a deployment and Passing values between stacks.
+  - Mark Helm and Kubernetes manifest stacks as planned; they are not supported yet.
+  - Use neutral `base-image` names in the Packer Hetzner example of the docs, the schema examples and `examples/packer/`; the example config is now `examples/packer/hetzner.yaml`.
+  - Remove an upgrade note from Configuration that the changelog already covers.
+
 ## Release 1.5.0
 
 Merged PRs: 37

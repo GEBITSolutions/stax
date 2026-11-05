@@ -10,9 +10,11 @@ nav = [
   { "Start a new project" = [
     { "Installation" = "installation.md" },
     { "Your first config" = "your-first-config.md" },
+    { "Running a deployment" = "running-a-deployment.md" },
   ] },
   { "Configuration" = [
     { "Overview" = "configuration.md" },
+    { "Passing values between stacks" = "passing-values.md" },
   ] },
   { "Stack types" = [
     { "Supported stack types" = "stack-types.md" },
