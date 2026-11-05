@@ -14,10 +14,10 @@
       
       
       
-        <link rel="prev" href="../your-first-config/">
+        <link rel="prev" href="../running-a-deployment/">
       
       
-        <link rel="next" href="../stack-types/">
+        <link rel="next" href="../passing-values/">
       
       
         
@@ -423,6 +423,33 @@
 
                 
               
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../running-a-deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Running a deployment
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
             </ul>
           </nav>
         
@@ -587,6 +614,33 @@
   
 </nav>
       
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../passing-values/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Passing values between stacks
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -1018,7 +1072,6 @@
 <p>These requirements apply to stack deployments. A state config, resolved with <code>config-profile: state</code>, needs only the backend fields; see <a href="../backends/">Backends</a>.</p>
 <h2 id="stack-conditions">Stack conditions<a class="headerlink" href="#stack-conditions" title="Permanent link">&para;</a></h2>
 <p>A stack's <code>if</code> string is evaluated whether or not a stack filter is supplied. For example, <code>if: "'{stage}' === 'prod'"</code> selects the stack only for the production stage. A false condition excludes the stack; if every selected stack is excluded, the deployment plan is empty.</p>
-<p>Previously, unfiltered deployments ignored these conditions. Review existing conditions before upgrading: stacks that previously ran despite a false condition will now be skipped.</p>
 
 
 
@@ -1050,7 +1103,7 @@
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../your-first-config/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Your first config">
+          <a href="../running-a-deployment/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Running a deployment">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -1060,20 +1113,20 @@
                 Previous
               </span>
               <div class="md-ellipsis">
-                Your first config
+                Running a deployment
               </div>
             </div>
           </a>
         
         
           
-          <a href="../stack-types/" class="md-footer__link md-footer__link--next" aria-label="Next: Supported stack types">
+          <a href="../passing-values/" class="md-footer__link md-footer__link--next" aria-label="Next: Passing values between stacks">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                Supported stack types
+                Passing values between stacks
               </div>
             </div>
             <div class="md-footer__button md-icon">
