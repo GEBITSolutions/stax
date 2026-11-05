@@ -44,7 +44,7 @@ variable "stax_image_version" {
   type = string
 }
 
-source "hcloud" "personal_assistant" {
+source "hcloud" "base_image" {
   location        = var.location
   server_type     = var.server_type
   image           = "ubuntu-24.04"
@@ -54,10 +54,10 @@ source "hcloud" "personal_assistant" {
 }
 
 build {
-  sources = ["source.hcloud.personal_assistant"]
+  sources = ["source.hcloud.base_image"]
 
   provisioner "shell" {
-    inline = ["echo personal-assistant golden image"]
+    inline = ["echo base-image golden image"]
   }
 
   post-processor "manifest" {

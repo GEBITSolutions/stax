@@ -73,5 +73,3 @@ These requirements apply to stack deployments. A state config, resolved with `co
 ## Stack conditions
 
 A stack's `if` string is evaluated whether or not a stack filter is supplied. For example, `if: "'{stage}' === 'prod'"` selects the stack only for the production stage. A false condition excludes the stack; if every selected stack is excluded, the deployment plan is empty.
-
-Previously, unfiltered deployments ignored these conditions. Review existing conditions before upgrading: stacks that previously ran despite a false condition will now be skipped.

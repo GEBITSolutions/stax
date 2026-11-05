@@ -87,14 +87,14 @@ test('hetzner labels keep the retention selector even when the user sets those k
     hetzner: {
       location: 'fsn1',
       server_type: 'cax11',
-      snapshot_name: 'personal-assistant-golden',
-      snapshot_labels: { 'personal-assistant': 'true', role: 'golden', managed_by: 'someone-else' },
+      snapshot_name: 'base-image-golden',
+      snapshot_labels: { 'base-image': 'true', role: 'golden', managed_by: 'someone-else' },
     },
   }, { gitSha: sha, environment: 'dev' });
   assert.equal(resolved.keepLast, 3);
   assert.equal(resolved.fields.snapshot_labels.managed_by, 'stax');
   assert.equal(resolved.fields.snapshot_labels.stax_stack_id, 'golden-hetzner');
-  assert.equal(resolved.fields.snapshot_labels['personal-assistant'], 'true');
+  assert.equal(resolved.fields.snapshot_labels['base-image'], 'true');
   assert.equal(resolved.fields.server_type, 'cax11');
   assert.match(costNote('cax11', 3), /€0\.01 per hour/);
 });
@@ -114,7 +114,7 @@ test('retention keeps the newest matches and never deletes the snapshot just bui
 });
 
 test('manifest ids and normalized outputs', () => {
-  assert.equal(manifestSnapshotId({ builds: [{ artifact_id: 'hcloud.personal_assistant:42' }, { artifact_id: '99' }] }), '99');
+  assert.equal(manifestSnapshotId({ builds: [{ artifact_id: 'hcloud.base_image:42' }, { artifact_id: '99' }] }), '99');
   assert.equal(hetznerImageRef('99'), 'hcloud:snapshot:99');
   assert.equal(azureImageRef({ resourceGroup: 'rg-images', gallery: 'corp_gallery', definition: 'ubuntu2404', version: '1.2.3' }), 'azure:gallery:rg-images/corp_gallery/ubuntu2404/1.2.3');
   assert.deepEqual(

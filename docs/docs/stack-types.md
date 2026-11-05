@@ -53,16 +53,16 @@ Downstream stacks read published values with `stack.<id>.var.<output>`:
 stacks:
   - id: golden-hetzner
     type: packer
-    packer_directory: packer/personal-assistant
+    packer_directory: packer/base-image
     packer_template: .
     packer_version: "1.16.1"
     build_target: hetzner
     hetzner:
       location: fsn1
       server_type: cax11
-      snapshot_name: personal-assistant-golden
+      snapshot_name: base-image-golden
       snapshot_labels:
-        personal-assistant: "true"
+        base-image: "true"
         role: golden
       keep_last: 3
     output-var: [image_id, image_ref, build_target, version, labels]
@@ -89,8 +89,8 @@ Use the `script` workflow type to run custom scripts:
 
 ## Helm deployments
 
-- [x] **Helm**: deploy Helm charts to Kubernetes clusters.
+- [ ] **Helm**: planned, not supported yet.
 
 ## Raw Kubernetes manifest deployments
 
-- [x] **Kubernetes manifests**: deploy Kubernetes resources from raw YAML manifests.
+- [ ] **Kubernetes manifests**: planned, not supported yet.

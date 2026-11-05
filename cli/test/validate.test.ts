@@ -470,16 +470,16 @@ stacks:
     const hetzner = `stacks:
   - id: golden-hetzner
     type: packer
-    packer_directory: packer/personal-assistant
+    packer_directory: packer/base-image
     packer_template: .
     packer_version: "1.16.1"
     build_target: hetzner
     hetzner:
       location: fsn1
       server_type: cax11
-      snapshot_name: personal-assistant-golden
+      snapshot_name: base-image-golden
       snapshot_labels:
-        personal-assistant: "true"
+        base-image: "true"
         role: golden
       keep_last: 3
     output-var: [image_id, image_ref, build_target, version, labels]
@@ -552,7 +552,7 @@ stacks:
 
   it("validates the Packer examples", () => {
     const directory = join(import.meta.dirname, "../../examples/packer");
-    for (const name of ["legacy-azure.yaml", "azure.yaml", "hetzner-personal-assistant.yaml", "scanned-hetzner.yaml"]) {
+    for (const name of ["legacy-azure.yaml", "azure.yaml", "hetzner.yaml", "scanned-hetzner.yaml"]) {
       expect(validateConfigText(readFileSync(join(directory, name), "utf8")), name).toEqual([]);
     }
     const aws = brief(validateConfigText(readFileSync(join(directory, "aws-reserved.yaml"), "utf8")));
