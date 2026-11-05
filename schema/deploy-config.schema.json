@@ -196,13 +196,13 @@
             "location": { "description": "Hetzner location, for example fsn1.", "type": "string", "pattern": "^[a-z]{2,4}[0-9]?$", "examples": ["fsn1"] },
             "server_type": { "description": "Temporary build server type, for example cax11.", "type": "string", "pattern": "^[a-z][a-z0-9]{1,31}$", "examples": ["cax11"] },
             "token": { "description": "Hetzner API token reference; alias of credentials.HCLOUD_TOKEN. Do not set both, including an inherited deployment credential. When unset, the workflow uses the HCLOUD_TOKEN GitHub Environment secret.", "$ref": "#/$defs/credentialReference", "examples": ["secret_backend.secret.hcloud_token", "gh.secret.hcloud_token"], "x-stax-types": ["packer"] },
-            "snapshot_name": { "description": "Snapshot name. Defaults to the stack id.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$", "examples": ["personal-assistant-golden"] },
+            "snapshot_name": { "description": "Snapshot name. Defaults to the stack id.", "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,62}$", "examples": ["base-image-golden"] },
             "snapshot_labels": {
               "description": "Extra snapshot labels. STAX adds stax_stack_id, stax_env, stax_git_sha, stax_build_target and managed_by=stax.",
               "type": "object",
               "additionalProperties": { "type": "string", "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$" },
               "propertyNames": { "pattern": "^[A-Za-z](?:[A-Za-z0-9_.-]{0,61}[A-Za-z0-9])?$" },
-              "examples": [{ "personal-assistant": "true", "role": "golden" }]
+              "examples": [{ "base-image": "true", "role": "golden" }]
             },
             "keep_last": { "description": "Matching snapshots to retain after a successful build. Default 3. 0 keeps only the snapshot just built; on destroy, 0 deletes every match.", "type": "integer", "minimum": 0, "maximum": 100, "default": 3, "examples": [3] }
           }
