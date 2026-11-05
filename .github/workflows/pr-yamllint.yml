@@ -1,0 +1,66 @@
+name: PR YAML and STAX config validation
+
+on:
+  workflow_call:
+    inputs:
+      framework-ref:
+        description: STAX release whose schema validates deploy configs
+        required: false
+        type: string
+        default: '1.8.0'
+      yamllint-config:
+        description: Path to the caller repository's yamllint configuration
+        required: false
+        type: string
+        default: .yamllint.yaml
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate GitHub Actions Workflows
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: GEBITSolutions/stax
+          ref: ${{ inputs.framework-ref }}
+          path: .stax-checks
+          sparse-checkout: schema/deploy-config.schema.json
+          persist-credentials: false
+      - name: Install validators
+        run: python3 -m pip install yamllint==1.35.1 jsonschema==4.25.1 PyYAML==6.0.2
+      - name: Lint YAML
+        shell: bash
+        env:
+          CONFIG: ${{ inputs.yamllint-config }}
+        run: yamllint -c "$CONFIG" .github configs
+      - name: Validate deploy configs against the selected STAX schema
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob
+          import json
+          import sys
+
+          import jsonschema
+          import yaml
+
+          with open('.stax-checks/schema/deploy-config.schema.json', encoding='utf-8') as file:
+              schema = json.load(file)
+          failed = False
+          for path in sorted(glob.glob('configs/*.yaml')):
+              try:
+                  with open(path, encoding='utf-8') as file:
+                      config = yaml.safe_load(file)
+                  jsonschema.validate(config, schema)
+                  print('OK  ', path)
+              except (jsonschema.ValidationError, yaml.YAMLError) as error:
+                  failed = True
+                  print(f'::error file={path}::{error}')
+          sys.exit(1 if failed else 0)
+          PY

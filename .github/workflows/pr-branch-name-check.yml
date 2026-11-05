@@ -1,0 +1,24 @@
+name: PR branch name check
+
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Test Branch Name
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check PR branch
+        shell: bash
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          if [[ "$HEAD_REF" =~ ^(feature|fix|hotfix|chore|docs|refactor|test|release|epic|dependabot|renovate)/[A-Za-z0-9._/-]+$ ]]; then
+            echo "Branch name OK: $HEAD_REF"
+          else
+            echo "::error::Branch '$HEAD_REF' must start with an allowed prefix (for example feature/ or fix/)"
+            exit 1
+          fi
