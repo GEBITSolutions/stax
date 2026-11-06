@@ -1,6 +1,7 @@
 ## Unreleased
 
 ### 🚀 New Features
+  - `a-wf-release-notes.yml` runs in the `release-notes` environment (input `environment`), so each run is listed under Deployments with a link to the pull request.
   - Add the reusable workflow `a-wf-release-notes.yml`: a sandboxed agent writes a plain-English release note with a breaking-change line and links to the pull request and closed issues into a `Release notes` section of each pull-request description, refreshed on every push. It works with any OpenAI Responses-compatible endpoint (`model`, secrets `llm-base-url` and `llm-api-key`); the agent runs on an isolated network and never receives the real key. See [Release notes](https://stax.az.gebit.cloud/latest/release-notes/).
   - Add reusable PR checks for branch names, conventional commit subjects, actionlint, YAML lint and deploy config validation. Consumers call the versioned STAX workflows instead of fetching scripts or schemas from raw URLs.
   - Add allowlisted deployment/stack `credentials` maps with keywise stack overrides and strict `gh.secret.*` / `secret_backend.secret.*` resolution. Terraform and Packer mask and export only their mapped credentials; missing mappings retain legacy behavior, while missing mapped secrets fail without fallback. Resolved static AWS keys work alongside Key Vault OIDC (#55). CLI Key Vault credential validation reads `REPO_KEYSTORE_KEY_VAULT_URL` from its environment; setup validates the effective selected stack maps.

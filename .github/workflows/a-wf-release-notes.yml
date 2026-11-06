@@ -32,6 +32,11 @@ on:
         required: false
         type: number
         default: 120000
+      environment:
+        description: "GitHub environment for the job, so each run is listed under Deployments with a link to the pull request."
+        required: false
+        type: string
+        default: "release-notes"
       actions-repository:
         description: "Repository that provides the STAX scripts and templates."
         required: false
@@ -67,6 +72,9 @@ jobs:
       github.actor != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ github.event.pull_request.html_url }}
     env:
       LETTA_IMAGE: ghcr.io/letta-ai/letta-code:0.34.26@sha256:35574227b609b7d9e22c080ba5d4078e22f78681f574f1bd9f83bf5e027775ad
       RELAY_IMAGE: nginx:1.29.8-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
