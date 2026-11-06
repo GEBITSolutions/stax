@@ -29,6 +29,16 @@ on:
         required: false
         type: string
         default: ""
+      actions-repository:
+        description: "Repository that provides the STAX release-notes script."
+        required: false
+        type: string
+        default: "GEBITSolutions/stax"
+      actions-version:
+        description: "Ref of the actions repository; releases set it to their version."
+        required: false
+        type: string
+        default: "1.9.0"
     outputs:
       release-commit:
         description: "SHA of the release commit the tag points to."
@@ -303,58 +313,39 @@ jobs:
     - name: Save Tag to File
       run: echo "${{ inputs.version }}" > VERSION.txt
 
+    - name: Checkout Actions
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.actions-repository }}
+        ref: ${{ inputs.actions-version }}
+        path: .stax-trusted-actions
+        persist-credentials: false
+
     - name: Create release notes and clear release-ready folder
-        # Requires format of: release-ready/release-notes/pr-<PR_NUMBER>.json
-        # JSON schema: { "pr": <number>, "feature": [...], "bugfixes": [...], "maintenance": [...], "breaking": [...], "docs": [...] }
-      run: |2
-
-        echo "Collecting release notes for version: ${NEW_VERSION}"
-
-        mapfile -t json_files < <(find ./release-ready/release-notes -maxdepth 1 -name 'pr-*.json' -type f | sort)
-
-        if [ ${#json_files[@]} -gt 0 ]; then
-          echo "Found ${#json_files[@]} release note file(s)"
-
-          jq -rs --arg version "${NEW_VERSION}" '
-            {
-              prs: [.[].pr] | sort,
-              feature: [.[] | (.feature // [])[]],
-              bugfixes: [.[] | (.bugfixes // [])[]],
-              maintenance: [.[] | (.maintenance // [])[]],
-              breaking: [.[] | (.breaking // [])[]],
-              docs: [.[] | (.docs // [])[]]
-            } |
-            [
-              "# RELEASE-NOTES",
-              "",
-              "## Release \($version)",
-              "",
-              "Merged PRs: \(.prs | map(tostring) | join(", "))",
-              ""
-            ] +
-            (if (.feature | length) > 0 then ["### 🚀 New Features"] + [.feature[] | "  - \(.)"] + [""] else [] end) +
-            (if (.bugfixes | length) > 0 then ["### 🐞 Bugfixes"] + [.bugfixes[] | "  - \(.)"] + [""] else [] end) +
-            (if (.maintenance | length) > 0 then ["### 🔧 Maintenance"] + [.maintenance[] | "  - \(.)"] + [""] else [] end) +
-            (if (.breaking | length) > 0 then ["### 💥 Breaking Changes"] + [.breaking[] | "  - \(.)"] + [""] else [] end) +
-            (if (.docs | length) > 0 then ["### 📝 Documentation"] + [.docs[] | "  - \(.)"] + [""] else [] end) |
-            join("\n")
-          ' "${json_files[@]}" > NEW-RELEASE.md
-
-          # Per-version body for the GitHub release (strip sentinel + heading)
-          sed -e 's/# RELEASE-NOTES//' -e '/^## Release /d' NEW-RELEASE.md | sed -e '/./,$!d' > RELEASE_NOTES.md
-
-          if [ -f "CHANGELOG.md" ]; then
-            sed -e 's/# RELEASE-NOTES//g' -i CHANGELOG.md
-            cat CHANGELOG.md >> NEW-RELEASE.md
-          fi
-          mv NEW-RELEASE.md CHANGELOG.md
-          rm -f ./release-ready/release-notes/*.json
-        fi
-
-        # Ensure a release body exists even when no PR notes were collected
-        if [ ! -s RELEASE_NOTES.md ]; then
-          printf '_No release notes recorded for %s._\n' "${NEW_VERSION}" > RELEASE_NOTES.md
-        fi
+      # Collects the "Release notes" sections that a-wf-release-notes.yml wrote into the
+      # descriptions of pull requests merged since the previous release tag. During the
+      # transition it also reads release-ready/release-notes/pr-*.json and folds a
+      # hand-written "## Unreleased" section of CHANGELOG.md into the release.
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+      run: |
+        prev=$(git tag --merged HEAD | { grep -E '^v?[0-9]+(\.[0-9]+){0,2}$' || true; } | sort -V | tail -n1)
+        range=${prev:+$prev..}HEAD
+        echo "Collecting pull requests merged into ${DEFAULT_BRANCH} in ${range}"
+        # A standalone assignment, so an invalid range fails the job.
+        commits=$(git rev-list --first-parent "$range")
+        : > "$RUNNER_TEMP/prs.ndjson"
+        for sha in $commits; do
+          SHA=$sha gh api "repos/$GITHUB_REPOSITORY/commits/$sha/pulls" --jq '.[]
+            | select(.merged_at != null and .base.ref == env.DEFAULT_BRANCH and .merge_commit_sha == env.SHA)
+            | {number, title, url: .html_url, body}' >> "$RUNNER_TEMP/prs.ndjson"
+        done
+        jq -s 'unique_by(.number)' "$RUNNER_TEMP/prs.ndjson" > "$RUNNER_TEMP/prs.json"
+        echo "Pull requests in this release: $(jq -r '[.[].number] | join(", ")' "$RUNNER_TEMP/prs.json")"
+        VERSION="$NEW_VERSION" PRS_FILE="$RUNNER_TEMP/prs.json" NOTES_DIR=release-ready/release-notes \
+          CHANGELOG_FILE=CHANGELOG.md OUT_CHANGELOG=CHANGELOG.md OUT_BODY=RELEASE_NOTES.md \
+          node .stax-trusted-actions/.github/scripts/release-notes.mjs compose
+        rm -f release-ready/release-notes/*.json
 
     - name: Commit and push release notes
       id: commit-release-changes
