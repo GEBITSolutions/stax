@@ -1,0 +1,223 @@
+name: ". Release Notes: Pull request note"
+
+# Writes a plain-English release note for a same-repository pull request into a
+# marked "Release notes" section of its description. Call it on pull_request
+# events; a-wf-release-prepare.yml collects the sections when a release is cut.
+#
+# The agent (Letta Code, local backend, ephemeral) reads the pull request, its
+# commits, diff and closed issues, and may only read the checkout. It runs on an
+# internal Docker network without DNS and only reaches a relay that holds the
+# real key. Instructions, relay configuration and scripts come from the trusted
+# STAX checkout, never from the caller's pull request (ADR 0001).
+
+on:
+  workflow_call:
+    inputs:
+      model:
+        description: "Model or deployment name served by the OpenAI Responses-compatible endpoint."
+        required: true
+        type: string
+      instructions-path:
+        description: "Optional path to custom instructions on the caller's base branch. Defaults to STAX's .github/release-notes/instructions.md."
+        required: false
+        type: string
+        default: ""
+      release-app-client-id:
+        description: "Optional GitHub App client ID that edits the description; without it the workflow uses the job token."
+        required: false
+        type: string
+        default: ""
+      max-diff-chars:
+        description: "Diff characters passed to the agent; longer diffs are truncated."
+        required: false
+        type: number
+        default: 120000
+      actions-repository:
+        description: "Repository that provides the STAX scripts and templates."
+        required: false
+        type: string
+      actions-version:
+        description: "Ref of the actions repository."
+        required: false
+        type: string
+    secrets:
+      llm-base-url:
+        description: "OpenAI Responses-compatible base URL ending in /v1, for example https://api.openai.com/v1. A secret so it stays out of public logs."
+        required: true
+      llm-api-key:
+        description: "API key for the endpoint. Only the relay container receives it."
+        required: true
+      release-app-private-key:
+        description: "Private key of the GitHub App given in release-app-client-id."
+        required: false
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+
+jobs:
+  release-note:
+    name: Release note
+    # Fork and Dependabot pull requests receive no secrets; drafts are skipped.
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      LETTA_IMAGE: ghcr.io/letta-ai/letta-code:0.34.26@sha256:35574227b609b7d9e22c080ba5d4078e22f78681f574f1bd9f83bf5e027775ad
+      RELAY_IMAGE: nginx:1.29.8-alpine@sha256:5616878291a2eed594aee8db4dade5878cf7edcb475e59193904b198d9b830de
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      SCRIPT: trusted-actions/.github/scripts/release-notes.mjs
+      # Strict mode denies every tool call not listed (headless turns "ask" into
+      # deny). Path globs skip dot-directories and the bare /repo directory that
+      # Glob and Grep check, hence the extra patterns.
+      ALLOWED_TOOLS: "Read(/repo/**),Read(/repo/**/.*),Read(/repo/**/.*/**),Glob(/repo),Glob(/repo/**),Glob(/repo/**/.*/**),Grep(/repo),Grep(/repo/**),Grep(/repo/**/.*/**)"
+    steps:
+    - name: Checkout Actions
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        path: trusted-actions
+        persist-credentials: false
+
+    - name: Check keep marker
+      id: keep
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
+        keep=$(BODY_FILE="$RUNNER_TEMP/body.md" node "$SCRIPT" check-keep)
+        if [[ $keep == true ]]; then
+          echo "::notice::The release note is marked keep; not regenerating."
+        fi
+        echo "keep=$keep" >> "$GITHUB_OUTPUT"
+
+    - name: Check out pull request
+      if: steps.keep.outputs.keep != 'true'
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ github.event.pull_request.head.sha }}
+        path: repo
+        fetch-depth: 0
+        persist-credentials: false
+
+    - name: Build prompt
+      if: steps.keep.outputs.keep != 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+        INSTRUCTIONS_PATH: ${{ inputs.instructions-path }}
+        MAX_DIFF_CHARS: ${{ inputs.max-diff-chars }}
+      run: |
+        # A symlink in the pull request could point Read elsewhere in the container.
+        find repo -type l -print -delete
+        if [[ -n $INSTRUCTIONS_PATH ]]; then
+          # From the base branch, so the pull request cannot change its own instructions.
+          git -C repo show "$BASE_SHA:$INSTRUCTIONS_PATH" > "$RUNNER_TEMP/instructions.md"
+        else
+          cp trusted-actions/.github/release-notes/instructions.md "$RUNNER_TEMP/instructions.md"
+        fi
+        gh api graphql -F owner="${GITHUB_REPOSITORY%/*}" -F name="${GITHUB_REPOSITORY#*/}" -F pr="$PR_NUMBER" -f query='
+          query($owner: String!, $name: String!, $pr: Int!) {
+            repository(owner: $owner, name: $name) {
+              pullRequest(number: $pr) {
+                title url body
+                closingIssuesReferences(first: 50) { totalCount nodes { number title url body } }
+              }
+            }
+          }' --jq '.data.repository.pullRequest' > "$RUNNER_TEMP/pr.json"
+        git -C repo log --format='- %s' "$BASE_SHA..$HEAD_SHA" > "$RUNNER_TEMP/commits.txt"
+        git -C repo diff --no-color --find-renames "$BASE_SHA...$HEAD_SHA" > "$RUNNER_TEMP/pr.diff"
+        PR_FILE="$RUNNER_TEMP/pr.json" INSTRUCTIONS_FILE="$RUNNER_TEMP/instructions.md" \
+          COMMITS_FILE="$RUNNER_TEMP/commits.txt" DIFF_FILE="$RUNNER_TEMP/pr.diff" \
+          OUT_FILE="$RUNNER_TEMP/prompt.md" node "$SCRIPT" prompt
+
+    - name: Start model relay
+      if: steps.keep.outputs.keep != 'true'
+      env:
+        LLM_BASE_URL: ${{ secrets.llm-base-url }}
+        LLM_API_KEY: ${{ secrets.llm-api-key }}
+      run: |
+        if [[ -z $LLM_API_KEY ]]; then
+          echo "::error::The llm-api-key secret is empty."
+          exit 1
+        fi
+        if [[ ! $LLM_BASE_URL =~ ^https://([^/]+)(/.*)?/v1/?$ ]]; then
+          echo "::error::llm-base-url must look like https://<host>[/<path>]/v1"
+          exit 1
+        fi
+        export LLM_HOST=${BASH_REMATCH[1]} LLM_PATH=${BASH_REMATCH[2]}
+        # Keep the endpoint out of public logs; secret masking does not cover parts.
+        echo "::add-mask::$LLM_HOST"
+        if [[ -n $LLM_PATH ]]; then
+          echo "::add-mask::$LLM_PATH"
+        fi
+        docker network create --internal release-notes-internal >/dev/null
+        docker run -d --name llm-relay --network bridge \
+          -e LLM_API_KEY -e LLM_HOST -e LLM_PATH \
+          -v "$GITHUB_WORKSPACE/trusted-actions/.github/relay/llm-relay.conf.template:/etc/nginx/templates/default.conf.template:ro" \
+          "$RELAY_IMAGE" >/dev/null
+        docker network connect release-notes-internal llm-relay
+        for _ in $(seq 1 40); do
+          docker exec llm-relay test -f /run/nginx.pid && break
+          sleep 0.5
+        done
+        docker exec llm-relay test -f /run/nginx.pid
+        relay_ip=$(docker inspect -f '{{(index .NetworkSettings.Networks "release-notes-internal").IPAddress}}' llm-relay)
+        echo "RELAY_IP=$relay_ip" >> "$GITHUB_ENV"
+        echo "AGENT_BASE_URL=http://llm-relay:8080$LLM_PATH/v1" >> "$GITHUB_ENV"
+
+    - name: Write release note
+      if: steps.keep.outputs.keep != 'true'
+      env:
+        MODEL: ${{ inputs.model }}
+      run: |
+        # Runs from /tmp so settings or skills in the pull request cannot widen
+        # permissions; the checkout is mounted read-only and the agent only
+        # knows a dummy key. Fails if the container can reach anything else.
+        docker run --rm -i -v "$GITHUB_WORKSPACE/repo:/repo:ro" \
+          --network release-notes-internal --dns 127.0.0.1 --add-host "llm-relay:$RELAY_IP" \
+          -e AGENT_BASE_URL -e MODEL -e ALLOWED_TOOLS \
+          -e LETTA_CODE_TELEM=0 -e DISABLE_AUTOUPDATER=1 \
+          --entrypoint bash "$LETTA_IMAGE" -c '
+            set -euo pipefail
+            if curl -s -m 5 -o /dev/null https://github.com || curl -s -m 5 -o /dev/null http://1.1.1.1; then
+              echo "The agent container is not isolated." >&2; exit 1
+            fi
+            letta --backend local connect openai \
+              --base-url "$AGENT_BASE_URL" --api-key dummy </dev/null >/dev/null
+            cd /tmp
+            letta --backend local -p --ephemeral -m "openai/$MODEL" --toolset default \
+              --tools "Read,Glob,Grep" --permission-mode strict --allowedTools "$ALLOWED_TOOLS" \
+              --no-skills --output-format json
+          ' < "$RUNNER_TEMP/prompt.md" > "$RUNNER_TEMP/result.json"
+        jq '{usage, num_turns}' "$RUNNER_TEMP/result.json"
+
+    - name: Create GitHub App token
+      id: app-token
+      if: steps.keep.outputs.keep != 'true' && inputs.release-app-client-id != ''
+      uses: actions/create-github-app-token@v3
+      with:
+        client-id: ${{ inputs.release-app-client-id }}
+        private-key: ${{ secrets.release-app-private-key }}
+        repositories: ${{ github.event.repository.name }}
+        permission-pull-requests: write
+
+    - name: Update release-notes section
+      if: steps.keep.outputs.keep != 'true'
+      env:
+        GH_TOKEN: ${{ steps.app-token.outputs.token || github.token }}
+      run: |
+        # Re-read the description so edits made during the run are kept.
+        gh api "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" --jq '.body // ""' > "$RUNNER_TEMP/body.md"
+        BODY_FILE="$RUNNER_TEMP/body.md" RESULT_FILE="$RUNNER_TEMP/result.json" \
+          OUT_FILE="$RUNNER_TEMP/new-body.md" node "$SCRIPT" update
+        if [[ -f $RUNNER_TEMP/new-body.md ]]; then
+          gh api -X PATCH "repos/$GITHUB_REPOSITORY/pulls/$PR_NUMBER" -F body=@"$RUNNER_TEMP/new-body.md" >/dev/null
+        fi

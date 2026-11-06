@@ -1,0 +1,37 @@
+name: "📝 PR: Release notes"
+
+# Runs STAX's own release-notes workflow on its pull requests. Skips until the
+# repository sets RELEASE_NOTES_LLM_MODEL and the llm secrets.
+
+on:
+  pull_request:
+    branches:
+    - main
+    types:
+    - opened
+    - synchronize
+    - reopened
+    - ready_for_review
+
+permissions:
+  contents: read
+  issues: read
+  pull-requests: write
+
+concurrency:
+  group: release-notes-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  release-notes:
+    if: vars.RELEASE_NOTES_LLM_MODEL != ''
+    uses: ./.github/workflows/a-wf-release-notes.yml
+    with:
+      model: ${{ vars.RELEASE_NOTES_LLM_MODEL }}
+      release-app-client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+      # Same-repository pull requests test their own scripts and templates.
+      actions-version: ${{ github.event.pull_request.head.sha }}
+    secrets:
+      llm-base-url: ${{ secrets.RELEASE_NOTES_LLM_BASE_URL }}
+      llm-api-key: ${{ secrets.RELEASE_NOTES_LLM_API_KEY }}
+      release-app-private-key: ${{ secrets.RELEASE_APP_CLIENT_SECRET }}
