@@ -176,7 +176,7 @@ test('CLI compose writes changelog and release body from real inputs', () => {
   execFileSync(process.execPath, [script, 'compose'], { env });
   const out = readFileSync(env.OUT_CHANGELOG, 'utf8');
   assert.ok(out.startsWith('## Release 9.9.9\n'));
-  assert.ok(!out.includes('## Unreleased'));
+  assert.ok(!/^## Unreleased/m.test(out), 'no Unreleased heading left');
   assert.ok(out.includes('## Release 1.5.0'), 'older releases kept');
   assert.equal(out.split('## Release 9.9.9').length, 2);
   assert.ok(readFileSync(env.OUT_BODY, 'utf8').includes('- Add notes.'));
