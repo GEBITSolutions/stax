@@ -33,6 +33,16 @@ on:
         required: false
         type: string
         default: "false"
+      actions-repository:
+        description: "Repository that provides the STAX release-notes script."
+        required: false
+        type: string
+        default: "GEBITSolutions/stax"
+      actions-version:
+        description: "Ref of the actions repository; releases set it to their version."
+        required: false
+        type: string
+        default: "1.8.0"
     outputs:
       has-next-version:
         description: "'true' when commits since the last release produced a new version."
@@ -61,6 +71,8 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       fix-actions-and-workflow-versions: ${{ inputs.fix-actions-and-workflow-versions }}
       shared-code-workflow-files-to-pin: ${{ inputs.shared-code-workflow-files-to-pin }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
 
   e2e:
     needs: [version, prepare]
