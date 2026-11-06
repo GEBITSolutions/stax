@@ -46,7 +46,7 @@ on:
         description: "Ref of the actions repository; releases set it to their version."
         required: false
         type: string
-        default: "1.10.0"
+        default: "1.11.0"
     secrets:
       llm-base-url:
         description: "OpenAI Responses-compatible base URL ending in /v1, for example https://api.openai.com/v1. A secret so it stays out of public logs."
