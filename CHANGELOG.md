@@ -1,4 +1,21 @@
-## Unreleased
+## Release 1.10.0
+
+Merged PRs: 67, 70
+
+### 💥 Breaking Changes
+
+- Set checkout `fetch-depth: 0` and review release expectations for merged maintenance branches. ([#70](https://github.com/GEBITSolutions/stax/pull/70))
+
+### Changes
+
+- Add merged pull-request notes to `CHANGELOG.md` and release bodies, breaking changes first. ([#67](https://github.com/GEBITSolutions/stax/pull/67))
+- Add existing JSON and `Unreleased` notes to the next release once. ([#67](https://github.com/GEBITSolutions/stax/pull/67))
+- Add `actions-repository` and `actions-version` inputs to `a-wf-release.yml` and `a-wf-release-prepare.yml`. ([#67](https://github.com/GEBITSolutions/stax/pull/67))
+- Fix `a-wf-release-notes.yml` loading scripts from `main` instead of its release. ([#67](https://github.com/GEBITSolutions/stax/pull/67))
+- Fix missed release bumps from feature and fix commits brought in through merges. ([#70](https://github.com/GEBITSolutions/stax/pull/70), closes [#69](https://github.com/GEBITSolutions/stax/issues/69))
+- Change release calculations to use the highest reachable version without recounting released hotfixes. ([#70](https://github.com/GEBITSolutions/stax/pull/70))
+- Fix action failures with the default `log_order` setting. ([#70](https://github.com/GEBITSolutions/stax/pull/70))
+- Change shallow checkouts to fail explicitly instead of calculating potentially incorrect versions. ([#70](https://github.com/GEBITSolutions/stax/pull/70))
 
 ### 🚀 New Features
   - Add the reusable workflow `a-wf-release-notes.yml`: a sandboxed agent writes a plain-English release note with a breaking-change line and links to the pull request and closed issues into a `Release notes` section of each pull-request description, refreshed on every push. It works with any OpenAI Responses-compatible endpoint (`model`, secrets `llm-base-url` and `llm-api-key`); the agent runs on an isolated network and never receives the real key. See [Release notes](https://stax.az.gebit.cloud/latest/release-notes/).
