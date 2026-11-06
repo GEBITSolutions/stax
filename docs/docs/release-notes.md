@@ -56,10 +56,6 @@ When `a-wf-release.yml` or `a-wf-release-prepare.yml` prepares a release, it ask
 
 During the transition from JSON release notes, the next release also includes `release-ready/release-notes/pr-*.json` files and a hand-written `## Unreleased` section of `CHANGELOG.md`.
 
-## Migrating from the Copilot workflow
-
-`a-wf-copilot-generate-release-notes.yml` is deprecated and will be removed in the next major release. Replace its caller with the workflow shown above: drop the `pr_number`, `branch` and `base_ref` inputs and the `COPILOT_USER_TOKEN` secret, and pass `model`, `llm-base-url` and `llm-api-key`. Pending `release-ready/release-notes/*.json` files are still collected by the next release.
-
 ## How the agent is isolated
 
 The note is written by [Letta Code](https://github.com/letta-ai/letta-code) in a pinned container image, on the local backend and `--ephemeral`: no agent, memory or account is kept, and telemetry and auto-update are off. The agent receives the title, description, commits, diff and closed issues in its prompt and may additionally read the checkout. The workflow:
