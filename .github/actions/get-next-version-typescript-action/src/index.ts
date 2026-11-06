@@ -92,7 +92,7 @@ const run = (): void => {
     core.info('No release tag found. Using base version 0.0.0')
   }
 
-  core.info(`Commits since last release: ${analysis.commits.length}`)
+  core.info(`Unreleased commits: ${analysis.commits.length}`)
   for (const commit of analysis.commits) {
     core.info(
       `- ${commitTypeLabel(commit.type)} ${commit.hash.slice(0, 7)} ${commit.subject}`
@@ -104,7 +104,7 @@ const run = (): void => {
   )
   if (highestType === CommitType.Chore) {
     core.info(
-      'No version bump required (only chore commits since last release).'
+      'No version bump required (no unreleased feature, fix or breaking commits).'
     )
   } else {
     const bumpType =
