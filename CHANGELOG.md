@@ -29,9 +29,6 @@ Merged PRs: 67, 70
   - Packer stacks accept `build_target`: `azure` (the default, unchanged Compute Gallery publish), `hetzner` (labelled snapshots with `keep_last` retention) and `aws` (reserved; the workflow rejects it). Normalized outputs are `image_id`, `image_ref`, `build_target`, `version`, `labels` and `git_sha`.
   - Top-level Gallery fields remain deprecated aliases of `azure.*`. Existing Packer stacks that pass those fields as inputs keep the same var-file and still publish `image_id`.
 
-### ⚠️ Deprecations
-  - `a-wf-copilot-generate-release-notes.yml` is deprecated and will be removed in the next major release; switch to `a-wf-release-notes.yml`. Its JSON files are still collected until then.
-
 ### 📝 Documentation
   - Add the guides Your first config, Running a deployment and Passing values between stacks.
   - Mark Helm and Kubernetes manifest stacks as planned; they are not supported yet.
