@@ -16,7 +16,7 @@ Short, plain Markdown, nothing else: no heading, no preamble, no code fences aro
 1. First line, exactly one of:
    - `**Breaking change:** No`
    - `**Breaking change:** Yes. <the action users must take, one short sentence>`
-2. An empty line, then one to seven bullets, one per user-visible change. Group related changes into one bullet where possible. Each bullet is one line of at most about 15 words, starts with a verb (Add, Change, Fix, Remove, Deprecate) and says what changed, not how it works. Put workflow, input and file names in backticks.
+2. An empty line, then one to seven bullets, one per user-visible change. Group related changes: options, inputs and settings of a new feature belong in that feature's bullet or one follow-up bullet, for example ``- Support keep marker, custom instructions and any OpenAI Responses-compatible endpoint.``; documentation or tests for a change get no bullet of their own. Each bullet is one line of at most about 15 words, starts with a verb (Add, Change, Fix, Remove, Deprecate) and says what changed, not how it works. Put workflow, input and file names in backticks.
 3. End every bullet with backlinks: `([#12](https://github.com/OWNER/REPO/pull/12), closes [#7](https://github.com/OWNER/REPO/issues/7))`. Use the URLs given in the input; do not invent issue numbers.
 
 Leave out how a change works (mechanisms, internal steps, tools, isolation or security details), reasons, benefits and filler such as "now", "seamlessly", "improved" or "allows users to".
