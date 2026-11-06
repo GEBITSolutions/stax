@@ -22,6 +22,9 @@ nav = [
   { "Backends" = [
     { "Overview" = "backends.md" },
   ] },
+  { "Releases" = [
+    { "Release notes" = "release-notes.md" },
+  ] },
 ]
 
 [project.extra.version]

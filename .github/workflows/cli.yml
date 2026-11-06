@@ -19,6 +19,8 @@ on:
       - .github/scripts/packer-build-target.test.mjs
       - .github/scripts/packer-hcloud-token.mjs
       - .github/scripts/packer-hcloud-token.test.mjs
+      - .github/scripts/release-notes.mjs
+      - .github/scripts/release-notes.test.mjs
       - .github/workflows/a-wf-deploy-stack-packer.yml
       - .github/workflows/cli.yml
       - .github/workflows/cli-pack.yml
