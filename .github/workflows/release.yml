@@ -41,6 +41,8 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       fix-actions-and-workflow-versions: ${{ 'true' }}
       assets-artifact: stax-cli
+      # The release that introduces a script must already use it.
+      actions-version: ${{ github.sha }}
 
   approve:
     name: "Approve"
