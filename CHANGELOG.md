@@ -1,3 +1,14 @@
+## Release 1.11.0
+
+Merged PRs: 66, 68, 71
+
+### Changes
+
+- Deprecate `a-wf-copilot-generate-release-notes.yml` ahead of next-major removal; use `a-wf-release-notes.yml` instead. ([#66](https://github.com/GEBITSolutions/stax/pull/66))
+- Add a deprecation warning on every Copilot release-notes workflow run. ([#66](https://github.com/GEBITSolutions/stax/pull/66))
+- Add release-note runs to Deployments with pull-request links and configurable `environment` (default `release-notes`). ([#68](https://github.com/GEBITSolutions/stax/pull/68))
+- Change breaking-change release notes to explain affected behavior before required user actions. ([#71](https://github.com/GEBITSolutions/stax/pull/71))
+
 ## Release 1.10.0
 
 Merged PRs: 67, 70
