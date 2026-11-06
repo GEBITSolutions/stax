@@ -27,7 +27,7 @@ on:
       actions-version:
         type: string
         required: false
-        default: "1.9.0"
+        default: "1.10.0"
     secrets:
       ARM_CLIENT_SECRET:
         required: false
