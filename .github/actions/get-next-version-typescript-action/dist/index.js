@@ -45111,7 +45111,12 @@ const commitMessageToType = (message, prefixes) => {
 };
 
 const runGit = (args, cwd = process.cwd()) => {
-    return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+    return execFileSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        maxBuffer: 64 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe']
+    }).trim();
 };
 const parseTagVersion = (tag) => {
     const normalized = tag.startsWith('v') ? tag.slice(1) : tag;
@@ -45134,7 +45139,10 @@ const parseTagVersion = (tag) => {
     return { version: parsed, precision };
 };
 const getTagInfoMap = () => {
-    const tagsOutput = runGit(['tag', '--list']);
+    // Do not use `tag --merged`: its timestamp-based pruning can omit ancestors
+    // when commit clocks are skewed. An unfiltered walk gives exact membership.
+    const reachableCommits = new Set(runGit(['rev-list', 'HEAD']).split('\n'));
+    const tagsOutput = runGit(['tag', '--list', '--sort=refname']);
     const tags = tagsOutput ? tagsOutput.split('\n').filter(Boolean) : [];
     const tagInfoByCommit = new Map();
     for (const tag of tags) {
@@ -45144,9 +45152,16 @@ const getTagInfoMap = () => {
         }
         let commitHash = '';
         try {
-            commitHash = runGit(['rev-list', '-n', '1', tag]);
+            commitHash = runGit([
+                'rev-parse',
+                '--verify',
+                `refs/tags/${tag}^{commit}`
+            ]);
         }
         catch {
+            continue;
+        }
+        if (!reachableCommits.has(commitHash)) {
             continue;
         }
         const existing = tagInfoByCommit.get(commitHash);
@@ -45177,12 +45192,19 @@ const buildLogArgs = (logOrder) => {
         logArgs.push('--topo-order');
     }
     else {
-        logArgs.push('--committer-date-order');
+        logArgs.push('--date-order');
     }
     return logArgs;
 };
-const getCommitHistory = (logOrder) => {
-    const output = runGit(buildLogArgs(logOrder));
+const getCommitHistory = (logOrder, releasedCommits) => {
+    // A release covers its entire ancestry, not a prefix of a git log walk.
+    // Exclude every reachable release so merged-back hotfixes are not counted twice.
+    const args = [...buildLogArgs(logOrder), 'HEAD'];
+    if (releasedCommits.length > 0) {
+        args.push('--not', ...releasedCommits);
+    }
+    args.push('--');
+    const output = runGit(args);
     if (!output) {
         return [];
     }
@@ -45198,22 +45220,21 @@ const getCommitHistory = (logOrder) => {
     });
 };
 const analyzeCommitsSinceLastRelease = (prefixes, logOrder) => {
+    if (runGit(['rev-parse', '--is-shallow-repository']) === 'true') {
+        throw new Error('release analysis requires complete history and tags; use actions/checkout with fetch-depth: 0');
+    }
     const tagsByCommit = getTagInfoMap();
-    const commits = getCommitHistory(logOrder);
-    const analyzedCommits = [];
+    const commits = getCommitHistory(logOrder, [...tagsByCommit.keys()]);
     let latestReleaseVersion = null;
     let latestReleaseCommit = null;
     let latestReleaseTag = null;
-    for (const commit of commits) {
-        const tagInfo = tagsByCommit.get(commit.hash);
-        if (tagInfo) {
+    for (const [commitHash, tagInfo] of tagsByCommit) {
+        if (!latestReleaseVersion ||
+            semver.gt(tagInfo.version, latestReleaseVersion)) {
             latestReleaseVersion = tagInfo.version;
-            latestReleaseCommit = commit.hash;
+            latestReleaseCommit = commitHash;
             latestReleaseTag = tagInfo.tag;
-            break;
         }
-        const commitType = commitMessageToType(commit.message, prefixes);
-        analyzedCommits.push({ ...commit, type: commitType });
     }
     if (!latestReleaseVersion) {
         latestReleaseVersion = semver.parse('0.0.0');
@@ -45225,7 +45246,10 @@ const analyzeCommitsSinceLastRelease = (prefixes, logOrder) => {
         latestReleaseVersion,
         latestReleaseCommit,
         latestReleaseTag,
-        commits: analyzedCommits
+        commits: commits.map((commit) => ({
+            ...commit,
+            type: commitMessageToType(commit.message, prefixes)
+        }))
     };
 };
 
@@ -45370,13 +45394,13 @@ const run = () => {
     else {
         coreExports.info('No release tag found. Using base version 0.0.0');
     }
-    coreExports.info(`Commits since last release: ${analysis.commits.length}`);
+    coreExports.info(`Unreleased commits: ${analysis.commits.length}`);
     for (const commit of analysis.commits) {
         coreExports.info(`- ${commitTypeLabel(commit.type)} ${commit.hash.slice(0, 7)} ${commit.subject}`);
     }
     const { highestType, reasonCommit } = findHighestImpactCommit(analysis.commits);
     if (highestType === CommitType.Chore) {
-        coreExports.info('No version bump required (only chore commits since last release).');
+        coreExports.info('No version bump required (no unreleased feature, fix or breaking commits).');
     }
     else {
         const bumpType = highestType === CommitType.Fix

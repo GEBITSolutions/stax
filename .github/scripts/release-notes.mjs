@@ -1,7 +1,8 @@
 // Release notes kept in a marked section of the pull-request description.
 // Pure functions are exported for tests; the CLI at the bottom is what
 // a-wf-release-notes.yml runs.
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const SECTION_START = '<!-- release-notes:start -->';
@@ -76,6 +77,89 @@ export function updateDescription({ body, note, headSha }) {
   return { body: `${updated}\n` };
 }
 
+// --- Release composition (a-wf-release-prepare.yml) ---------------------
+
+// Returns { breaking, changes } from a description's section, or null when the
+// description has none. `breaking` is the required action for a breaking change,
+// otherwise null; `changes` keeps the bullets as written, including wrapped lines.
+export function parseSection(body) {
+  const match = (body ?? '').replace(/\r/g, '').match(sectionPattern);
+  if (!match) return null;
+  const lines = match[0].split('\n')
+    .filter((line) => !/^(<!--|<sub>|## Release notes)/.test(line.trim()));
+  while (lines.length && !lines[0].trim()) lines.shift();
+  while (lines.length && !lines.at(-1).trim()) lines.pop();
+  const end = lines.findIndex((line) => !line.trim());
+  const head = lines.slice(0, end === -1 ? lines.length : end).map((line) => line.trim()).join(' ');
+  const changes = end === -1 ? [] : lines.slice(end);
+  while (changes.length && !changes[0].trim()) changes.shift();
+  const breaking = /^\*\*Breaking change:\*\* Yes/.test(head)
+    ? head.replace(/^\*\*Breaking change:\*\* Yes[\s.:-]*/, '').trim()
+    : null;
+  return { breaking, changes: changes.join('\n') };
+}
+
+// Splits a hand-written "## Unreleased" section off a changelog.
+export function splitUnreleased(changelog) {
+  const text = (changelog ?? '').replace(/\r/g, '').replace(/# RELEASE-NOTES\s*/g, '');
+  const match = text.match(/^## Unreleased[ \t]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m);
+  if (!match) return { unreleased: '', rest: text.trim() };
+  return { unreleased: match[1].trim(), rest: text.replace(match[0], '').trim() };
+}
+
+const legacyCategories = [
+  ['feature', '### 🚀 New Features'],
+  ['bugfixes', '### 🐞 Bugfixes'],
+  ['performance', '### ⚡ Performance'],
+  ['maintenance', '### 🔧 Maintenance'],
+  ['docs', '### 📝 Documentation'],
+];
+
+// prs: [{ number, title, url, body }] merged since the previous release.
+// jsonNotes: legacy release-ready/release-notes/pr-*.json objects (transition).
+// unreleased: a hand-written "## Unreleased" section body (transition).
+export function composeRelease({ version, prs = [], jsonNotes = [], unreleased = '' }) {
+  const sorted = [...prs].sort((a, b) => a.number - b.number);
+  const jsonPrs = new Set(jsonNotes.map((note) => note.pr));
+  const breaking = [];
+  const changes = [];
+  const missing = [];
+  for (const pr of sorted) {
+    const note = parseSection(pr.body);
+    if (!note) {
+      if (!jsonPrs.has(pr.number)) missing.push(`- ${pr.title} ([#${pr.number}](${pr.url}))`);
+      continue;
+    }
+    if (note.breaking) breaking.push(`- ${note.breaking} ([#${pr.number}](${pr.url}))`);
+    if (note.changes) changes.push(note.changes);
+  }
+  for (const note of jsonNotes) {
+    for (const entry of note.breaking ?? []) breaking.push(`- ${entry} (#${note.pr})`);
+  }
+
+  const numbers = [...new Set([...sorted.map((pr) => pr.number), ...jsonPrs])].sort((a, b) => a - b);
+  const parts = [];
+  if (numbers.length) parts.push(`Merged PRs: ${numbers.join(', ')}`);
+  if (breaking.length) parts.push(['### 💥 Breaking Changes', '', ...breaking].join('\n'));
+  if (changes.length) parts.push(['### Changes', '', ...changes].join('\n'));
+  for (const [key, heading] of legacyCategories) {
+    const entries = jsonNotes.flatMap((note) => (note[key] ?? []).map((entry) => `- ${entry} (#${note.pr})`));
+    if (entries.length) parts.push([heading, '', ...entries].join('\n'));
+  }
+  if (unreleased.trim()) parts.push(unreleased.trim());
+  if (missing.length) parts.push(['### Merged without release notes', '', ...missing].join('\n'));
+  if (!breaking.length && !changes.length && !jsonNotes.length && !unreleased.trim()) {
+    parts.push(`_No release notes recorded for ${version}._`);
+  }
+  const body = parts.join('\n\n');
+  return { section: `## Release ${version}\n\n${body}`, body };
+}
+
+export function updateChangelog(changelog, section) {
+  const { rest } = splitUnreleased(changelog);
+  return `${section}\n${rest ? `\n${rest}\n` : ''}`;
+}
+
 function main([command]) {
   const env = process.env;
   if (command === 'check-keep') {
@@ -111,6 +195,22 @@ function main([command]) {
       return;
     }
     writeFileSync(env.OUT_FILE, outcome.body);
+    return;
+  }
+  if (command === 'compose') {
+    const changelog = existsSync(env.CHANGELOG_FILE) ? readFileSync(env.CHANGELOG_FILE, 'utf8') : '';
+    const jsonNotes = existsSync(env.NOTES_DIR)
+      ? readdirSync(env.NOTES_DIR).filter((name) => /^pr-\d+\.json$/.test(name)).sort()
+        .map((name) => JSON.parse(readFileSync(join(env.NOTES_DIR, name), 'utf8')))
+      : [];
+    const { section, body } = composeRelease({
+      version: env.VERSION,
+      prs: JSON.parse(readFileSync(env.PRS_FILE, 'utf8')),
+      jsonNotes,
+      unreleased: splitUnreleased(changelog).unreleased,
+    });
+    writeFileSync(env.OUT_CHANGELOG, updateChangelog(changelog, section));
+    writeFileSync(env.OUT_BODY, `${body}\n`);
     return;
   }
   console.error(`Unknown command: ${command ?? '(none)'}`);

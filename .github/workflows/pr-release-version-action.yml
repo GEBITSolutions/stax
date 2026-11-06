@@ -1,0 +1,41 @@
+name: Release version action
+
+on:
+  pull_request:
+    paths:
+      - .github/actions/get-next-version-typescript-action/**
+      - .github/workflows/pr-release-version-action.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/get-next-version-typescript-action/**
+      - .github/workflows/pr-release-version-action.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: .github/actions/get-next-version-typescript-action
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: .github/actions/get-next-version-typescript-action/package-lock.json
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test -- --runInBand
+      - run: npm run package
+      - name: Test the bundled action
+        run: node --test scripts/action.test.mjs
+      - name: Check generated action is up to date
+        run: git diff --exit-code -- dist/

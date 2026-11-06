@@ -50,6 +50,12 @@ jobs:
 
 Fork and Dependabot pull requests are skipped because they receive no secrets; drafts are skipped until they are ready for review.
 
+## In releases
+
+When `a-wf-release.yml` or `a-wf-release-prepare.yml` prepares a release, it asks GitHub which pull request each first-parent commit since the previous release tag merged, and writes their sections into a `## Release <version>` entry of `CHANGELOG.md` and into the release body: breaking changes first, then the changes, then pull requests merged without a note. The pre-release shows this draft, so it can be checked before the release is approved.
+
+During the transition from JSON release notes, the next release also includes `release-ready/release-notes/pr-*.json` files and a hand-written `## Unreleased` section of `CHANGELOG.md`.
+
 ## How the agent is isolated
 
 The note is written by [Letta Code](https://github.com/letta-ai/letta-code) in a pinned container image, on the local backend and `--ephemeral`: no agent, memory or account is kept, and telemetry and auto-update are off. The agent receives the title, description, commits, diff and closed issues in its prompt and may additionally read the checkout. The workflow:
