@@ -1,0 +1,26 @@
+{
+  "nodes": [
+    { "id": 0, "parents": [], "timestamp": 1700014429 },
+    { "id": 1, "parents": [0], "timestamp": 1700067558 },
+    { "id": 2, "parents": [0], "timestamp": 1700057615 },
+    { "id": 3, "parents": [2, 1], "timestamp": 1700026408 },
+    { "id": 4, "parents": [2], "timestamp": 1700037553 },
+    { "id": 6, "parents": [4, 3], "timestamp": 1700069624 },
+    { "id": 8, "parents": [0, 2], "timestamp": 1700022829 },
+    { "id": 11, "parents": [3], "timestamp": 1700046120 },
+    { "id": 12, "parents": [8, 3], "timestamp": 1700031355 },
+    { "id": 13, "parents": [1, 0], "timestamp": 1700071997 },
+    { "id": 17, "parents": [13, 6], "timestamp": 1700036876 },
+    { "id": 18, "parents": [11, 12], "timestamp": 1700000087 },
+    { "id": 19, "parents": [12, 0], "timestamp": 1700052249 },
+    { "id": 20, "parents": [19, 18, 17, 2], "timestamp": 1700000010 }
+  ],
+  "head": 20,
+  "tags": [
+    { "name": "1.2.1", "node": 13, "annotated": true },
+    { "name": "v2.2.2", "node": 18, "annotated": false },
+    { "name": "3.2.3", "node": 11, "annotated": true },
+    { "name": "v4.2.4", "node": 4, "annotated": false }
+  ],
+  "unreleased": [6, 17, 19, 20]
+}

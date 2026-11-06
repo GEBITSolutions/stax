@@ -28,7 +28,7 @@ outputs:
   hasNextVersion:
     description: 'Whether there is a next version'
   prevVersion:
-    description: 'Previous version tag (the last release tag before the next version, empty if none)'
+    description: 'Highest reachable release version tag, empty if none'
 runs:
   using: 'node24'
   main: 'dist/index.js'

@@ -42,7 +42,7 @@ on:
         description: "Ref of the actions repository; releases set it to their version."
         required: false
         type: string
-        default: "1.8.0"
+        default: "1.10.0"
     outputs:
       has-next-version:
         description: "'true' when commits since the last release produced a new version."
