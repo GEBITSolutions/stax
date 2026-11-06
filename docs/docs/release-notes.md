@@ -3,7 +3,7 @@
 STAX can write a plain-English release note for every pull request and keep it in the pull-request description, where authors can read and edit it. The reusable workflow `a-wf-release-notes.yml` runs on each push to a same-repository pull request and maintains a `Release notes` section at the end of the description:
 
 - a first line `**Breaking change:** No` or `**Breaking change:** Yes. <what users must change>`;
-- one to three short bullets, one line each, naming the user-visible changes;
+- one to seven short bullets, one line each, stating what changed for users (related changes grouped);
 - links back to the pull request and the issues it closes.
 
 The section is replaced on every push. To keep a hand-edited version, put `<!-- release-notes:keep -->` on a line of its own inside the section.
