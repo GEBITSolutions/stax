@@ -12,7 +12,12 @@ type TagInfo = {
 }
 
 const runGit = (args: string[], cwd = process.cwd()): string => {
-  return execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 64 * 1024 * 1024,
+    stdio: ['ignore', 'pipe', 'pipe']
+  }).trim()
 }
 
 const parseTagVersion = (
@@ -43,7 +48,10 @@ const parseTagVersion = (
 }
 
 const getTagInfoMap = (): Map<string, TagInfo> => {
-  const tagsOutput = runGit(['tag', '--list'])
+  // Do not use `tag --merged`: its timestamp-based pruning can omit ancestors
+  // when commit clocks are skewed. An unfiltered walk gives exact membership.
+  const reachableCommits = new Set(runGit(['rev-list', 'HEAD']).split('\n'))
+  const tagsOutput = runGit(['tag', '--list', '--sort=refname'])
   const tags = tagsOutput ? tagsOutput.split('\n').filter(Boolean) : []
   const tagInfoByCommit = new Map<string, TagInfo>()
 
@@ -55,8 +63,16 @@ const getTagInfoMap = (): Map<string, TagInfo> => {
 
     let commitHash = ''
     try {
-      commitHash = runGit(['rev-list', '-n', '1', tag])
+      commitHash = runGit([
+        'rev-parse',
+        '--verify',
+        `refs/tags/${tag}^{commit}`
+      ])
     } catch {
+      continue
+    }
+
+    if (!reachableCommits.has(commitHash)) {
       continue
     }
 
@@ -92,14 +108,24 @@ export const buildLogArgs = (logOrder: LogOrder): string[] => {
   if (logOrder === 'topological') {
     logArgs.push('--topo-order')
   } else {
-    logArgs.push('--committer-date-order')
+    logArgs.push('--date-order')
   }
 
   return logArgs
 }
 
-const getCommitHistory = (logOrder: LogOrder): CommitEntry[] => {
-  const output = runGit(buildLogArgs(logOrder))
+const getCommitHistory = (
+  logOrder: LogOrder,
+  releasedCommits: string[]
+): CommitEntry[] => {
+  // A release covers its entire ancestry, not a prefix of a git log walk.
+  // Exclude every reachable release so merged-back hotfixes are not counted twice.
+  const args = [...buildLogArgs(logOrder), 'HEAD']
+  if (releasedCommits.length > 0) {
+    args.push('--not', ...releasedCommits)
+  }
+  args.push('--')
+  const output = runGit(args)
   if (!output) {
     return []
   }
@@ -127,25 +153,28 @@ export const analyzeCommitsSinceLastRelease = (
   prefixes: PrefixSets,
   logOrder: LogOrder
 ): ReleaseAnalysis => {
-  const tagsByCommit = getTagInfoMap()
-  const commits = getCommitHistory(logOrder)
+  if (runGit(['rev-parse', '--is-shallow-repository']) === 'true') {
+    throw new Error(
+      'release analysis requires complete history and tags; use actions/checkout with fetch-depth: 0'
+    )
+  }
 
-  const analyzedCommits: CommitAnalysis[] = []
+  const tagsByCommit = getTagInfoMap()
+  const commits = getCommitHistory(logOrder, [...tagsByCommit.keys()])
+
   let latestReleaseVersion: SemVer | null = null
   let latestReleaseCommit: string | null = null
   let latestReleaseTag: string | null = null
 
-  for (const commit of commits) {
-    const tagInfo = tagsByCommit.get(commit.hash)
-    if (tagInfo) {
+  for (const [commitHash, tagInfo] of tagsByCommit) {
+    if (
+      !latestReleaseVersion ||
+      semver.gt(tagInfo.version, latestReleaseVersion)
+    ) {
       latestReleaseVersion = tagInfo.version
-      latestReleaseCommit = commit.hash
+      latestReleaseCommit = commitHash
       latestReleaseTag = tagInfo.tag
-      break
     }
-
-    const commitType = commitMessageToType(commit.message, prefixes)
-    analyzedCommits.push({ ...commit, type: commitType })
   }
 
   if (!latestReleaseVersion) {
@@ -160,6 +189,9 @@ export const analyzeCommitsSinceLastRelease = (
     latestReleaseVersion,
     latestReleaseCommit,
     latestReleaseTag,
-    commits: analyzedCommits
+    commits: commits.map((commit) => ({
+      ...commit,
+      type: commitMessageToType(commit.message, prefixes)
+    }))
   }
 }
