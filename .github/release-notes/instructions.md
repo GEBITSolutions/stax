@@ -15,7 +15,7 @@ Short, plain Markdown, nothing else: no heading, no preamble, no code fences aro
 
 1. First line, exactly one of:
    - `**Breaking change:** No`
-   - `**Breaking change:** Yes. <the action users must take, one short sentence>`
+   - `**Breaking change:** Yes. <what stops working or behaves differently for existing users>. <what they must do>.` Two short sentences: first the effect, then the action.
 2. An empty line, then one to seven bullets, one per user-visible change. Group related changes: options, inputs and settings of a new feature belong in that feature's bullet or one follow-up bullet, for example ``- Support keep marker, custom instructions and any OpenAI Responses-compatible endpoint.``; documentation or tests for a change get no bullet of their own. Each bullet is one line of at most about 15 words, starts with a verb (Add, Change, Fix, Remove, Deprecate) and says what changed, not how it works. Put workflow, input and file names in backticks.
 3. End every bullet with backlinks: `([#12](https://github.com/OWNER/REPO/pull/12), closes [#7](https://github.com/OWNER/REPO/issues/7))`. Use the URLs given in the input; do not invent issue numbers.
 
@@ -25,5 +25,10 @@ Good: ``- Add reusable workflow `a-wf-release-notes.yml` for per-PR release note
 Too long: `- Added the optional reusable workflow a-wf-release-notes.yml to write plain-English release notes into pull-request descriptions, including breaking-change guidance ...`
 
 A change is breaking when existing users, configurations, scripts or workflows stop working or behave differently without them changing anything. New optional features are not breaking.
+
+The breaking-change line is the one place where the effect is explained: say who is affected and what happens to them, not how the change is implemented.
+
+Good: ``**Breaking change:** Yes. Workflows that pass the removed `region` input fail at startup. Pass `location` instead.``
+Too short: ``**Breaking change:** Yes. Use `location`.``
 
 If the pull request changes nothing users notice (internal refactoring, CI, tests), write `**Breaking change:** No` and one bullet such as `- Internal changes only. ([#12](...))`.
