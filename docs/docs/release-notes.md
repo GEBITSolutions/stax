@@ -45,6 +45,7 @@ jobs:
 | `llm-api-key` (secret) | yes | Key for the endpoint, sent as a bearer token. |
 | `instructions-path` | no | Custom instructions on the caller's base branch. The default is [`.github/release-notes/instructions.md`](https://github.com/GEBITSolutions/stax/blob/main/.github/release-notes/instructions.md). |
 | `release-app-client-id`, `release-app-private-key` (secret) | no | GitHub App that edits the description; it needs the repository permission **Pull requests: Read and write**. Without it, the job token edits it as `github-actions[bot]`. |
+| `environment` | no | GitHub environment of the job (default `release-notes`); each run is listed under Deployments with a link to the pull request. Protection rules on it would hold the job. |
 | `max-diff-chars` | no | Diff characters passed to the agent (default 120000); longer diffs are truncated. |
 
 Fork and Dependabot pull requests are skipped because they receive no secrets; drafts are skipped until they are ready for review.
