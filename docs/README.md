@@ -31,7 +31,7 @@ Commits without a new release do not deploy automatically. Manual `docs.yml` run
 
 Enable repository Pages with **GitHub Actions** as its source, configure the custom domain and HTTPS, and protect the `github-pages` deployment environment. The `docs` environment needs no Azure credentials. Versioned publication uses the existing release GitHub App credentials with repository Contents write access to maintain `gh-pages`; PR builds use read-only checkout credentials. The nested workflow chain still needs `pages: write` and `id-token: write`, without expanding its `GITHUB_TOKEN` Contents permission.
 
-Forward release App secrets at every reusable-workflow boundary with `secrets: inherit`, including `docs.yml` → deployment levels → stack → Pages. Without forwarding, a downstream job can see the repository App ID variable but receives no private key.
+Forward release App secrets at every reusable-workflow boundary. Same-org callers can use `secrets: inherit` (`docs.yml` → deployment levels → stack → Pages). Cross-org callers must map secrets by name into each reusable workflow that declares them. Without forwarding, a downstream job can see the repository App ID variable but receives no private key.
 
 ### Versioned releases
 
