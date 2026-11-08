@@ -1,3 +1,11 @@
+## Release 1.12.0
+
+Merged PRs: 73
+
+### Changes
+
+- Add optional `platforms` lists for `docker-build-push` stacks, retaining `linux/amd64` by default. ([#73](https://github.com/GEBITSolutions/stax/pull/73))
+
 ## Release 1.11.0
 
 Merged PRs: 66, 68, 71
