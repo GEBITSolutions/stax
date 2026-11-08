@@ -56,3 +56,13 @@ test('Packer mappings can defer validation, but legacy AWS consumers still need 
   assert.deepEqual(validate({ OIDC_ENABLED: 'true' }, [{ type: 'packer', credentials }]).failures, []);
   assert.match(validate({ OIDC_ENABLED: 'true' }, [{ type: 's3-site-deploy', credentials }]).failures.join('\n'), /AWS_ROLE_ARN/);
 });
+
+test('docker builds are transparent to cloud credential validation', () => {
+  const docker = { type: 'docker-build-push', credentials: {} };
+  // Docker-only filters need no cloud credentials at all.
+  assert.deepEqual(validate({}, [docker]).failures, []);
+  // Docker stacks mixed into a mapped set keep the mapped deferral.
+  assert.deepEqual(validate({ OIDC_ENABLED: 'true' }, [docker, { type: 'packer', credentials }]).failures, []);
+  // Docker stacks do not mask missing credentials for unmapped legacy stacks.
+  assert.match(validate({}, [docker, { id: 'legacy' }]).failures.join('\n'), /AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY/);
+});
