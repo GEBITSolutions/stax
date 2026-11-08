@@ -85,4 +85,10 @@ describe('deployment level workflow capacity', () => {
       /^ {6}HCLOUD_TOKEN:\n {8}required: false$/m
     )
   })
+
+  it('builds docker images for the configured platforms, falling back to linux/amd64', () => {
+    expect(deployStackWorkflow).toMatch(
+      /platforms: \$\{\{ join\(fromJson\(inputs\.data\)\['platforms'\], ','\) \|\| 'linux\/amd64' \}\}/
+    )
+  })
 })

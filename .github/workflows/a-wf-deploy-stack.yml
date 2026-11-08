@@ -581,7 +581,7 @@ jobs:
       uses: docker/build-push-action@v7
       with:
         context: ./${{fromJson(inputs.data)['dockerfile_folder'] }}
-        platforms: linux/amd64
+        platforms: ${{ join(fromJson(inputs.data)['platforms'], ',') || 'linux/amd64' }}
         tags: ${{ steps.meta.outputs.tags }}
         labels: ${{ steps.meta.outputs.labels }}
         no-cache: "${{ fromJson(inputs.data)['no_cache'] || 'false' }}"

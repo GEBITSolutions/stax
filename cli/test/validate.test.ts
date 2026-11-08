@@ -455,6 +455,35 @@ stacks:
     expect(brief(validateConfigText(config))).toEqual([{ ...expected, message: expect.stringContaining(expected.message) }]);
   });
 
+  it("accepts a Docker stack building one or several platforms, and rejects a non-list platforms value", () => {
+    const several = `stacks:
+  - id: app
+    type: docker-build-push
+    dockerfile_folder: docker/app
+    image_name: my-app
+    platforms: [linux/amd64, linux/arm64]
+`;
+    expect(validateConfigText(several)).toEqual([]);
+
+    const single = `stacks:
+  - id: app
+    type: docker-build-push
+    dockerfile_folder: docker/app
+    image_name: my-app
+    platforms: [linux/arm64]
+`;
+    expect(validateConfigText(single)).toEqual([]);
+
+    const notAList = brief(validateConfigText(`stacks:
+  - id: app
+    type: docker-build-push
+    dockerfile_folder: docker/app
+    image_name: my-app
+    platforms: linux/arm64
+`));
+    expect(notAList).toContainEqual({ severity: "error", line: 6, message: expect.stringContaining("must be array") });
+  });
+
   it("accepts a legacy Packer stack and a Hetzner stack, and warns that AWS is not implemented", () => {
     const legacy = `stacks:
   - id: img

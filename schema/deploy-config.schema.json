@@ -296,6 +296,7 @@
         "image_name": { "type": "string", "examples": ["my-app"], "x-stax-types": ["docker-build-push"] },
         "dockerfile_folder": { "description": "Build context containing the Dockerfile.", "type": "string", "examples": ["docker/my-app"], "x-stax-types": ["docker-build-push"] },
         "no_cache": { "type": "boolean", "examples": [false], "x-stax-types": ["docker-build-push"] },
+        "platforms": { "description": "Container platforms to build, comma-joined for docker/build-push-action. Defaults to linux/amd64.", "$ref": "#/$defs/stringList", "examples": [["linux/amd64"]], "x-stax-types": ["docker-build-push"] },
         "registry": { "type": "string", "examples": ["ghcr.io"], "x-stax-types": ["docker-build-push"] },
         "registy": { "description": "Deprecated misspelling of registry; still read and wins over registry.", "type": "string" },
         "input-gh-secrets": { "description": "Build secrets: secret id to GitHub secret name.", "type": "object", "additionalProperties": { "type": "string" }, "examples": [{ "npm_token": "NPM_TOKEN" }], "x-stax-types": ["docker-build-push"] },

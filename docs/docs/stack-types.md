@@ -16,6 +16,21 @@ Checked boxes indicate support. Unchecked boxes indicate planned support, not av
 - [x] **Docker** (`docker-build-push`): build container images and push them to a registry.
 - [x] **Packer** (`packer`): build machine images for Azure Compute Gallery or Hetzner Cloud. AWS AMIs are reserved and not implemented.
 
+### Docker images
+
+`type: docker-build-push` takes `dockerfile_folder` (the build context containing the Dockerfile) and `image_name`, and pushes to GHCR or the registry given as `docker_registry_url`. `no_cache` and `registry` are optional; `input-gh-secrets` passes build secrets.
+
+Optional `platforms` lists the container platforms to build, for example `platforms: [linux/amd64, linux/arm64]`. The workflow sets up QEMU and Buildx, so foreign architectures build through emulation; the template's base image must support them. Unset, `platforms` keeps the previous behaviour and builds only `linux/amd64`.
+
+```yaml
+stacks:
+  - id: app
+    type: docker-build-push
+    dockerfile_folder: docker/app
+    image_name: my-app
+    platforms: [linux/amd64, linux/arm64]
+```
+
 ### Packer images
 
 `type: packer` takes `packer_directory`, an exact `packer_version`, and an optional `packer_template` (default `.`). `build_target` selects the publisher. Omit it, or set `azure`, to keep today's Azure Compute Gallery behavior.
