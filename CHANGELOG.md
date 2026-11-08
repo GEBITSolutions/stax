@@ -1,3 +1,12 @@
+## Release 1.12.1
+
+Merged PRs: 74
+
+### Changes
+
+- Fix unnecessary cloud credential requirements for `docker-build-push`-only stack filters. ([#74](https://github.com/GEBITSolutions/stax/pull/74))
+- Fix mixed Docker and Packer/OpenTofu filters rejecting valid per-stack AWS credential mappings. ([#74](https://github.com/GEBITSolutions/stax/pull/74))
+
 ## Release 1.12.0
 
 Merged PRs: 73
