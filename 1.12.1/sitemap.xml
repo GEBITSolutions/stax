@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/backends/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/configuration/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/installation/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/passing-values/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/release-notes/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/running-a-deployment/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/stack-types/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/why-stax/</loc>
+      </url>
+      <url>
+        <loc>http://stax.az.gebit.cloud/1.12.1/your-first-config/</loc>
+      </url>
+</urlset>
