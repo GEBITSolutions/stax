@@ -22,6 +22,22 @@ Checked boxes indicate support. Unchecked boxes indicate planned support, not av
 
 Optional `platforms` lists the container platforms to build, for example `platforms: [linux/amd64, linux/arm64]`. The workflow sets up QEMU and Buildx, so foreign architectures build through emulation; the template's base image must support them. Unset, `platforms` keeps the previous behaviour and builds only `linux/amd64`.
 
+To use a pre-existing rootless BuildKit daemon directly, set `builder: buildkit` and `buildkit_address` to its address. The selected runner must have `buildctl` on PATH and access to the daemon. This path does not set up Docker, Buildx, QEMU or the daemon; cross-platform builds require suitable workers or emulation already available. Omit `builder` to keep the existing Docker/Buildx behavior. The job creates a temporary Docker-compatible registry authentication file for `buildctl` and removes it after the build. The same context, tags, labels, platforms, build secrets, no-cache and dry-run settings apply. On a dry run with a single platform nothing is exported, matching the Docker path's build-without-push behavior; a multi-platform dry run exports a temporary OCI archive (removed after the job) because BuildKit's default exporter is single-platform.
+
+```yaml
+stacks:
+  - id: app
+    type: docker-build-push
+    dockerfile_folder: docker/app
+    image_name: my-app
+    builder: buildkit
+    buildkit_address: unix:///run/buildkit/buildkitd.sock
+    platforms: [linux/amd64]
+    runs-on: build-runner
+```
+
+The BuildKit daemon must be trusted and protected from unauthorized clients. Rootless mode has isolation and Kubernetes security-context caveats; consult the [BuildKit rootless documentation](https://github.com/moby/buildkit/blob/master/docs/rootless.md) for the deployed version. Do not expose an unauthenticated daemon to untrusted networks. When using a remote TCP daemon, configure transport security separately; this executor does not provision TLS certificates.
+
 ```yaml
 stacks:
   - id: app

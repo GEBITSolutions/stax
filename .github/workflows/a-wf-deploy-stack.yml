@@ -341,10 +341,18 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v7
 
+    - name: Validate image builder
+      env:
+        IMAGE_BUILDER: ${{ fromJson(inputs.data)['builder'] || 'docker' }}
+      run: |
+        case "$IMAGE_BUILDER" in docker|buildkit) ;; *) echo "Unsupported image builder: $IMAGE_BUILDER" >&2; exit 1 ;; esac
+
     - name: Set up QEMU
+      if: (fromJson(inputs.data)['builder'] || 'docker') == 'docker'
       uses: docker/setup-qemu-action@v4
 
     - name: Setup Docker BuildX
+      if: (fromJson(inputs.data)['builder'] || 'docker') == 'docker'
       uses: docker/setup-buildx-action@v4
 
     - name: Lowercase repository owner
@@ -538,7 +546,7 @@ jobs:
           echo "$DELIMITER"
         } >> "$GITHUB_OUTPUT"
     - name: Log into Container Registry
-      if: (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') != 'ghcr'
+      if: (fromJson(inputs.data)['builder'] || 'docker') == 'docker' && (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') != 'ghcr'
       uses: docker/login-action@v4
       with:
         registry: ${{ steps.registry_url.outputs.url }}
@@ -548,7 +556,7 @@ jobs:
           )] }}
 
     - name: Log into GitHub Container Registry
-      if: github.event_name != 'pull_request'
+      if: github.event_name != 'pull_request' && (fromJson(inputs.data)['builder'] || 'docker') == 'docker'
       uses: docker/login-action@v4
       with:
         registry: ghcr.io
@@ -578,6 +586,7 @@ jobs:
 
     - name: Build and push image
       id: build-and-push
+      if: (fromJson(inputs.data)['builder'] || 'docker') == 'docker'
       uses: docker/build-push-action@v7
       with:
         context: ./${{fromJson(inputs.data)['dockerfile_folder'] }}
@@ -587,6 +596,31 @@ jobs:
         no-cache: "${{ fromJson(inputs.data)['no_cache'] || 'false' }}"
         push: ${{ ((fromJson(inputs.env)['dry_run']) || 'true') != 'true' }}
         secret-files: ${{ steps.build-secrets.outputs.secret-files }}
+
+    - name: Build and push image with BuildKit
+      if: fromJson(inputs.data)['builder'] == 'buildkit'
+      env:
+        BUILDKIT_ADDRESS: ${{ fromJson(inputs.data)['buildkit_address'] }}
+        BUILD_CONTEXT: ${{ fromJson(inputs.data)['dockerfile_folder'] }}
+        BUILD_PLATFORMS: ${{ toJSON(fromJson(inputs.data)['platforms'] || fromJSON('[]')) }}
+        BUILD_TAGS: ${{ steps.meta.outputs.tags }}
+        BUILD_LABELS: ${{ steps.meta.outputs.labels }}
+        BUILD_SECRET_FILES: ${{ steps.build-secrets.outputs.secret-files }}
+        BUILD_NO_CACHE: ${{ fromJson(inputs.data)['no_cache'] || 'false' }}
+        BUILD_DRY_RUN: ${{ fromJson(inputs.env)['dry_run'] || 'true' }}
+        REGISTRY_HOST: ${{ (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') == 'ghcr' && 'ghcr.io' || steps.registry_url.outputs.url }}
+        REGISTRY_USERNAME: ${{ (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') == 'ghcr' && github.actor || secrets[format('{0}', fromJson(inputs.data)['input-gh-secrets']['DOCKER_USERNAME_SECRET_NAME'] || 'DOCKER_REGISTRY_USERNAME')] }}
+        REGISTRY_PASSWORD: ${{ (fromJson(inputs.data)['registy'] || fromJson(inputs.data)['registry'] || 'ghcr') == 'ghcr' && secrets.GITHUB_TOKEN || secrets[format('{0}', fromJson(inputs.data)['input-gh-secrets']['DOCKER_PASSWORD_SECRET_NAME'] || 'DOCKER_REGISTRY_PASSWORD')] }}
+      run: node shared-code/.github/scripts/buildkit-build.mjs
+
+    - name: Remove BuildKit secret files
+      if: ${{ always() && fromJson(inputs.data)['builder'] == 'buildkit' && steps.build-secrets.outputs.secret-files != '' }}
+      env:
+        SECRET_FILES: ${{ steps.build-secrets.outputs.secret-files }}
+      run: |
+        while IFS='=' read -r id path; do
+          [ -z "$path" ] || rm -f -- "$path"
+        done <<< "$SECRET_FILES"
 
     - id: image-push-gh-out-vars
       run: |
