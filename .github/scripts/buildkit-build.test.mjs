@@ -14,8 +14,26 @@ test('maps tags, labels, platforms and secret files to buildctl without shell in
 
 test('dry run builds without publishing images', () => {
   const args = buildArguments({ address: 'unix:///tmp/buildkit.sock', context: '.', platforms: [], tags: 'registry.example/app:sha', labels: '', secrets: '', dryRun: true });
+  assert.equal(args.some(arg => arg.includes('push=true')), false);
   assert.equal(args.includes('--output'), false);
   assert.ok(args.includes('platform=linux/amd64'));
+});
+
+test('multi-platform dry run exports an OCI archive instead of defaulting to single platform', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'buildkit-dry-run-test-'));
+  try {
+    const args = buildArguments({ address: 'unix:///tmp/buildkit.sock', context: '.', platforms: ['linux/amd64', 'linux/arm64'], tags: 'registry.example/app:sha', labels: '', secrets: '', dryRun: true, dryRunOutputDir: dir });
+    assert.ok(args.includes('platform=linux/amd64,linux/arm64'));
+    const output = args[args.indexOf('--output') + 1];
+    assert.equal(output, `type=oci,dest=${join(dir, 'image.oci')}`);
+    assert.doesNotMatch(output, /push=true/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('multi-platform dry run allocates its own output directory when none is supplied', () => {
+  const args = buildArguments({ address: 'unix:///tmp/buildkit.sock', context: '.', platforms: ['linux/amd64', 'linux/arm64'], tags: 'registry.example/app:sha', labels: '', secrets: '', dryRun: true });
+  const output = args[args.indexOf('--output') + 1];
+  assert.match(output, /^type=oci,dest=.*image\.oci$/);
 });
 
 test('rejects missing address, tags, and malformed secret mappings', () => {

@@ -6,11 +6,12 @@ import { pathToFileURL } from 'node:url';
 
 const lines = value => (value || '').split('\n').map(line => line.trim()).filter(Boolean);
 
-export function buildArguments({ address, context, platforms = [], tags, labels, secrets, noCache = false, dryRun = false }) {
+export function buildArguments({ address, context, platforms = [], tags, labels, secrets, noCache = false, dryRun = false, dryRunOutputDir }) {
   if (!address) throw new Error('BuildKit address is required');
   const names = lines(tags);
   if (!names.length) throw new Error('At least one image tag is required');
-  const args = ['--addr', address, 'build', '--frontend', 'dockerfile.v0', '--local', `context=${context}`, '--local', `dockerfile=${context}`, '--opt', `platform=${(platforms.length ? platforms : ['linux/amd64']).join(',')}`];
+  const platformList = platforms.length ? platforms : ['linux/amd64'];
+  const args = ['--addr', address, 'build', '--frontend', 'dockerfile.v0', '--local', `context=${context}`, '--local', `dockerfile=${context}`, '--opt', `platform=${platformList.join(',')}`];
   for (const label of lines(labels)) args.push('--opt', `label:${label}`);
   for (const secret of lines(secrets)) {
     const index = secret.indexOf('=');
@@ -18,19 +19,28 @@ export function buildArguments({ address, context, platforms = [], tags, labels,
     args.push('--secret', `id=${secret.slice(0, index)},src=${secret.slice(index + 1)}`);
   }
   if (noCache) args.push('--no-cache');
-  if (!dryRun) args.push('--output', `type=image,"name=${names.join(',')}",push=true`);
+  if (!dryRun) {
+    args.push('--output', `type=image,"name=${names.join(',')}",push=true`);
+  } else if (platformList.length > 1) {
+    // BuildKit's default exporter is single-platform. Without an output a
+    // multi-platform dry run would error or silently build the host platform,
+    // unlike the Docker/Buildx path, which builds every requested platform.
+    const dest = dryRunOutputDir || mkdtempSync(join(tmpdir(), 'stax-buildkit-dry-run-'));
+    args.push('--output', `type=oci,dest=${join(dest, 'image.oci')}`);
+  }
   return args;
 }
 
 function main(env) {
-  const args = buildArguments({
-    address: env.BUILDKIT_ADDRESS, context: env.BUILD_CONTEXT,
-    platforms: JSON.parse(env.BUILD_PLATFORMS || '[]'), tags: env.BUILD_TAGS,
-    labels: env.BUILD_LABELS, secrets: env.BUILD_SECRET_FILES,
-    noCache: env.BUILD_NO_CACHE === 'true', dryRun: env.BUILD_DRY_RUN === 'true',
-  });
   const dir = mkdtempSync(join(tmpdir(), 'stax-buildkit-'));
   try {
+    const args = buildArguments({
+      address: env.BUILDKIT_ADDRESS, context: env.BUILD_CONTEXT,
+      platforms: JSON.parse(env.BUILD_PLATFORMS || '[]'), tags: env.BUILD_TAGS,
+      labels: env.BUILD_LABELS, secrets: env.BUILD_SECRET_FILES,
+      noCache: env.BUILD_NO_CACHE === 'true', dryRun: env.BUILD_DRY_RUN === 'true',
+      dryRunOutputDir: dir,
+    });
     const auths = {};
     if (env.REGISTRY_USERNAME && env.REGISTRY_PASSWORD) {
       const registry = env.REGISTRY_HOST.replace(/^https?:\/\//, '').split('/')[0];
