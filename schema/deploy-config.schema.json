@@ -295,7 +295,7 @@
 
         "image_name": { "type": "string", "examples": ["my-app"], "x-stax-types": ["docker-build-push"] },
         "dockerfile_folder": { "description": "Build context containing the Dockerfile.", "type": "string", "examples": ["docker/my-app"], "x-stax-types": ["docker-build-push"] },
-        "builder": { "description": "Image builder: docker (default) or direct buildctl.", "type": "string", "enum": ["docker", "buildkit"], "x-stax-types": ["docker-build-push"] },
+        "builder": { "description": "Image builder: docker (default) or direct buildctl.", "type": "string", "enum": ["docker", "buildkit"], "examples": ["buildkit"], "x-stax-types": ["docker-build-push"] },
         "buildkit_address": { "description": "BuildKit daemon address used by buildctl.", "type": "string", "minLength": 1, "examples": ["unix:///run/buildkit/buildkitd.sock"], "x-stax-types": ["docker-build-push"] },
         "no_cache": { "type": "boolean", "examples": [false], "x-stax-types": ["docker-build-push"] },
         "platforms": { "description": "Container platforms to build, comma-joined for docker/build-push-action. Defaults to linux/amd64.", "$ref": "#/$defs/stringList", "examples": [["linux/amd64"]], "x-stax-types": ["docker-build-push"] },
