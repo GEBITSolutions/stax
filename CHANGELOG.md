@@ -1,3 +1,11 @@
+## Release 1.13.0
+
+Merged PRs: 75
+
+### Changes
+
+- Add optional BuildKit builds for `docker-build-push` stacks using `builder: buildkit` and `buildkit_address`. ([#75](https://github.com/GEBITSolutions/stax/pull/75))
+
 ## Release 1.12.1
 
 Merged PRs: 74
