@@ -99,10 +99,16 @@ const REQUIRED_DEPLOYMENT_VALUES: Record<string, Record<string, string>> = {
   },
   "required for azure": {
     resource_group_name: "my-resource-group",
-    dns_zone_name: "example.com",
     dns_zone_resource_group_name: "my-dns-resource-group",
     state_storage_account_name: "mystatestorage",
+  },
+  "optional for azure, defaults to the GitHub Environment name": {
+    dns_zone_name: "example.com",
+  },
+  "optional for azure, defaults to <customer_id>-tfstate": {
     state_container_name: "tfstate",
+  },
+  "optional for azure, defaults to resource_group_name": {
     state_resource_group_name: "my-state-resource-group",
   },
   "required for aws": {

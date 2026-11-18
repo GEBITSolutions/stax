@@ -137,6 +137,21 @@ test('preserves explicit false, defaults public_cloud_flag to true and requires 
   }
 });
 
+test('derives Azure state container, DNS zone and state resource group when unset', () => {
+  const unset = { ...azure, dns_zone_name: '', state_container_name: '', state_resource_group_name: '' };
+  const derived = resolve(unset, { environment: 'dev.example.org' });
+  assert.equal(derived.STATE_CONTAINER_NAME, 'acme-tfstate');
+  assert.equal(derived.DNS_ZONE_NAME, 'dev.example.org');
+  assert.equal(derived.STATE_RESOURCE_GROUP_NAME, 'rg-widget');
+  // Explicit values and variables win over the derived defaults.
+  const explicit = resolve(unset, { environment: 'dev.example.org', variables: { STATE_CONTAINER_NAME: 'shared', DNS_ZONE_NAME: 'zone.org', STATE_RESOURCE_GROUP_NAME: 'rg-state-var' } });
+  assert.deepEqual([explicit.STATE_CONTAINER_NAME, explicit.DNS_ZONE_NAME, explicit.STATE_RESOURCE_GROUP_NAME], ['shared', 'zone.org', 'rg-state-var']);
+  // Without an environment name no DNS zone is derived.
+  assert.throws(() => resolve(unset), /deployment\.dns_zone_name/);
+  // State configs keep their explicit backend coordinates.
+  assert.throws(() => resolveDeploymentContext({ profile: 'state', environment: 'dev.example.org', documents: [{ sourceFile: 's.yaml', deployment: { cloud: 'azure', default_location: 'northeurope', state_storage_account_name: 'stacme' } }] }), /deployment\.state_resource_group_name/);
+});
+
 test('requires only the selected cloud state fields for non-Pages deployments', () => {
   const aws = { project: 'api', customer_id: 'acme', stage: 'prod', cloud: 'AWS', default_location: 'eu-west-1', public_cloud_flag: 'false', state_bucket_name: 'state-bucket', state_region: 'eu-west-1' };
   assert.equal(resolve(aws).CLOUD, 'aws');
@@ -144,7 +159,7 @@ test('requires only the selected cloud state fields for non-Pages deployments', 
   for (const field of ['state_bucket_name', 'state_region']) {
     assert.throws(() => resolve({ ...aws, [field]: '' }), new RegExp(`deployment\\.${field}.*GitHub variable ${field.toUpperCase()}`));
   }
-  for (const field of ['resource_group_name', 'dns_zone_name', 'dns_zone_resource_group_name', 'state_storage_account_name', 'state_container_name', 'state_resource_group_name']) {
+  for (const field of ['resource_group_name', 'dns_zone_name', 'dns_zone_resource_group_name', 'state_storage_account_name']) {
     assert.throws(() => resolve({ ...azure, [field]: '' }), new RegExp(`deployment\\.${field}.*GitHub variable ${field.toUpperCase()}`));
   }
   assert.equal(resolve({ ...azure, state_container_name: '' }, { variables: { STATE_CONTAINER_NAME: 'shared-state' } }).STATE_CONTAINER_NAME, 'shared-state');

@@ -333,6 +333,7 @@ jobs:
             variables: JSON.parse(process.env.DEPLOYMENT_VARIABLES),
             skipCloudValidation: process.env.SKIP_CLOUD_VALIDATION === 'true',
             profile: process.env.CONFIG_PROFILE,
+            environment: process.env.ENVIRONMENT,
           });
           for (const [name, value] of Object.entries(resolved)) {
             // AWS_ENDPOINT_URL* would redirect every later AWS CLI/SDK call in this job; keep them prefixed.
