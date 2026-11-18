@@ -1,3 +1,11 @@
+## Release 1.15.0
+
+Merged PRs: 78
+
+### Changes
+
+- Add Azure `deploy` defaults: `state_container_name=<customer_id>-tfstate`, `dns_zone_name=GitHub Environment`, and `state_resource_group_name=resource_group_name`. ([#78](https://github.com/GEBITSolutions/stax/pull/78))
+
 ## Release 1.14.0
 
 Merged PRs: 76
