@@ -1,3 +1,11 @@
+## Release 1.14.0
+
+Merged PRs: 76
+
+### Changes
+
+- Change `public_cloud_flag` to optional, defaulting to `true` while preserving explicit `false` values. ([#76](https://github.com/GEBITSolutions/stax/pull/76))
+
 ## Release 1.13.0
 
 Merged PRs: 75
