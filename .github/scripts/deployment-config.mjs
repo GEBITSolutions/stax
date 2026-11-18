@@ -23,7 +23,7 @@ const fields = [
   'state_use_path_style',
 ];
 
-const requiredCommon = ['project', 'customer_id', 'stage', 'cloud', 'default_location', 'public_cloud_flag'];
+const requiredCommon = ['project', 'customer_id', 'stage', 'cloud', 'default_location'];
 const requiredAzure = [
   'resource_group_name',
   'dns_zone_name',
@@ -160,6 +160,8 @@ export function resolveDeploymentContext({ documents, variables = {}, skipCloudV
     throw new Error(`deployment.cloud / GitHub variable CLOUD must be 'azure' or 'aws' (received '${result.CLOUD}')`);
   }
   result.CLOUD = cloud;
+  // Optional: most deployments target a public cloud, so an unset flag means true.
+  if (!result.PUBLIC_CLOUD_FLAG) result.PUBLIC_CLOUD_FLAG = 'true';
   let required;
   if (profile === 'state') {
     // Backend coordinates are the whole point of a state config, so they are always enforced.
