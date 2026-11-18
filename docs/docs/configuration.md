@@ -50,11 +50,11 @@ Precedence per field is selected YAML → GitHub variable. An empty string or `n
 | `default_location` | `DEFAULT_LOCATION` | Required |
 | `public_cloud_flag` | `PUBLIC_CLOUD_FLAG` | Optional, defaults to `true`; boolean `true`/`false` or their string forms |
 | `resource_group_name` | `RESOURCE_GROUP_NAME` | Required for Azure |
-| `dns_zone_name` | `DNS_ZONE_NAME` | Required for Azure |
+| `dns_zone_name` | `DNS_ZONE_NAME` | Azure; defaults to the GitHub Environment name |
 | `dns_zone_resource_group_name` | `DNS_ZONE_RESOURCE_GROUP_NAME` | Required for Azure |
 | `state_storage_account_name` | `STATE_STORAGE_ACCOUNT_NAME` | Required for Azure |
-| `state_container_name` | `STATE_CONTAINER_NAME` | Required for Azure |
-| `state_resource_group_name` | `STATE_RESOURCE_GROUP_NAME` | Required for Azure |
+| `state_container_name` | `STATE_CONTAINER_NAME` | Azure; defaults to `<customer_id>-tfstate` |
+| `state_resource_group_name` | `STATE_RESOURCE_GROUP_NAME` | Azure; defaults to `resource_group_name` |
 | `state_bucket_name` | `STATE_BUCKET_NAME` | Required for AWS |
 | `state_region` | `STATE_REGION` | Required for AWS |
 | `aws_endpoint_url` | `AWS_ENDPOINT_URL` | Optional, AWS only; base endpoint for every AWS service |
