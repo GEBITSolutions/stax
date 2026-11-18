@@ -126,7 +126,7 @@ function readDeployment(mapping, source, label) {
 
 // Later selected documents win; missing fields fall back to GitHub variables.
 // profile 'deploy' (default) validates stack deployments; 'state' validates a state-backend config.
-export function resolveDeploymentContext({ documents, variables = {}, skipCloudValidation = false, profile = 'deploy' }) {
+export function resolveDeploymentContext({ documents, variables = {}, skipCloudValidation = false, profile = 'deploy', environment = '' }) {
   if (!Array.isArray(documents)) throw new Error('documents must be an array of config documents');
   if (!isMapping(variables)) throw new Error('variables must be a mapping of GitHub variables');
   if (!profiles.has(profile)) throw new Error(`profile must be 'deploy' or 'state' (received '${profile}')`);
@@ -162,6 +162,13 @@ export function resolveDeploymentContext({ documents, variables = {}, skipCloudV
   result.CLOUD = cloud;
   // Optional: most deployments target a public cloud, so an unset flag means true.
   if (!result.PUBLIC_CLOUD_FLAG) result.PUBLIC_CLOUD_FLAG = 'true';
+  // Azure deployments derive these from values already known, so most setups need not repeat them.
+  // State configs describe the backend explicitly and keep requiring their own coordinates.
+  if (profile === 'deploy' && cloud === 'azure' && !skipCloudValidation) {
+    if (!result.STATE_CONTAINER_NAME && result.CUSTOMER_ID) result.STATE_CONTAINER_NAME = `${result.CUSTOMER_ID}-tfstate`;
+    if (!result.DNS_ZONE_NAME && environment) result.DNS_ZONE_NAME = environment;
+    if (!result.STATE_RESOURCE_GROUP_NAME && result.RESOURCE_GROUP_NAME) result.STATE_RESOURCE_GROUP_NAME = result.RESOURCE_GROUP_NAME;
+  }
   let required;
   if (profile === 'state') {
     // Backend coordinates are the whole point of a state config, so they are always enforced.
