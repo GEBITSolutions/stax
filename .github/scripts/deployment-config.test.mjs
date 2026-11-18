@@ -124,14 +124,15 @@ test('allows absent deployment mappings with complete GitHub variables, without 
   assert.throws(() => resolveDeploymentContext({ documents: [] }), /deployment\.project.*GitHub variable PROJECT/);
 });
 
-test('preserves explicit false and requires all common fields even when cloud validation is skipped', () => {
+test('preserves explicit false, defaults public_cloud_flag to true and requires the other common fields even when cloud validation is skipped', () => {
+  assert.equal(resolve({ ...azure, public_cloud_flag: null }).PUBLIC_CLOUD_FLAG, 'true');
   assert.equal(resolve({ ...azure, public_cloud_flag: false }).PUBLIC_CLOUD_FLAG, 'false');
   assert.equal(resolve({ ...azure, public_cloud_flag: null }, { variables: { PUBLIC_CLOUD_FLAG: 'false' } }).PUBLIC_CLOUD_FLAG, 'false');
   const pages = resolve({ project: 'docs', customer_id: 'acme', stage: 'dev', cloud: 'AWS', default_location: 'eu-west-1', public_cloud_flag: false }, { skipCloudValidation: true });
   assert.equal(pages.PUBLIC_CLOUD_FLAG, 'false');
   assert.equal(pages.STATE_BUCKET_NAME, '');
   assert.equal(pages.STATE_STORAGE_ACCOUNT_NAME, '');
-  for (const field of ['project', 'customer_id', 'stage', 'cloud', 'default_location', 'public_cloud_flag']) {
+  for (const field of ['project', 'customer_id', 'stage', 'cloud', 'default_location']) {
     assert.throws(() => resolve({ ...azure, [field]: null }, { skipCloudValidation: true }), new RegExp(`deployment\\.${field}.*GitHub variable ${field.toUpperCase()}`));
   }
 });

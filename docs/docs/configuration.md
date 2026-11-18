@@ -48,7 +48,7 @@ Precedence per field is selected YAML → GitHub variable. An empty string or `n
 | `stage` | `STAGE` | Required |
 | `cloud` | `CLOUD` | Required; `azure` or `aws` |
 | `default_location` | `DEFAULT_LOCATION` | Required |
-| `public_cloud_flag` | `PUBLIC_CLOUD_FLAG` | Required; boolean `true`/`false` or their string forms |
+| `public_cloud_flag` | `PUBLIC_CLOUD_FLAG` | Optional, defaults to `true`; boolean `true`/`false` or their string forms |
 | `resource_group_name` | `RESOURCE_GROUP_NAME` | Required for Azure |
 | `dns_zone_name` | `DNS_ZONE_NAME` | Required for Azure |
 | `dns_zone_resource_group_name` | `DNS_ZONE_RESOURCE_GROUP_NAME` | Required for Azure |

@@ -93,6 +93,8 @@ const REQUIRED_DEPLOYMENT_VALUES: Record<string, Record<string, string>> = {
     stage: "dev",
     cloud: "azure",
     default_location: "northeurope",
+  },
+  "optional, defaults to true": {
     public_cloud_flag: "true",
   },
   "required for azure": {
