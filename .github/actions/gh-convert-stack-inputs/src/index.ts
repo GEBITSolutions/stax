@@ -3,6 +3,7 @@ import * as core from '@actions/core'
 import { InputType, GlobalsContext, SecretReader } from './types.js'
 import { KeyVaultStore } from './keyvault-store.js'
 import { SsmParameterStore } from './ssm-store.js'
+import { writePrivateInputsFile } from './private-file.js'
 
 /**
  * The main function for the action.
@@ -11,6 +12,12 @@ import { SsmParameterStore } from './ssm-store.js'
  */
 export async function run(): Promise<void> {
   try {
+    const outputMode = core.getInput('output-mode') || 'step-output'
+    if (outputMode !== 'step-output' && outputMode !== 'private-file') {
+      throw new Error(
+        `Invalid output-mode: ${outputMode}. Expected step-output or private-file.`
+      )
+    }
     const environment_name = core.getInput('environment-name') || 'default'
     core.info(`Using Environment: ${environment_name}`)
 
@@ -277,7 +284,14 @@ export async function run(): Promise<void> {
       tf_input.push({ key, value })
     }
 
-    core.setOutput('tf-vars-map', JSON.stringify(tf_input))
+    if (outputMode === 'private-file') {
+      core.setOutput(
+        'resolved-inputs-file',
+        await writePrivateInputsFile(tf_input, process.env.RUNNER_TEMP)
+      )
+    } else {
+      core.setOutput('tf-vars-map', JSON.stringify(tf_input))
+    }
   } catch (error) {
     // Fail the workflow run if an error occurs
     if (error instanceof Error) core.setFailed(error.message)

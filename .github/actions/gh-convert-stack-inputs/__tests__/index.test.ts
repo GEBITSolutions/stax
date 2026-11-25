@@ -1,4 +1,7 @@
 import { jest } from '@jest/globals'
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import path from 'node:path'
 import * as core from '../__fixtures__/core.js'
 
 jest.unstable_mockModule('@actions/core', () => core)
@@ -364,4 +367,95 @@ describe('index.ts', () => {
       expect(createKeyValue.mock.calls[0][0]).toBe(expected)
     }
   )
+
+  describe('output-mode private-file', () => {
+    const originalRunnerTemp = process.env.RUNNER_TEMP
+    let runnerTemp: string
+
+    beforeEach(async () => {
+      runnerTemp = await mkdtemp(path.join(tmpdir(), 'runner-temp-'))
+      process.env.RUNNER_TEMP = runnerTemp
+      createKeyValue.mockImplementation(originalCreateKeyValue)
+    })
+
+    afterEach(async () => {
+      await rm(runnerTemp, { recursive: true, force: true })
+      if (originalRunnerTemp === undefined) delete process.env.RUNNER_TEMP
+      else process.env.RUNNER_TEMP = originalRunnerTemp
+    })
+
+    const privateInputs =
+      (inputs: unknown[], extra: Record<string, string> = {}) =>
+      (name: string) => {
+        if (name === 'output-mode') return 'private-file'
+        if (name === 'convertInputs') return JSON.stringify(inputs)
+        if (name === 'secrets')
+          return JSON.stringify({ APP_TOKEN: 'line1\nline2' })
+        return extra[name] ?? ''
+      }
+
+    it('writes typed values to a 0600 file and publishes only its path', async () => {
+      core.getInput.mockImplementation(
+        privateInputs([
+          { app_token: 'gh.secret.app_token' },
+          { replicas: 2 },
+          { settings: { enabled: true, tags: ['a', 'b'] } }
+        ])
+      )
+
+      await run()
+
+      expect(core.setFailed).not.toHaveBeenCalled()
+      expect(core.setOutput).toHaveBeenCalledTimes(1)
+      const [name, file] = core.setOutput.mock.calls[0] as [string, string]
+      expect(name).toBe('resolved-inputs-file')
+      const directory = path.dirname(file)
+      expect(path.dirname(directory)).toBe(runnerTemp)
+      expect(path.basename(directory)).toMatch(/^resolved-stack-inputs-/)
+      expect((await stat(directory)).mode & 0o777).toBe(0o700)
+      expect((await stat(file)).mode & 0o777).toBe(0o600)
+      expect(JSON.parse(await readFile(file, 'utf8'))).toEqual({
+        app_token: 'line1\nline2',
+        replicas: 2,
+        settings: { enabled: true, tags: ['a', 'b'] }
+      })
+    })
+
+    it('rejects duplicate input names without writing a file', async () => {
+      core.getInput.mockImplementation(
+        privateInputs([{ token: 'a' }], { additionalInputs: '{"token":"b"}' })
+      )
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith('Duplicate input name: token')
+      expect(core.setOutput).not.toHaveBeenCalled()
+      expect(await readdir(runnerTemp)).toEqual([])
+    })
+
+    it('requires RUNNER_TEMP', async () => {
+      delete process.env.RUNNER_TEMP
+      core.getInput.mockImplementation(privateInputs([{ token: 'a' }]))
+
+      await run()
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'RUNNER_TEMP is required for output-mode private-file'
+      )
+      expect(core.setOutput).not.toHaveBeenCalled()
+    })
+  })
+
+  it('rejects an unknown output-mode', async () => {
+    core.getInput.mockImplementation((name) =>
+      name === 'output-mode' ? 'stdout' : ''
+    )
+
+    await run()
+
+    expect(core.setFailed).toHaveBeenCalledWith(
+      'Invalid output-mode: stdout. Expected step-output or private-file.'
+    )
+    expect(core.setOutput).not.toHaveBeenCalled()
+  })
 })
