@@ -51,6 +51,7 @@ jobs:
           .github/actions/gh-create-deploy-config
           .github/actions/gh-convert-stack-inputs
           .github/scripts
+          .github/workflows
 
     - uses: actions/setup-node@v7
       with:
