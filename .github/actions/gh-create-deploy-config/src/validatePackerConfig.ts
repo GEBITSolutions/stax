@@ -10,7 +10,7 @@ function invalidPackerField(
   )
 }
 
-function containsAsciiControlCharacter(value: string): boolean {
+export function containsAsciiControlCharacter(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
     const characterCode = value.charCodeAt(index)
     if (characterCode <= 0x1f || characterCode === 0x7f) return true
