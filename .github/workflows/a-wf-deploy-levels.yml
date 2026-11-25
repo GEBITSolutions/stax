@@ -33,6 +33,8 @@ on:
         default: "GEBITSolutions/stax"
         type: string
     secrets:
+      ANSIBLE_SSH_PRIVATE_KEY:
+        required: false
       ARM_CLIENT_ID:
         required: false
       ARM_CLIENT_SECRET:

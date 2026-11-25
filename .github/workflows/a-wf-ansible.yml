@@ -25,6 +25,36 @@ on:
         type: string
         required: false
         default: plan
+      stack-data:
+        description: Ansible stack descriptor from a-wf-deploy-stack.yml; '{}' for a direct call without inputs
+        type: string
+        required: false
+        default: '{}'
+      pipeline-context:
+        description: Pipeline globals (a-wf-setup-ci.yml env output); required with stack-data
+        type: string
+        required: false
+        default: '{}'
+      requested-dry-run:
+        description: Dry-run flag of the calling stack workflow; must agree with mode
+        type: string
+        required: false
+        default: ''
+      requested-destroy:
+        description: Destroy flag of the calling stack workflow; Ansible rejects true
+        type: string
+        required: false
+        default: ''
+      actions-repository:
+        description: Github Repo for shared actions.
+        type: string
+        required: false
+        default: "GEBITSolutions/stax"
+      actions-version:
+        description: Github ref (branch/tag/sha) for shared actions.
+        type: string
+        required: false
+        default: "1.15.0"
     secrets:
       ANSIBLE_SSH_PRIVATE_KEY:
         # Environment-only secrets cannot satisfy a required caller-passed secret.
@@ -39,9 +69,104 @@ jobs:
     runs-on: ${{ inputs.runs-on }}
     environment: ${{ inputs.environment }}
     steps:
+    - name: Validate request before credentials
+      id: preflight
+      shell: bash
+      env:
+        STACK_DATA_JSON: ${{ inputs.stack-data }}
+        PIPELINE_CONTEXT_JSON: ${{ inputs.pipeline-context }}
+        REQUESTED_DRY_RUN: ${{ inputs.requested-dry-run }}
+        REQUESTED_DESTROY: ${{ inputs.requested-destroy }}
+        MODE: ${{ inputs.mode }}
+        INVENTORY_PATH: ${{ inputs.inventory-path }}
+        PLAYBOOK_PATH: ${{ inputs.playbook-path }}
+        RUNS_ON: ${{ inputs.runs-on }}
+        ENVIRONMENT: ${{ inputs.environment }}
+        KEYSTORE: ${{ vars.REPO_KEYSTORE_SSM_PREFIX || vars.REPO_KEYSTORE_KEY_VAULT_URL }}
+      run: |
+        set -euo pipefail
+        fail() { echo "::error::Invalid Ansible request: $1" >&2; exit 1; }
+        [[ "$RUNNER_OS" == Linux ]] || fail 'a Linux runner is required.'
+        [[ "$MODE" == plan || "$MODE" == apply ]] || fail 'mode must be plan or apply.'
+        jq -e 'type == "object"' <<< "$STACK_DATA_JSON" > /dev/null 2>&1 || fail 'stack-data must be a JSON object.'
+        jq -e 'type == "object"' <<< "$PIPELINE_CONTEXT_JSON" > /dev/null 2>&1 || fail 'pipeline-context must be a JSON object.'
+        case "$REQUESTED_DRY_RUN" in ''|true|false) ;; *) fail 'requested-dry-run must be true or false.' ;; esac
+        case "$REQUESTED_DESTROY" in ''|true|false) ;; *) fail 'requested-destroy must be true or false.' ;; esac
+
+        # Direct call without a stack descriptor: the playbook runs without inputs.
+        if jq -e 'length == 0' <<< "$STACK_DATA_JSON" > /dev/null 2>&1; then
+          jq -e 'length == 0' <<< "$PIPELINE_CONTEXT_JSON" > /dev/null 2>&1 || fail 'a call without stack-data requires an empty pipeline-context.'
+          [[ -z "$REQUESTED_DRY_RUN" && -z "$REQUESTED_DESTROY" ]] || fail 'a call without stack-data cannot set requested flags.'
+          echo 'has-inputs=false' >> "$GITHUB_OUTPUT"
+          exit 0
+        fi
+
+        # Same rules as validateAnsibleConfig in gh-create-deploy-config, for callers that skip setup.
+        jq -e '
+          def path_ok:
+            type == "string" and length > 0 and
+            (test("^[A-Za-z]:") | not) and (startswith("/") | not) and
+            (contains("\\") | not) and (explode | all(. >= 32 and . != 127)) and
+            (split("/") | all(. != "" and . != "..")) and test("\\.ya?ml$");
+          def flag: type == "boolean" or (type == "string" and (. == "true" or . == "false"));
+          def destination:
+            type == "string" and test("^[A-Za-z_][A-Za-z0-9_]*$") and
+            (ascii_downcase | startswith("ansible_") | not) and
+            (ascii_downcase | IN("inventory_hostname", "inventory_hostname_short", "inventory_file", "inventory_dir", "playbook_dir", "group_names", "groups", "hostvars", "omit", "environment") | not);
+          .type == "ansible" and
+          (.id | type == "string" and test("^[A-Za-z0-9_-]+$")) and
+          (.ansible_inventory | path_ok) and (.ansible_playbook | path_ok) and
+          (."runs-on" | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and
+          ((.source_repo // "") == "") and ((.source_version // "") == "") and
+          ((.secret_backend // "gh") == "gh") and
+          ((."output-var" // []) | length == 0) and ((."output-secret" // []) | length == 0) and
+          (.destroy | . == null or flag) and
+          (.config_globals | . == null or type == "object") and
+          (if has("input") then (.input | type == "array" and
+            all(.[]; type == "object" and length == 1 and (keys[0] | destination)) and
+            ([.[] | keys[0]] | unique | length) == length) else true end)
+        ' <<< "$STACK_DATA_JSON" > /dev/null 2>&1 || fail 'stack-data does not satisfy the Ansible stack rules.'
+
+        [[ "$INVENTORY_PATH" == "$(jq -r '.ansible_inventory' <<< "$STACK_DATA_JSON")" &&
+           "$PLAYBOOK_PATH" == "$(jq -r '.ansible_playbook' <<< "$STACK_DATA_JSON")" &&
+           "$RUNS_ON" == "$(jq -r '."runs-on"' <<< "$STACK_DATA_JSON")" ]] || fail 'inventory-path, playbook-path or runs-on differ from stack-data.'
+        jq -e --arg environment "$ENVIRONMENT" '$environment != "" and .environment == $environment' <<< "$PIPELINE_CONTEXT_JSON" > /dev/null 2>&1 || fail 'environment is empty or differs from pipeline-context.'
+
+        flag_value() {
+          jq -r --arg key "$2" --arg default "$3" '
+            if has($key) | not then $default
+            elif (.[$key] | type) == "boolean" then .[$key] | tostring
+            elif .[$key] == "true" or .[$key] == "false" then .[$key]
+            else error("invalid flag") end
+          ' <<< "$1" 2>/dev/null
+        }
+        context_dry="$(flag_value "$PIPELINE_CONTEXT_JSON" dry_run true)" || fail 'invalid pipeline-context dry_run.'
+        context_destroy="$(flag_value "$PIPELINE_CONTEXT_JSON" destroy false)" || fail 'invalid pipeline-context destroy.'
+        stack_destroy="$(flag_value "$STACK_DATA_JSON" destroy false)" || fail 'invalid stack-data destroy.'
+        [[ "$context_destroy" == false && "$stack_destroy" == false && "$REQUESTED_DESTROY" != true ]] || fail 'destroy is not supported.'
+        if [[ -n "$REQUESTED_DRY_RUN" ]]; then
+          if jq -e 'has("dry_run")' <<< "$PIPELINE_CONTEXT_JSON" > /dev/null; then
+            [[ "$REQUESTED_DRY_RUN" == "$context_dry" ]] || fail 'requested-dry-run conflicts with pipeline-context dry_run.'
+          else
+            context_dry="$REQUESTED_DRY_RUN"
+          fi
+        fi
+        expected_mode=plan
+        [[ "$context_dry" == true ]] || expected_mode=apply
+        [[ "$MODE" == "$expected_mode" ]] || fail 'mode conflicts with the dry-run flag.'
+
+        has_inputs="$(jq -r '(.input // []) | length > 0' <<< "$STACK_DATA_JSON")"
+        # Inputs resolve from GitHub only; with a keystore, stack outputs live there instead.
+        if [[ -n "$KEYSTORE" ]] && jq -e '[(.input // [])[][] | strings | select(startswith("stack."))] | length > 0' <<< "$STACK_DATA_JSON" > /dev/null; then
+          fail 'stack.* inputs are not supported when a keystore (REPO_KEYSTORE_*) is configured.'
+        fi
+        echo "has-inputs=$has_inputs" >> "$GITHUB_OUTPUT"
+
     - name: Checkout caller repository
       uses: actions/checkout@v7
       with:
+        ref: ${{ github.sha }}
+        path: caller-source
         persist-credentials: false
 
     - name: Set up Python
@@ -59,67 +184,36 @@ jobs:
         uv tool install --python 3.12 ansible-core==2.20.9
         printf 'ANSIBLE_BIN_DIR=%s\n' "$(uv tool dir --bin)" >> "$GITHUB_ENV"
 
-    - name: Validate inputs and Ansible files
+    - name: Validate inventory and playbook
+      id: files
+      working-directory: ${{ github.workspace }}/caller-source
       shell: bash
       env:
-        MODE: ${{ inputs.mode }}
         INVENTORY_PATH: ${{ inputs.inventory-path }}
         PLAYBOOK_PATH: ${{ inputs.playbook-path }}
         ANSIBLE_BIN_DIR: ${{ env.ANSIBLE_BIN_DIR }}
       run: |
         set -euo pipefail
-
-        case "$MODE" in
-          plan|apply) ;;
-          *)
-            echo "mode must be exactly plan or apply" >&2
-            exit 1
-            ;;
-        esac
-
-        workspace="$(realpath -e -- "$GITHUB_WORKSPACE")"
+        workspace="$(realpath -e -- "$GITHUB_WORKSPACE/caller-source")"
         resolve_file() {
-          local label="$1" raw="$2" candidate resolved
-          [[ -n "$raw" ]] || {
-            echo "$label path is required" >&2
-            return 1
+          local label="$1" raw="$2" resolved
+          [[ -n "$raw" && "$raw" != *$'\r'* && "$raw" != *$'\n'* && "$raw" != /* ]] || {
+            echo "::error::$label path must be a nonempty relative path on one line." >&2; return 1;
           }
-          [[ "$raw" != *$'\r'* && "$raw" != *$'\n'* ]] || {
-            echo "$label path must not contain carriage returns or line feeds" >&2
-            return 1
+          resolved="$(realpath -e -- "$workspace/$raw" 2>/dev/null)" || {
+            echo "::error::$label file does not exist." >&2; return 1;
           }
-          [[ "$raw" != /* ]] || {
-            echo "$label path must be relative" >&2
-            return 1
-          }
-          candidate="$workspace/$raw"
-          resolved="$(realpath -e -- "$candidate")" || {
-            echo "$label path does not exist" >&2
-            return 1
-          }
-          [[ -f "$resolved" ]] || {
-            echo "$label path is not a regular file" >&2
-            return 1
-          }
-          [[ "$resolved" == "$workspace/"* ]] || {
-            echo "$label path escapes the caller workspace" >&2
-            return 1
-          }
-          [[ "$resolved" != *$'\r'* && "$resolved" != *$'\n'* ]] || {
-            echo "$label path must not contain carriage returns or line feeds" >&2
-            return 1
+          [[ -f "$resolved" && "$resolved" == "$workspace/"* && "$resolved" != *$'\r'* && "$resolved" != *$'\n'* ]] || {
+            echo "::error::$label must be a regular file inside the caller repository." >&2; return 1;
           }
           printf '%s\n' "$resolved"
         }
-
         inventory="$(resolve_file inventory "$INVENTORY_PATH")"
         playbook="$(resolve_file playbook "$PLAYBOOK_PATH")"
         {
-          printf 'ANSIBLE_MODE=%s\n' "$MODE"
-          printf 'ANSIBLE_INVENTORY=%s\n' "$inventory"
-          printf 'ANSIBLE_PLAYBOOK=%s\n' "$playbook"
-        } >> "$GITHUB_ENV"
-
+          echo "inventory=$inventory"
+          echo "playbook=$playbook"
+        } >> "$GITHUB_OUTPUT"
         "$ANSIBLE_BIN_DIR/ansible-inventory" -i "$inventory" --list | python -c '
         import json, sys
         inventory = json.load(sys.stdin)
@@ -128,67 +222,102 @@ jobs:
         '
         "$ANSIBLE_BIN_DIR/ansible-playbook" -i "$inventory" "$playbook" --syntax-check
 
-    - name: Execute Ansible playbook
+    - name: Prepare SSH key
+      id: ssh
       shell: bash
       env:
         ANSIBLE_SSH_PRIVATE_KEY: ${{ secrets.ANSIBLE_SSH_PRIVATE_KEY }}
-        MODE: ${{ env.ANSIBLE_MODE }}
-        INVENTORY: ${{ env.ANSIBLE_INVENTORY }}
-        PLAYBOOK: ${{ env.ANSIBLE_PLAYBOOK }}
-        ANSIBLE_BIN_DIR: ${{ env.ANSIBLE_BIN_DIR }}
       run: |
         set -euo pipefail
         [[ -n "$ANSIBLE_SSH_PRIVATE_KEY" ]] || {
-          echo "ANSIBLE_SSH_PRIVATE_KEY Environment secret is required" >&2
+          echo '::error::ANSIBLE_SSH_PRIVATE_KEY is missing: set it in the GitHub Environment or pass it to the workflow.' >&2
           exit 1
         }
-
-        temp_dir="$(mktemp -d "${RUNNER_TEMP}/ansible.XXXXXX")"
-        chmod 0700 "$temp_dir"
-        printf 'ANSIBLE_TEMP_DIR=%s\n' "$temp_dir" >> "$GITHUB_ENV"
-
-        cleanup() {
-          rm -rf -- "$temp_dir"
-        }
-        trap cleanup EXIT INT TERM
-
-        key_file="$temp_dir/id_ansible"
-        known_hosts="$temp_dir/known_hosts"
         umask 077
-        printf '%s\n' "$ANSIBLE_SSH_PRIVATE_KEY" > "$key_file"
-        chmod 0600 "$key_file"
-        : > "$known_hosts"
-        ssh-keygen -y -P '' -f "$key_file" > /dev/null
+        directory="$(mktemp -d "$RUNNER_TEMP/ansible.XXXXXX")"
+        trap 'rm -rf -- "$directory"' EXIT
+        printf '%s\n' "$ANSIBLE_SSH_PRIVATE_KEY" > "$directory/id_ansible"
+        : > "$directory/known_hosts"
+        ssh-keygen -y -P '' -f "$directory/id_ansible" > /dev/null 2>&1 || {
+          echo '::error::ANSIBLE_SSH_PRIVATE_KEY is not a valid private key without passphrase.' >&2; exit 1;
+        }
+        echo "directory=$directory" >> "$GITHUB_OUTPUT"
+        trap - EXIT
 
-        export ANSIBLE_PRIVATE_KEY_FILE="$key_file"
+    - name: Checkout shared actions
+      if: steps.preflight.outputs.has-inputs == 'true'
+      uses: actions/checkout@v7
+      with:
+        repository: ${{ inputs.actions-repository || 'GEBITSolutions/stax' }}
+        ref: ${{ inputs.actions-version || 'main' }}
+        path: shared-code
+        persist-credentials: false
+        sparse-checkout: .github/actions/gh-convert-stack-inputs
+
+    - name: Resolve stack inputs to a private file
+      id: inputs
+      if: steps.preflight.outputs.has-inputs == 'true'
+      uses: ./shared-code/.github/actions/gh-convert-stack-inputs
+      with:
+        output-mode: private-file
+        allowNull: 'false'
+        convertInputs: ${{ toJSON(fromJSON(inputs.stack-data).input) }}
+        config-globals: ${{ toJSON(fromJSON(inputs.stack-data).config_globals || fromJSON('{}')) }}
+        pipeline-globals: ${{ inputs.pipeline-context }}
+        variables: ${{ toJSON(vars) }}
+        secrets: ${{ toJSON(secrets) }}
+        # Tooling credentials never become playbook inputs.
+        excluded-secrets: '["ANSIBLE_SSH_PRIVATE_KEY","GITHUB_TOKEN","CONFIG_GITHUB_TOKEN","CI_GITHUB_PAT","CI_GITHUB_TOKEN_SHARED_CODE","CI_GITHUB_TOKEN_TERRAFORM","CI_ENV_TRANSFER_GH_TOKEN","CI_AZURE_STATIC_WEB_APPS_API_TOKEN","RELEASE_APP_CLIENT_SECRET","RELEASE_GH_APP_PRIVATE_KEY","RELEASE_NOTES_LLM_API_KEY","REPO_KEYSTORE_SP_CLIENT_SECRET","ARM_CLIENT_ID","ARM_CLIENT_SECRET","ARM_SUBSCRIPTION_ID","ARM_TENANT_ID","AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY","AWS_SESSION_TOKEN","AWS_ROLE_ARN","HCLOUD_TOKEN","GPG_PRIVATE_KEY","GPG_PASSPHRASE","PULP_PASSWORD","INFRACOST_API_KEY","COPILOT_USER_TOKEN"]'
+        basePath: ${{ github.workspace }}/caller-source
+
+    - name: Run Ansible playbook
+      shell: bash
+      working-directory: ${{ github.workspace }}/caller-source
+      env:
+        MODE: ${{ inputs.mode }}
+        INVENTORY: ${{ steps.files.outputs.inventory }}
+        PLAYBOOK: ${{ steps.files.outputs.playbook }}
+        SSH_DIRECTORY: ${{ steps.ssh.outputs.directory }}
+        HAS_INPUTS: ${{ steps.preflight.outputs.has-inputs }}
+        INPUTS_FILE: ${{ steps.inputs.outputs.resolved-inputs-file }}
+        ANSIBLE_BIN_DIR: ${{ env.ANSIBLE_BIN_DIR }}
+      run: |
+        set -euo pipefail
+        argv=("$ANSIBLE_BIN_DIR/ansible-playbook" -i "$INVENTORY" "$PLAYBOOK")
+        if [[ "$MODE" == plan ]]; then argv+=(--check --diff); fi
+        if [[ "$HAS_INPUTS" == true ]]; then
+          [[ -f "$INPUTS_FILE" && "$(stat -c %a -- "$INPUTS_FILE")" == 600 ]] || {
+            echo '::error::Stack inputs need the private inputs file from gh-convert-stack-inputs (output-mode private-file).' >&2; exit 1;
+          }
+          # Ansible reads the values from the file; they never reach argv or the environment.
+          argv+=(--extra-vars "@$INPUTS_FILE")
+        fi
+        export ANSIBLE_PRIVATE_KEY_FILE="$SSH_DIRECTORY/id_ansible"
         export ANSIBLE_HOST_KEY_CHECKING=True
-        export ANSIBLE_SSH_ARGS="-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$known_hosts -o GlobalKnownHostsFile=/dev/null -o ControlMaster=no"
+        export ANSIBLE_SSH_ARGS="-o BatchMode=yes -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -o UserKnownHostsFile=$SSH_DIRECTORY/known_hosts -o GlobalKnownHostsFile=/dev/null -o ControlMaster=no"
         export ANSIBLE_HOST_PATTERN_MISMATCH=error
         export ANSIBLE_INVENTORY_UNPARSED_FAILED=True
-
-        argv=("$ANSIBLE_BIN_DIR/ansible-playbook" -i "$INVENTORY" "$PLAYBOOK")
-        if [[ "$MODE" == plan ]]; then
-          argv+=(--check --diff)
-        fi
+        unset ACTIONS_RUNTIME_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN GITHUB_TOKEN GH_TOKEN
         "${argv[@]}"
 
-    - name: Remove temporary SSH credentials
+    - name: Remove SSH key and private inputs
       if: always()
       shell: bash
       env:
-        ANSIBLE_TEMP_DIR: ${{ env.ANSIBLE_TEMP_DIR }}
-        RUNNER_TEMP_DIR: ${{ runner.temp }}
+        SSH_DIRECTORY: ${{ steps.ssh.outputs.directory }}
+        INPUTS_FILE: ${{ steps.inputs.outputs.resolved-inputs-file }}
       run: |
         set -euo pipefail
-        if [[ -z "$ANSIBLE_TEMP_DIR" ]]; then
-          exit 0
-        fi
-        case "$ANSIBLE_TEMP_DIR" in
-          "$RUNNER_TEMP_DIR"/ansible.*)
-            rm -rf -- "$ANSIBLE_TEMP_DIR"
-            ;;
-          *)
-            echo "Refusing to remove a path outside this job's temporary Ansible directory" >&2
-            exit 1
-            ;;
-        esac
+        failed=0
+        remove() {
+          [[ -n "$1" ]] || return 0
+          # Only the directories the steps above created directly under RUNNER_TEMP.
+          if [[ "$(dirname -- "$1")" == "$RUNNER_TEMP" && "$(basename -- "$1")" == "$2"* ]]; then
+            rm -rf -- "$1"
+          else
+            echo "::error::Refusing to remove $1" >&2; failed=1
+          fi
+        }
+        remove "$SSH_DIRECTORY" ansible.
+        remove "${INPUTS_FILE:+$(dirname -- "$INPUTS_FILE")}" resolved-stack-inputs-
+        exit "$failed"

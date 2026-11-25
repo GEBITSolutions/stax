@@ -27,10 +27,10 @@ import * as zlib from 'node:zlib';
 import zlib__default from 'node:zlib';
 import { Transform, Readable as Readable$1, Writable } from 'node:stream';
 import { createPrivateKey, createHash, getRandomValues, createHmac, createPublicKey, sign as sign$1 } from 'node:crypto';
-import fs$1, { readFile as readFile$1, constants as constants$7 } from 'node:fs/promises';
+import fs$1, { readFile as readFile$1, mkdtemp, writeFile as writeFile$1, rm, constants as constants$7 } from 'node:fs/promises';
 import childProcess, { execFile as execFile$1, exec as exec$1 } from 'node:child_process';
-import { Buffer as Buffer$1 } from 'node:buffer';
 import path, { sep, join, dirname } from 'node:path';
+import { Buffer as Buffer$1 } from 'node:buffer';
 import { fileURLToPath } from 'node:url';
 import fs, { ReadStream, lstatSync, fstatSync, promises, readFileSync as readFileSync$1 } from 'node:fs';
 
@@ -98158,12 +98158,56 @@ class SsmParameterStore {
 }
 
 /**
+ * Writes resolved inputs as one JSON object to inputs.json in a new 0700
+ * directory under runnerTemp, with file mode 0600, and returns the file path.
+ * Consumers read the file (for example `ansible-playbook --extra-vars @file`),
+ * so values never appear in step outputs, argv or environment variables.
+ */
+async function writePrivateInputsFile(inputs, runnerTemp) {
+    if (!runnerTemp) {
+        throw new Error('RUNNER_TEMP is required for output-mode private-file');
+    }
+    const values = new Map();
+    for (const { key, value } of inputs) {
+        if (values.has(key))
+            throw new Error(`Duplicate input name: ${key}`);
+        values.set(key, value);
+    }
+    // mkdtemp creates the directory with mode 0700.
+    const directory = await mkdtemp(path.join(runnerTemp, 'resolved-stack-inputs-'));
+    const file = path.join(directory, 'inputs.json');
+    try {
+        await writeFile$1(file, JSON.stringify(Object.fromEntries(values)), {
+            mode: 0o600,
+            flag: 'wx'
+        });
+    }
+    catch (error) {
+        await rm(directory, { recursive: true, force: true });
+        throw error;
+    }
+    return file;
+}
+
+/**
  * The main function for the action.
  *
  * @returns Resolves when the action is complete.
  */
 async function run() {
     try {
+        const outputMode = coreExports.getInput('output-mode') || 'step-output';
+        if (outputMode !== 'step-output' && outputMode !== 'private-file') {
+            throw new Error(`Invalid output-mode: ${outputMode}. Expected step-output or private-file.`);
+        }
+        if (outputMode === 'private-file') {
+            if (process.platform !== 'linux' && process.platform !== 'darwin') {
+                throw new Error('output-mode private-file is supported only on Linux and macOS');
+            }
+            if (!process.env.RUNNER_TEMP) {
+                throw new Error('RUNNER_TEMP is required for output-mode private-file');
+            }
+        }
         const environment_name = coreExports.getInput('environment-name') || 'default';
         coreExports.info(`Using Environment: ${environment_name}`);
         const allowNull = coreExports.getInput('allowNull', {
@@ -98376,7 +98420,12 @@ async function run() {
         for (const [key, value] of Object.entries(additionalInputs)) {
             tf_input.push({ key, value });
         }
-        coreExports.setOutput('tf-vars-map', JSON.stringify(tf_input));
+        if (outputMode === 'private-file') {
+            coreExports.setOutput('resolved-inputs-file', await writePrivateInputsFile(tf_input, process.env.RUNNER_TEMP));
+        }
+        else {
+            coreExports.setOutput('tf-vars-map', JSON.stringify(tf_input));
+        }
     }
     catch (error) {
         // Fail the workflow run if an error occurs

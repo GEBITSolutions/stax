@@ -1,0 +1,49 @@
+name: Convert stack inputs action
+
+on:
+  pull_request:
+    paths:
+      - .github/actions/gh-convert-stack-inputs/**
+      - .github/workflows/pr-convert-stack-inputs-action.yml
+  push:
+    branches: [main]
+    paths:
+      - .github/actions/gh-convert-stack-inputs/**
+      - .github/workflows/pr-convert-stack-inputs-action.yml
+
+permissions:
+  contents: read
+
+jobs:
+  package-and-smoke:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: .github/actions/gh-convert-stack-inputs
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24.22.0
+          cache: npm
+          cache-dependency-path: .github/actions/gh-convert-stack-inputs/package-lock.json
+      - run: npm ci
+      - if: runner.os == 'Linux'
+        run: npm run format:check
+      - if: runner.os == 'Linux'
+        run: npm run lint
+      - if: runner.os == 'Linux'
+        run: npx tsc --noEmit
+      - if: runner.os == 'Linux'
+        run: npm test -- --runInBand
+      - run: npm run package
+      - name: Smoke bundled action on the native runner
+        run: node --test __tests__/action.test.mjs
+      - name: Check committed bundle is reproducible
+        if: runner.os == 'Linux'
+        run: git diff --exit-code -- dist/

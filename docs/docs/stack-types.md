@@ -118,6 +118,37 @@ Use the `script` workflow type to run custom scripts:
 - [x] **Bash**: run shell scripts.
 - [x] **Python**: run Python scripts.
 
+## Configuration management
+
+- [x] **Ansible** (`ansible`): run a playbook from the calling repository against an inventory over SSH.
+
+```yaml
+stacks:
+  - id: linux-k3s
+    type: ansible
+    ansible_inventory: ansible/inventory.yml
+    ansible_playbook: ansible/k3s.yml
+    runs-on: ubuntu-latest   # a Linux runner that reaches the hosts
+    input: []
+  - id: linux-arc
+    type: ansible
+    ansible_inventory: ansible/inventory.yml
+    ansible_playbook: ansible/arc.yml
+    runs-on: ubuntu-latest
+    depends_on: [linux-k3s]
+    input:
+      - arc_github_app_id: gh.secret.ARC_GITHUB_APP_ID
+```
+
+- Both paths are repository-relative `.yml`/`.yaml` files inside the calling repository; `source_repo`, outputs and `destroy` are rejected.
+- Dry runs (`dry-run: true`, the default) run `ansible-playbook --check --diff`; `dry-run: false` applies.
+- The job binds the deployment's GitHub Environment. `ANSIBLE_SSH_PRIVATE_KEY` (an unencrypted private key) comes from that Environment or is passed to `a-wf-deploy-levels.yml`. Host keys are accepted on first use for the run only.
+- Each `input` entry becomes one Ansible extra variable, named by its key, with the usual `gh.secret.*`, `gh.var.*`, `global.*` and literal values. STAX writes them to a private `0600` file passed as `--extra-vars @file`, never to the command line, the log or the environment, and deletes it after the run. Names must be valid Ansible variable names and must not be reserved (`ansible_*`, `hostvars`, `environment`, ...). Tooling secrets such as `ANSIBLE_SSH_PRIVATE_KEY`, `ARM_*` and GitHub tokens cannot be inputs.
+- Two Ansible stacks on the same inventory cannot run in the same level; make one depend on the other.
+- Select one stack with `stack_filter: linux-arc`, or the stack and its dependencies with `stack_filter: ">linux-arc"`.
+
+`a-wf-ansible-source-checks.yml` checks a repository's `configs/ansible/*.yaml` without secrets or host contact: it tests the STAX actions at a full commit SHA (`actions-version`), verifies their committed bundles, selects every Ansible stack alone and with its dependencies, syntax-checks the inventories and playbooks, and lints the caller's workflows.
+
 ## Helm deployments
 
 - [ ] **Helm**: planned, not supported yet.

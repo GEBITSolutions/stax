@@ -107,7 +107,8 @@
             "s3-site-deploy",
             "script",
             "bizep",
-            "github-pages-site-deploy"
+            "github-pages-site-deploy",
+            "ansible"
           ]
         },
         "if": { "description": "Deploy only when this JavaScript condition holds; {stage} and other pipeline values are substituted first.", "type": "string", "examples": ["'{stage}' == 'prod'"], "x-stax-types": "all" },
@@ -322,7 +323,10 @@
 
         "script": { "description": "Script path relative to the source checkout.", "type": "string", "minLength": 1, "examples": ["scripts/deploy.sh"], "x-stax-types": ["script"] },
         "resource_prefix": { "type": "string", "examples": ["app"], "x-stax-types": ["script", "bizep"] },
-        "template": { "description": "Bicep template path for bizep stacks.", "type": "string", "minLength": 1, "examples": ["bicep/main.bicep"], "x-stax-types": ["bizep"] }
+        "template": { "description": "Bicep template path for bizep stacks.", "type": "string", "minLength": 1, "examples": ["bicep/main.bicep"], "x-stax-types": ["bizep"] },
+
+        "ansible_inventory": { "description": "YAML inventory path relative to the repository root.", "type": "string", "pattern": "\\.ya?ml$", "examples": ["ansible/inventory.yml"], "x-stax-types": ["ansible"] },
+        "ansible_playbook": { "description": "Playbook path relative to the repository root.", "type": "string", "pattern": "\\.ya?ml$", "examples": ["ansible/site.yml"], "x-stax-types": ["ansible"] }
       },
       "required": ["id", "type"],
       "allOf": [
@@ -359,6 +363,10 @@
         {
           "if": { "properties": { "type": { "const": "bizep" } }, "required": ["type"] },
           "then": { "required": ["template"] }
+        },
+        {
+          "if": { "properties": { "type": { "const": "ansible" } }, "required": ["type"] },
+          "then": { "required": ["ansible_inventory", "ansible_playbook", "runs-on"] }
         },
         {
           "if": { "properties": { "type": { "const": "function-build-deploy" } }, "required": ["type"] },

@@ -69,6 +69,8 @@ export interface ITerraformConfig {
     image_version?: string;
     target_regions?: string[];
     destroy?: boolean | string;
+    ansible_inventory?: string;
+    ansible_playbook?: string;
 }
 export interface IExternalRepoEntry {
     repoURL: string;

@@ -49180,6 +49180,125 @@ function validateStackFolder(config) {
     }
 }
 
+/** Variables Ansible sets itself; stack inputs must not override them. */
+const RESERVED_VARIABLES = new Set([
+    'inventory_hostname',
+    'inventory_hostname_short',
+    'inventory_file',
+    'inventory_dir',
+    'playbook_dir',
+    'group_names',
+    'groups',
+    'hostvars',
+    'omit',
+    'environment'
+]);
+function invalid(config, field, reason) {
+    throw new Error(`Ansible stack "${config.id}" has invalid ${field}: ${reason}.`);
+}
+/** Returns the repository-relative YAML path without "." segments. */
+function ansiblePath(config, field) {
+    const value = config[field];
+    if (typeof value !== 'string' || value.trim() === '') {
+        invalid(config, field, 'must be a nonempty YAML file path');
+    }
+    if (/^[A-Za-z]:/.test(value) || value.startsWith('/')) {
+        invalid(config, field, 'must be repository-relative');
+    }
+    if (value.includes('\\'))
+        invalid(config, field, 'must use POSIX separators');
+    if (containsAsciiControlCharacter(value)) {
+        invalid(config, field, 'must not contain control characters');
+    }
+    const segments = value.split('/');
+    if (segments.includes('..') || segments.includes('')) {
+        invalid(config, field, 'must not contain parent or empty path segments');
+    }
+    if (!/\.ya?ml$/.test(value)) {
+        invalid(config, field, 'must name a .yml or .yaml file');
+    }
+    return segments.filter((segment) => segment !== '.').join('/');
+}
+function validateAnsibleConfig(config) {
+    if (config.type !== 'ansible')
+        return;
+    if (!/^[A-Za-z0-9_-]+$/.test(config.id)) {
+        invalid(config, 'id', 'must contain only letters, digits, underscores or hyphens');
+    }
+    ansiblePath(config, 'ansible_inventory');
+    ansiblePath(config, 'ansible_playbook');
+    const runner = config['runs-on'];
+    if (typeof runner !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(runner)) {
+        invalid(config, 'runs-on', 'must be one runner label');
+    }
+    if (config.input !== undefined) {
+        if (!Array.isArray(config.input)) {
+            invalid(config, 'input', 'must be a list of single-key mappings');
+        }
+        const destinations = new Set();
+        for (const entry of config.input) {
+            if (entry === null ||
+                typeof entry !== 'object' ||
+                Array.isArray(entry) ||
+                Object.keys(entry).length !== 1) {
+                invalid(config, 'input', 'each entry must be a single-key mapping');
+            }
+            const destination = Object.keys(entry)[0];
+            if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(destination)) {
+                invalid(config, 'input', `"${destination}" is not a valid variable name`);
+            }
+            if (/^ansible_/i.test(destination) ||
+                RESERVED_VARIABLES.has(destination.toLowerCase())) {
+                invalid(config, 'input', `"${destination}" is reserved for Ansible`);
+            }
+            if (destinations.has(destination)) {
+                invalid(config, 'input', `"${destination}" is declared twice`);
+            }
+            destinations.add(destination);
+        }
+    }
+    for (const field of ['source_repo', 'source_version']) {
+        if (config[field])
+            invalid(config, field, 'external sources are not supported');
+    }
+    for (const field of ['output-var', 'output-secret']) {
+        if (config[field]?.length)
+            invalid(config, field, 'outputs are not supported');
+    }
+    if (config.destroy === true || config.destroy === 'true') {
+        invalid(config, 'destroy', 'destroy is not supported');
+    }
+    // a-wf-ansible resolves inputs from GitHub secrets and variables only.
+    if ((config.secret_backend ?? 'gh') !== 'gh') {
+        invalid(config, 'secret_backend', 'only gh is supported');
+    }
+}
+/** A destroy run rejects the whole selection when it contains an Ansible stack. */
+function validateAnsibleSelection(configs, globalVars) {
+    const ansible = configs.find((config) => config.type === 'ansible');
+    if (ansible !== undefined &&
+        (globalVars['destroy'] === true || globalVars['destroy'] === 'true')) {
+        throw new Error(`Ansible stack "${ansible.id}" does not support destroy=true.`);
+    }
+}
+/** Ansible stacks in one level run in parallel, so they must not share an inventory. */
+function validateAnsibleLayerOverlap(layers) {
+    for (const layer of layers) {
+        const inventories = new Map();
+        for (const config of layer) {
+            if (config.type !== 'ansible')
+                continue;
+            const inventory = ansiblePath(config, 'ansible_inventory');
+            const previous = inventories.get(inventory);
+            if (previous !== undefined) {
+                throw new Error(`Ansible stacks "${previous}" and "${config.id}" share inventory "${inventory}" in one level; add depends_on between them.`);
+            }
+            inventories.set(inventory, config.id);
+        }
+    }
+}
+
 /**
  * The main function for the action.
  *
@@ -49327,6 +49446,7 @@ async function run() {
             }
             validatePackerConfig(config, (message) => coreExports.warning(message));
             validateStackFolder(config);
+            validateAnsibleConfig(config);
         }
         deploy_config = convert_implicit_to_explicit_dependencies(deploy_config);
         deploy_config = prune_external_dependencies(deploy_config);
@@ -49347,6 +49467,7 @@ async function run() {
             deploy_config = apply_stack_filter(deploy_config, expanded_stack_filter);
             coreExports.info(`Filtered deploy-config: ${JSON.stringify(deploy_config)}`);
         }
+        validateAnsibleSelection(deploy_config, global_vars);
         let layer_deployments = [];
         for (let i = 0; i < deploy_depth_int; i++) {
             layer_deployments.push(generate_layerdeployment(deploy_config, i, global_vars, layer_deployments));
@@ -49365,6 +49486,7 @@ async function run() {
             throw new Error(`Unable to schedule all stacks within ${deploy_depth_int} layers: ${details}`);
         }
         layer_deployments = layer_deployments.filter((layer) => layer.length > 0);
+        validateAnsibleLayerOverlap(layer_deployments);
         const environment = global_vars['environment'];
         if (environment !== undefined) {
             for (let i = 0; i < layer_deployments.length; i++) {

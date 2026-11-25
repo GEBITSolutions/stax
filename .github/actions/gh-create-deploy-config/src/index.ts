@@ -17,6 +17,11 @@ import { resolveSourceVersions } from './resolveSourceVersion.js'
 import { validatePackerConfig } from './validatePackerConfig.js'
 import { validateGitHubPagesConfig } from './validateGitHubPagesConfig.js'
 import { validateStackFolder } from './validateStackFolder.js'
+import {
+  validateAnsibleConfig,
+  validateAnsibleLayerOverlap,
+  validateAnsibleSelection
+} from './validateAnsibleConfig.js'
 
 /**
  * The main function for the action.
@@ -193,6 +198,7 @@ export async function run(): Promise<void> {
       }
       validatePackerConfig(config, (message) => core.warning(message))
       validateStackFolder(config)
+      validateAnsibleConfig(config)
     }
 
     deploy_config = convert_implicit_to_explicit_dependencies(deploy_config)
@@ -222,6 +228,7 @@ export async function run(): Promise<void> {
       deploy_config = apply_stack_filter(deploy_config, expanded_stack_filter)
       core.info(`Filtered deploy-config: ${JSON.stringify(deploy_config)}`)
     }
+    validateAnsibleSelection(deploy_config, global_vars)
 
     let layer_deployments: ITerraformLayerConfig[][] = []
 
@@ -261,6 +268,7 @@ export async function run(): Promise<void> {
     }
 
     layer_deployments = layer_deployments.filter((layer) => layer.length > 0)
+    validateAnsibleLayerOverlap(layer_deployments)
 
     const environment: string | undefined = global_vars['environment'] as
       string | undefined

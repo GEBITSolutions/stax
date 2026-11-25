@@ -66,11 +66,11 @@ describe('deployment level workflow capacity', () => {
     )
   })
 
-  it('uses secrets: inherit on stack child jobs (packer/terraform/script/sites)', () => {
+  it('uses secrets: inherit on stack child jobs (packer/ansible/terraform/script/sites)', () => {
     const inheritCount = [
       ...deployStackWorkflow.matchAll(/^ {4}secrets: inherit$/gm)
     ].length
-    expect(inheritCount).toBe(6)
+    expect(inheritCount).toBe(7)
     expect(deployStackWorkflow).not.toMatch(
       /^ {6}HCLOUD_TOKEN: \$\{\{ secrets\.HCLOUD_TOKEN \}\}$/m
     )

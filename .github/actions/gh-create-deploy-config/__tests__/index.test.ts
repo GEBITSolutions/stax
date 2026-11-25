@@ -1035,4 +1035,96 @@ describe('index.ts', () => {
       )
     }
   )
+
+  describe('Ansible stacks', () => {
+    // configs/ansible/k3s-arc.yaml in azure-server-fleet
+    const fleet = [
+      {
+        id: 'linux-k3s',
+        type: 'ansible',
+        ansible_inventory: 'ansible/inventory.yml',
+        ansible_playbook: 'ansible/k3s.yml',
+        'runs-on': 'ubuntu-latest-large',
+        input: []
+      },
+      {
+        id: 'linux-arc',
+        type: 'ansible',
+        ansible_inventory: 'ansible/inventory.yml',
+        ansible_playbook: 'ansible/arc.yml',
+        'runs-on': 'ubuntu-latest-large',
+        depends_on: ['linux-k3s'],
+        input: [{ arc_github_app_id: 'gh.secret.ARC_GITHUB_APP_ID' }]
+      }
+    ]
+
+    const selectLevels = async (
+      stacks: object[],
+      filter: string,
+      destroy = 'false'
+    ) => {
+      convert_implicit_to_explicit_dependencies.mockImplementation(
+        original_convert_implicit_to_explicit_dependencies
+      )
+      prune_external_dependencies.mockImplementation(
+        original_prune_external_dependencies
+      )
+      generate_layerdeployment.mockImplementation(
+        original_generate_layerdeployment
+      )
+      generate_stackfilter.mockImplementation(original_generate_stackfilter)
+      apply_stack_filter.mockImplementation(original_apply_stack_filter)
+      core.getInput.mockImplementation((name) => {
+        if (name === 'deploy-configs')
+          return JSON.stringify([{ stacks, sourceFile: 'k3s-arc.yaml' }])
+        if (name === 'stack-filter') return filter
+        if (name === 'global-vars')
+          return JSON.stringify({ dry_run: 'true', destroy })
+        return ''
+      })
+      await run()
+      const output = (core.setOutput as jest.Mock).mock.calls.find(
+        ([name]) => name === 'layer-deployments'
+      )
+      return output === undefined
+        ? undefined
+        : (JSON.parse(output[1] as string) as { id: string }[][]).map((layer) =>
+            layer.map((stack) => stack.id)
+          )
+    }
+
+    it.each([
+      ['linux-k3s', [['linux-k3s']]],
+      ['linux-arc', [['linux-arc']]],
+      ['>linux-arc', [['linux-k3s'], ['linux-arc']]]
+    ])('selects %s as %j', async (filter, expected) => {
+      expect(await selectLevels(fleet, filter)).toEqual(expected)
+      expect(core.setFailed).not.toHaveBeenCalled()
+    })
+
+    it('rejects two stacks sharing an inventory in one level', async () => {
+      const parallel = [fleet[0], { ...fleet[1], depends_on: [] }]
+      expect(await selectLevels(parallel, '')).toBeUndefined()
+      expect(core.setFailed).toHaveBeenCalledWith(
+        expect.stringContaining('share inventory "ansible/inventory.yml"')
+      )
+    })
+
+    it('rejects destroy for a selection with an Ansible stack', async () => {
+      expect(await selectLevels(fleet, '>linux-arc', 'true')).toBeUndefined()
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'Ansible stack "linux-k3s" does not support destroy=true.'
+      )
+    })
+
+    it('rejects a reserved input name before scheduling', async () => {
+      const reserved = [
+        { ...fleet[0], input: [{ ansible_become_pass: 'gh.secret.X' }] }
+      ]
+      expect(await selectLevels(reserved, '')).toBeUndefined()
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'Ansible stack "linux-k3s" has invalid input: "ansible_become_pass" is reserved for Ansible.'
+      )
+    })
+  })
 })
