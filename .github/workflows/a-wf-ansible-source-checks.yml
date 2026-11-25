@@ -83,6 +83,8 @@ jobs:
       working-directory: caller-source
       env:
         TARGETS: ${{ steps.selections.outputs.targets }}
+        # Without it an unparseable inventory is only a warning and lists as empty.
+        ANSIBLE_INVENTORY_UNPARSED_FAILED: 'True'
       run: |
         set -euo pipefail
         ansible=(uvx --python 3.12 --from ansible-core==2.20.9)

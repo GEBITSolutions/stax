@@ -82,6 +82,7 @@ jobs:
         PLAYBOOK_PATH: ${{ inputs.playbook-path }}
         RUNS_ON: ${{ inputs.runs-on }}
         ENVIRONMENT: ${{ inputs.environment }}
+        KEYSTORE: ${{ vars.REPO_KEYSTORE_SSM_PREFIX || vars.REPO_KEYSTORE_KEY_VAULT_URL }}
       run: |
         set -euo pipefail
         fail() { echo "::error::Invalid Ansible request: $1" >&2; exit 1; }
@@ -117,6 +118,7 @@ jobs:
           (.ansible_inventory | path_ok) and (.ansible_playbook | path_ok) and
           (."runs-on" | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._-]*$")) and
           ((.source_repo // "") == "") and ((.source_version // "") == "") and
+          ((.secret_backend // "gh") == "gh") and
           ((."output-var" // []) | length == 0) and ((."output-secret" // []) | length == 0) and
           (.destroy | . == null or flag) and
           (.config_globals | . == null or type == "object") and
@@ -154,6 +156,10 @@ jobs:
         [[ "$MODE" == "$expected_mode" ]] || fail 'mode conflicts with the dry-run flag.'
 
         has_inputs="$(jq -r '(.input // []) | length > 0' <<< "$STACK_DATA_JSON")"
+        # Inputs resolve from GitHub only; with a keystore, stack outputs live there instead.
+        if [[ -n "$KEYSTORE" ]] && jq -e '[(.input // [])[][] | strings | select(startswith("stack."))] | length > 0' <<< "$STACK_DATA_JSON" > /dev/null; then
+          fail 'stack.* inputs are not supported when a keystore (REPO_KEYSTORE_*) is configured.'
+        fi
         echo "has-inputs=$has_inputs" >> "$GITHUB_OUTPUT"
 
     - name: Checkout caller repository
@@ -261,7 +267,7 @@ jobs:
         variables: ${{ toJSON(vars) }}
         secrets: ${{ toJSON(secrets) }}
         # Tooling credentials never become playbook inputs.
-        excluded-secrets: '["ANSIBLE_SSH_PRIVATE_KEY","GITHUB_TOKEN","CONFIG_GITHUB_TOKEN","CI_GITHUB_TOKEN_SHARED_CODE","CI_ENV_TRANSFER_GH_TOKEN","RELEASE_APP_CLIENT_SECRET","RELEASE_GH_APP_PRIVATE_KEY","REPO_KEYSTORE_SP_CLIENT_SECRET","ARM_CLIENT_ID","ARM_CLIENT_SECRET","ARM_SUBSCRIPTION_ID","ARM_TENANT_ID","COPILOT_USER_TOKEN"]'
+        excluded-secrets: '["ANSIBLE_SSH_PRIVATE_KEY","GITHUB_TOKEN","CONFIG_GITHUB_TOKEN","CI_GITHUB_PAT","CI_GITHUB_TOKEN_SHARED_CODE","CI_GITHUB_TOKEN_TERRAFORM","CI_ENV_TRANSFER_GH_TOKEN","CI_AZURE_STATIC_WEB_APPS_API_TOKEN","RELEASE_APP_CLIENT_SECRET","RELEASE_GH_APP_PRIVATE_KEY","RELEASE_NOTES_LLM_API_KEY","REPO_KEYSTORE_SP_CLIENT_SECRET","ARM_CLIENT_ID","ARM_CLIENT_SECRET","ARM_SUBSCRIPTION_ID","ARM_TENANT_ID","AWS_ACCESS_KEY_ID","AWS_SECRET_ACCESS_KEY","AWS_SESSION_TOKEN","AWS_ROLE_ARN","HCLOUD_TOKEN","GPG_PRIVATE_KEY","GPG_PASSPHRASE","PULP_PASSWORD","INFRACOST_API_KEY","COPILOT_USER_TOKEN"]'
         basePath: ${{ github.workspace }}/caller-source
 
     - name: Run Ansible playbook

@@ -395,6 +395,12 @@ stacks:
       expected: { severity: "error", line: 9, message: 'stacks[1].ansible_inventory: shared with "a" in the same level' },
     },
     {
+      name: "an ansible stack inheriting the keyvault backend",
+      config:
+        "deployment:\n  secret_backend: keyvault\nstacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: a.yml\n    runs-on: ubuntu-latest\n",
+      expected: { severity: "error", line: 4, message: "stacks[0].secret_backend: ansible stacks support only secret_backend gh" },
+    },
+    {
       name: "string where the workflows need a boolean",
       config: 'stacks:\n  - id: a\n    type: opentofu\n    local_backend: "false"\n    folder: a\n',
       expected: { severity: "error", line: 4, message: "stacks[0].local_backend: must be boolean" },
@@ -630,6 +636,17 @@ stacks:
   it("validates the Ansible example", () => {
     const file = join(import.meta.dirname, "../../examples/ansible/k3s-arc.yaml");
     expect(validateConfigText(readFileSync(file, "utf8"))).toEqual([]);
+  });
+
+  it("skips the inventory overlap check for stacks another config can move to a later level", () => {
+    const ansible = (id: string, extra: string) =>
+      `  - id: ${id}\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: ${id}.yml\n    runs-on: ubuntu-latest\n${extra}`;
+    const viaReference = `stacks:\n${ansible("a", "")}${ansible("b", "    input:\n      - subnet: stack.network.var.subnet_id\n")}`;
+    // a and b both sit at level 1 in this file; b's dependency c waits on another config.
+    const viaLocalDescendant = `stacks:\n${ansible("a", "    depends_on: [d]\n")}${ansible("b", "    depends_on: [c]\n")}  - id: c\n    type: opentofu\n    depends_on: [network]\n    folder: c\n  - id: d\n    type: opentofu\n    folder: d\n`;
+    for (const config of [viaReference, viaLocalDescendant]) {
+      expect(validateConfigText(config).filter((finding) => finding.severity === "error")).toEqual([]);
+    }
   });
 });
 

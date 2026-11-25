@@ -31,6 +31,7 @@ export function githubOutputs(text) {
 /**
  * Compiles every actions/github-script body with the argument names actions/github-script@v8
  * binds, so a syntax error or a top-level `await` outside the async wrapper fails before a run.
+ * GitHub expands ${{ }} expressions before the script runs, so each one compiles as an identifier.
  */
 export function compileGithubScripts(workflows) {
   const AsyncFunction = Object.getPrototypeOf(async () => {}).constructor;
@@ -39,7 +40,8 @@ export function compileGithubScripts(workflows) {
       for (const step of job?.steps ?? []) {
         if (!String(step?.uses ?? '').startsWith('actions/github-script@')) continue;
         try {
-          new AsyncFunction('require', '__original_require__', 'github', 'octokit', 'context', 'core', 'exec', 'glob', 'io', String(step.with?.script ?? ''));
+          const script = String(step.with?.script ?? '').replace(/\$\{\{[\s\S]*?\}\}/g, '__expr');
+          new AsyncFunction('require', '__original_require__', 'github', 'octokit', 'context', 'core', 'exec', 'glob', 'io', script);
         } catch (error) {
           throw new Error(`GitHub script does not compile: ${file}, step "${step.name ?? 'unnamed'}": ${error.message}`);
         }

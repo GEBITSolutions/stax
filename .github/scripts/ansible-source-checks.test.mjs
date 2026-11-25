@@ -46,6 +46,7 @@ test('GitHub scripts compile with the actions/github-script bindings', () => {
   const workflow = (script) => ({ file: 'w.yml', workflow: { jobs: { j: { steps: [{ name: 's', uses: 'actions/github-script@v8', with: { script } }] } } } });
   compileGithubScripts([workflow("const x = await github.rest.repos.get(context.repo); core.setOutput('x', x);")]);
   assert.throws(() => compileGithubScripts([workflow('const = 1')]), /w\.yml, step "s"/);
+  compileGithubScripts([workflow('await github.rest.issues.get({ issue_number: ${{ inputs.pr_number }}, title: "${{ github.ref }}" });')]);
 });
 
 test('syntax-check targets group playbooks by inventory', () => {

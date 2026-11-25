@@ -117,6 +117,10 @@ export function validateAnsibleConfig(config: ITerraformConfig): void {
   if (config.destroy === true || config.destroy === 'true') {
     invalid(config, 'destroy', 'destroy is not supported')
   }
+  // a-wf-ansible resolves inputs from GitHub secrets and variables only.
+  if ((config.secret_backend ?? 'gh') !== 'gh') {
+    invalid(config, 'secret_backend', 'only gh is supported')
+  }
 }
 
 /** A destroy run rejects the whole selection when it contains an Ansible stack. */

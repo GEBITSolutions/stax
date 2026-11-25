@@ -109,7 +109,8 @@ describe('validateAnsibleConfig', () => {
       { 'output-secret': ['key'] },
       'outputs are not supported'
     ],
-    ['destroy', { destroy: 'true' }, 'destroy is not supported']
+    ['destroy', { destroy: 'true' }, 'destroy is not supported'],
+    ['secret_backend', { secret_backend: 'keyvault' }, 'only gh is supported']
   ])('rejects %s', (_case, overrides, message) => {
     expect(() => validateAnsibleConfig(ansible(overrides))).toThrow(message)
   })

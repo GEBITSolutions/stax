@@ -221,7 +221,11 @@ const ANSIBLE_RESERVED_VARIABLES = new Set([
 ]);
 
 /** Ansible rules the schema cannot express; mirrors validateAnsibleConfig in gh-create-deploy-config. */
-function checkAnsibleStack(stack: Record<string, unknown>, index: number, report: Reporter): void {
+function checkAnsibleStack(stack: Record<string, unknown>, index: number, deploymentBackend: unknown, report: Reporter): void {
+  // a-wf-ansible resolves inputs from GitHub secrets and variables only.
+  if ((stack.secret_backend ?? deploymentBackend ?? "gh") !== "gh") {
+    report.add("error", ["stacks", index, "secret_backend"], "ansible stacks support only secret_backend gh");
+  }
   if (typeof stack.id === "string" && !/^[A-Za-z0-9_-]+$/.test(stack.id)) {
     report.add("error", ["stacks", index, "id"], "an ansible id may contain only letters, digits, underscores and hyphens");
   }
@@ -296,6 +300,8 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
   // Cross-config references are a normal multi-config pattern: report each referenced id once per file.
   const externalDependsOn = new Map<string, { path: Path; count: number }>();
   const externalReferences = new Map<string, { path: Path; count: number }>();
+  // Stacks that depend on another config, by depends_on or stack.* reference: merged configs can move them later.
+  const externallyLinked = new Set<string>();
   const noteExternal = (seen: Map<string, { path: Path; count: number }>, id: string, path: Path) => {
     const entry = seen.get(id);
     if (entry) entry.count += 1;
@@ -328,7 +334,7 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
       checkPackerBuildTarget(stack, index, report);
       checkPackerScan(stack, index, report);
     } else {
-      if (stack.type === "ansible") checkAnsibleStack(stack, index, report);
+      if (stack.type === "ansible") checkAnsibleStack(stack, index, isRecord(data.deployment) ? data.deployment.secret_backend : undefined, report);
       if (stack.build_target !== undefined) {
         report.add("warning", ["stacks", index, "build_target"], "applies to packer stacks only");
       }
@@ -361,6 +367,7 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
           deps.add(dependency);
         } else {
           noteExternal(externalDependsOn, dependency, ["stacks", index, "depends_on", depIndex]);
+          externallyLinked.add(String(stack.id));
         }
       });
     }
@@ -375,6 +382,7 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
         deps.add(referencedId);
       } else {
         noteExternal(externalReferences, referencedId, path);
+        externallyLinked.add(stack.id);
       }
     }
   });
@@ -419,13 +427,17 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
   }
 
   // Mirrors validateAnsibleLayerOverlap: Ansible stacks of one level run in parallel.
+  // A stack linked to another config, directly or through local dependencies, may run later than this file shows.
+  const levelUncertain = (id: string, seen = new Set<string>()): boolean => {
+    if (externallyLinked.has(id)) return true;
+    seen.add(id);
+    return [...(dependencies.get(id) ?? [])].some((dep) => !seen.has(dep) && levelUncertain(dep, seen));
+  };
   const inventoryOwners = new Map<string, string>();
   stacks.forEach((stack, index) => {
     if (!isRecord(stack) || stack.type !== "ansible" || typeof stack.id !== "string" || typeof stack.ansible_inventory !== "string") return;
     const stackLevel = level.get(stack.id);
-    // A dependency on another config can move the stack to a later level than this file shows.
-    const external = Array.isArray(stack.depends_on) && stack.depends_on.some((dependency) => !firstIndexById.has(String(dependency)));
-    if (stackLevel === undefined || external || firstIndexById.get(stack.id) !== index) return;
+    if (stackLevel === undefined || levelUncertain(stack.id) || firstIndexById.get(stack.id) !== index) return;
     const key = `${stackLevel}|${stack.ansible_inventory.split("/").filter((segment) => segment !== ".").join("/")}`;
     const owner = inventoryOwners.get(key);
     if (owner === undefined) inventoryOwners.set(key, stack.id);
