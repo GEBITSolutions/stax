@@ -1,5 +1,12 @@
 import { jest } from '@jest/globals'
-import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises'
+import {
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile
+} from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import * as core from '../__fixtures__/core.js'
@@ -368,6 +375,60 @@ describe('index.ts', () => {
     }
   )
 
+  describe('step-output on Windows without RUNNER_TEMP', () => {
+    const originalRunnerTemp = process.env.RUNNER_TEMP
+    const originalPlatform = Object.getOwnPropertyDescriptor(
+      process,
+      'platform'
+    )!
+
+    beforeEach(() => {
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      delete process.env.RUNNER_TEMP
+      createKeyValue.mockImplementation(originalCreateKeyValue)
+    })
+
+    afterEach(() => {
+      Object.defineProperty(process, 'platform', originalPlatform)
+      if (originalRunnerTemp === undefined) delete process.env.RUNNER_TEMP
+      else process.env.RUNNER_TEMP = originalRunnerTemp
+    })
+
+    it.each(['', 'step-output'])(
+      'preserves ordered typed inputs with output-mode=%s',
+      async (outputMode) => {
+        core.getInput.mockImplementation((name) => {
+          if (name === 'output-mode') return outputMode
+          if (name === 'secrets') return JSON.stringify({ TOKEN: 'private' })
+          if (name === 'convertInputs')
+            return JSON.stringify([
+              { count: 2 },
+              { config: { enabled: true, tags: ['a', 'b'] } },
+              { token: 'gh.secret.token' }
+            ])
+          if (name === 'additionalInputs')
+            return JSON.stringify({ tail: 'last' })
+          return ''
+        })
+
+        await run()
+
+        expect(core.setFailed).not.toHaveBeenCalled()
+        expect(createKeyValue).toHaveBeenCalledTimes(3)
+        expect(core.setOutput).toHaveBeenCalledTimes(1)
+        expect(core.setOutput).toHaveBeenCalledWith(
+          'tf-vars-map',
+          JSON.stringify([
+            { key: 'count', value: 2 },
+            { key: 'config', value: { enabled: true, tags: ['a', 'b'] } },
+            { key: 'token', value: 'private' },
+            { key: 'tail', value: 'last' }
+          ])
+        )
+      }
+    )
+  })
+
   describe('output-mode private-file', () => {
     const originalRunnerTemp = process.env.RUNNER_TEMP
     let runnerTemp: string
@@ -421,6 +482,41 @@ describe('index.ts', () => {
       })
     })
 
+    it('keeps successive private files independent and does not overwrite the first', async () => {
+      core.getInput.mockImplementation(privateInputs([{ token: 'first' }]))
+      await run()
+      expect(core.setFailed).not.toHaveBeenCalled()
+      const [firstOutput, firstFile] = core.setOutput.mock.calls[0] as [
+        string,
+        string
+      ]
+      expect(firstOutput).toBe('resolved-inputs-file')
+      expect(JSON.parse(await readFile(firstFile, 'utf8'))).toEqual({
+        token: 'first'
+      })
+
+      core.getInput.mockImplementation(privateInputs([{ token: 'second' }]))
+      await run()
+
+      expect(core.setFailed).not.toHaveBeenCalled()
+      expect(core.setOutput).toHaveBeenCalledTimes(2)
+      const [secondOutput, secondFile] = core.setOutput.mock.calls[1] as [
+        string,
+        string
+      ]
+      expect(secondOutput).toBe('resolved-inputs-file')
+      expect(secondFile).not.toBe(firstFile)
+      expect(path.dirname(path.dirname(firstFile))).toBe(runnerTemp)
+      expect(path.dirname(path.dirname(secondFile))).toBe(runnerTemp)
+      expect(await readdir(runnerTemp)).toHaveLength(2)
+      expect(JSON.parse(await readFile(firstFile, 'utf8'))).toEqual({
+        token: 'first'
+      })
+      expect(JSON.parse(await readFile(secondFile, 'utf8'))).toEqual({
+        token: 'second'
+      })
+    })
+
     it('rejects duplicate input names without writing a file', async () => {
       core.getInput.mockImplementation(
         privateInputs([{ token: 'a' }], { additionalInputs: '{"token":"b"}' })
@@ -433,7 +529,33 @@ describe('index.ts', () => {
       expect(await readdir(runnerTemp)).toEqual([])
     })
 
-    it('requires RUNNER_TEMP', async () => {
+    it('rejects Windows before resolving inputs without touching existing files', async () => {
+      const sentinel = path.join(runnerTemp, 'sentinel')
+      await writeFile(sentinel, 'keep')
+      core.getInput.mockImplementation(privateInputs([{ token: 'a' }]))
+      const originalPlatform = Object.getOwnPropertyDescriptor(
+        process,
+        'platform'
+      )!
+      Object.defineProperty(process, 'platform', { value: 'win32' })
+      try {
+        await run()
+      } finally {
+        Object.defineProperty(process, 'platform', originalPlatform)
+      }
+
+      expect(core.setFailed).toHaveBeenCalledWith(
+        'output-mode private-file is supported only on Linux and macOS'
+      )
+      expect(createKeyValue).not.toHaveBeenCalled()
+      expect(core.setOutput).not.toHaveBeenCalled()
+      expect(await readdir(runnerTemp)).toEqual(['sentinel'])
+      expect(await readFile(sentinel, 'utf8')).toBe('keep')
+    })
+
+    it('requires RUNNER_TEMP before resolving inputs without touching existing files', async () => {
+      const sentinel = path.join(runnerTemp, 'sentinel')
+      await writeFile(sentinel, 'keep')
       delete process.env.RUNNER_TEMP
       core.getInput.mockImplementation(privateInputs([{ token: 'a' }]))
 
@@ -442,20 +564,26 @@ describe('index.ts', () => {
       expect(core.setFailed).toHaveBeenCalledWith(
         'RUNNER_TEMP is required for output-mode private-file'
       )
+      expect(createKeyValue).not.toHaveBeenCalled()
       expect(core.setOutput).not.toHaveBeenCalled()
+      expect(await readdir(runnerTemp)).toEqual(['sentinel'])
+      expect(await readFile(sentinel, 'utf8')).toBe('keep')
     })
   })
 
   it('rejects an unknown output-mode', async () => {
-    core.getInput.mockImplementation((name) =>
-      name === 'output-mode' ? 'stdout' : ''
-    )
+    core.getInput.mockImplementation((name) => {
+      if (name === 'output-mode') return 'stdout'
+      if (name === 'convertInputs') return JSON.stringify([{ token: 'a' }])
+      return ''
+    })
 
     await run()
 
     expect(core.setFailed).toHaveBeenCalledWith(
       'Invalid output-mode: stdout. Expected step-output or private-file.'
     )
+    expect(createKeyValue).not.toHaveBeenCalled()
     expect(core.setOutput).not.toHaveBeenCalled()
   })
 })

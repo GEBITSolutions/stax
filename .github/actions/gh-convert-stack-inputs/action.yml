@@ -35,6 +35,7 @@ inputs:
       step-output (default) publishes tf-vars-map. private-file writes the
       resolved inputs as one JSON object to a 0600 file in a new 0700 directory
       under RUNNER_TEMP and publishes only its path as resolved-inputs-file.
+      private-file is supported only on Linux and macOS.
     required: false
     default: 'step-output'
   config-globals:

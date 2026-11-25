@@ -18,6 +18,16 @@ export async function run(): Promise<void> {
         `Invalid output-mode: ${outputMode}. Expected step-output or private-file.`
       )
     }
+    if (outputMode === 'private-file') {
+      if (process.platform !== 'linux' && process.platform !== 'darwin') {
+        throw new Error(
+          'output-mode private-file is supported only on Linux and macOS'
+        )
+      }
+      if (!process.env.RUNNER_TEMP) {
+        throw new Error('RUNNER_TEMP is required for output-mode private-file')
+      }
+    }
     const environment_name = core.getInput('environment-name') || 'default'
     core.info(`Using Environment: ${environment_name}`)
 

@@ -98200,6 +98200,14 @@ async function run() {
         if (outputMode !== 'step-output' && outputMode !== 'private-file') {
             throw new Error(`Invalid output-mode: ${outputMode}. Expected step-output or private-file.`);
         }
+        if (outputMode === 'private-file') {
+            if (process.platform !== 'linux' && process.platform !== 'darwin') {
+                throw new Error('output-mode private-file is supported only on Linux and macOS');
+            }
+            if (!process.env.RUNNER_TEMP) {
+                throw new Error('RUNNER_TEMP is required for output-mode private-file');
+            }
+        }
         const environment_name = coreExports.getInput('environment-name') || 'default';
         coreExports.info(`Using Environment: ${environment_name}`);
         const allowNull = coreExports.getInput('allowNull', {
