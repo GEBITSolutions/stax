@@ -1,0 +1,114 @@
+---
+# yamllint disable rule:line-length
+name: ".Ansible Source Checks (Abstract)"
+on:
+  workflow_call:
+    inputs:
+      actions-version:
+        description: Reviewed full STAX commit SHA for action sources and bundles
+        type: string
+        required: true
+    secrets:
+      CI_GITHUB_TOKEN_SHARED_CODE:
+        description: Optional token for the STAX checkout; defaults to github.token
+        required: false
+
+permissions:
+  contents: read
+
+jobs:
+  source-checks:
+    name: Ansible source checks
+    runs-on: ubuntu-latest
+    steps:
+    - name: Validate immutable STAX revision
+      shell: bash
+      env:
+        SHARED_REVISION: ${{ inputs.actions-version }}
+      run: |
+        set -euo pipefail
+        [[ "$SHARED_REVISION" =~ ^[0-9a-fA-F]{40}$ ]] || {
+          echo '::error::actions-version must be a reviewed full commit SHA' >&2
+          exit 1
+        }
+
+    - name: Checkout caller source
+      uses: actions/checkout@v7
+      with:
+        ref: ${{ github.sha }}
+        path: caller-source
+        persist-credentials: false
+
+    - name: Checkout reviewed STAX source
+      uses: actions/checkout@v7
+      with:
+        repository: GEBITSolutions/stax
+        ref: ${{ inputs.actions-version }}
+        path: trusted-actions
+        persist-credentials: false
+        token: ${{ secrets.CI_GITHUB_TOKEN_SHARED_CODE || github.token }}
+        sparse-checkout: |
+          .github/actions/gh-create-deploy-config
+          .github/actions/gh-convert-stack-inputs
+          .github/scripts
+
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24
+
+    - uses: astral-sh/setup-uv@v10.1.0
+
+    - name: Test actions and verify committed bundles
+      shell: bash
+      run: |
+        set -euo pipefail
+        for action in gh-create-deploy-config gh-convert-stack-inputs; do
+          cd "$GITHUB_WORKSPACE/trusted-actions/.github/actions/$action"
+          npm ci
+          npm test -- --runInBand
+          sha256sum dist/* > "$RUNNER_TEMP/$action-committed.sha256"
+          npm run package
+          sha256sum dist/* > "$RUNNER_TEMP/$action-built.sha256"
+          diff -u "$RUNNER_TEMP/$action-committed.sha256" "$RUNNER_TEMP/$action-built.sha256"
+        done
+
+    - name: Check caller stack selections
+      id: selections
+      shell: bash
+      run: node trusted-actions/.github/scripts/ansible-source-checks.mjs caller-source trusted-actions
+
+    - name: Check inventory and playbook syntax without host contact
+      shell: bash
+      working-directory: caller-source
+      env:
+        TARGETS: ${{ steps.selections.outputs.targets }}
+      run: |
+        set -euo pipefail
+        ansible=(uvx --python 3.12 --from ansible-core==2.20.9)
+        while IFS= read -r target; do
+          inventory="$(jq -r .inventory <<< "$target")"
+          mapfile -t playbooks < <(jq -r '.playbooks[]' <<< "$target")
+          "${ansible[@]}" ansible-inventory -i "$inventory" --list > /dev/null
+          "${ansible[@]}" ansible-playbook -i "$inventory" "${playbooks[@]}" --syntax-check
+        done < <(jq -c '.[]' <<< "$TARGETS")
+
+    - name: Lint caller workflows
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        tools="$RUNNER_TEMP/ansible-source-actionlint"
+        mkdir -p "$tools"
+        case "$RUNNER_ARCH" in
+          X64) architecture=amd64 ;;
+          ARM64) architecture=arm64 ;;
+          *) echo '::error::Unsupported source-check runner architecture' >&2; exit 1 ;;
+        esac
+        archive="actionlint_1.7.12_linux_${architecture}.tar.gz"
+        gh release download v1.7.12 --repo rhysd/actionlint \
+          --pattern "$archive" --pattern actionlint_1.7.12_checksums.txt --dir "$tools"
+        (cd "$tools" && grep -E "  ${archive//./\\.}\$" actionlint_1.7.12_checksums.txt | sha256sum --check --strict)
+        tar -xzf "$tools/$archive" -C "$tools" actionlint
+        # Callers use custom runner labels; actionlint only knows GitHub-hosted ones.
+        "$tools/actionlint" -ignore 'label ".+" is unknown' caller-source/.github/workflows/*.y*ml

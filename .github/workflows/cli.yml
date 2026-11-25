@@ -21,6 +21,9 @@ on:
       - .github/scripts/packer-hcloud-token.test.mjs
       - .github/scripts/release-notes.mjs
       - .github/scripts/release-notes.test.mjs
+      - .github/scripts/ansible-source-checks.mjs
+      - .github/scripts/ansible-source-checks.test.mjs
+      - .github/actions/gh-create-deploy-config/**
       - .github/workflows/a-wf-deploy-stack-packer.yml
       - .github/workflows/cli.yml
       - .github/workflows/cli-pack.yml
