@@ -1,3 +1,13 @@
+## Release 1.16.0
+
+Merged PRs: 79
+
+### Merged without release notes
+
+- feat(ansible): add the ansible stack type ([#79](https://github.com/GEBITSolutions/stax/pull/79))
+
+_No release notes recorded for 1.16.0._
+
 ## Release 1.15.0
 
 Merged PRs: 78
