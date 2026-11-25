@@ -53,6 +53,8 @@ on:
         value: ${{ jobs.github-pages.outputs.site-url }}
 
     secrets:
+      ANSIBLE_SSH_PRIVATE_KEY:
+        required: false
       ARM_CLIENT_SECRET:
         required: false
       ARM_CLIENT_ID:
@@ -127,6 +129,25 @@ jobs:
       external-repos: ${{ inputs.external-repos }}
       actions-repository: ${{ inputs.actions-repository }}
       actions-version: ${{ inputs.actions-version }}
+    secrets: inherit
+
+  ansible:
+    if: fromJson(inputs.data)['type'] == 'ansible'
+    name: "Ansible: ${{ fromJson(inputs.data)['name'] || fromJson(inputs.data)['id'] }}"
+    uses: ./.github/workflows/a-wf-ansible.yml
+    with:
+      inventory-path: ${{ fromJson(inputs.data)['ansible_inventory'] }}
+      playbook-path: ${{ fromJson(inputs.data)['ansible_playbook'] }}
+      runs-on: ${{ fromJson(inputs.data)['runs-on'] }}
+      environment: ${{ fromJson(inputs.env)['environment'] }}
+      mode: ${{ (inputs['dry-run'] == 'false' || (inputs['dry-run'] == '' && (toJSON(fromJSON(inputs.env).dry_run) == 'false' || toJSON(fromJSON(inputs.env).dry_run) == '"false"'))) && 'apply' || 'plan' }}
+      stack-data: ${{ inputs.data }}
+      pipeline-context: ${{ inputs.env }}
+      requested-dry-run: ${{ inputs['dry-run'] }}
+      requested-destroy: ${{ inputs.destroy }}
+      actions-repository: ${{ inputs.actions-repository }}
+      actions-version: ${{ inputs.actions-version }}
+    # inherit lets the leaf resolve gh.secret.* inputs from its GitHub Environment.
     secrets: inherit
 
   rpmbuild:

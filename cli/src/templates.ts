@@ -17,6 +17,7 @@ const SETUP_CI_SECRETS = [
 
 /** Optional secrets a-wf-deploy-levels.yml accepts and forwards to stack workflows. */
 const DEPLOY_LEVELS_SECRETS = [
+  "ANSIBLE_SSH_PRIVATE_KEY",
   "ARM_CLIENT_ID",
   "ARM_CLIENT_SECRET",
   "ARM_SUBSCRIPTION_ID",
