@@ -118,8 +118,8 @@ function checkUnknownKeys(value: unknown, known: string[], path: Path, report: R
   }
 }
 
-/** Mirrors validateRelativePosixPath in gh-create-deploy-config (Packer paths). */
-function packerPathProblem(value: string): string | undefined {
+/** Mirrors validateRelativePosixPath in gh-create-deploy-config (Packer and Ansible paths). */
+function relativePathProblem(value: string): string | undefined {
   if (/^[A-Za-z]:/.test(value) || value.startsWith("/")) return "must be repository-relative";
   if (/[\u0000-\u001f\u007f]/.test(value)) return "must not contain control characters";
   if (value.includes("\\")) return "must use POSIX separators";
@@ -202,8 +202,65 @@ function checkPackerScan(stack: Record<string, unknown>, index: number, report: 
   if (!isRecord(stack.scan)) return;
   const goss = stack.scan.goss;
   if (!isRecord(goss) || typeof goss.spec !== "string") return;
-  const problem = packerPathProblem(goss.spec);
+  const problem = relativePathProblem(goss.spec);
   if (problem) report.add("error", ["stacks", index, "scan", "goss", "spec"], problem);
+}
+
+/** Variables Ansible sets itself; mirrors validateAnsibleConfig in gh-create-deploy-config. */
+const ANSIBLE_RESERVED_VARIABLES = new Set([
+  "inventory_hostname",
+  "inventory_hostname_short",
+  "inventory_file",
+  "inventory_dir",
+  "playbook_dir",
+  "group_names",
+  "groups",
+  "hostvars",
+  "omit",
+  "environment",
+]);
+
+/** Ansible rules the schema cannot express; mirrors validateAnsibleConfig in gh-create-deploy-config. */
+function checkAnsibleStack(stack: Record<string, unknown>, index: number, report: Reporter): void {
+  if (typeof stack.id === "string" && !/^[A-Za-z0-9_-]+$/.test(stack.id)) {
+    report.add("error", ["stacks", index, "id"], "an ansible id may contain only letters, digits, underscores and hyphens");
+  }
+  for (const field of ["ansible_inventory", "ansible_playbook"] as const) {
+    const value = stack[field];
+    const problem = typeof value === "string" ? relativePathProblem(value) : undefined;
+    if (problem) report.add("error", ["stacks", index, field], problem);
+  }
+  if (typeof stack["runs-on"] === "string" && !/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(stack["runs-on"])) {
+    report.add("error", ["stacks", index, "runs-on"], "must be one runner label");
+  }
+  const names = new Set<string>();
+  (Array.isArray(stack.input) ? stack.input : []).forEach((entry, inputIndex) => {
+    const path: Path = ["stacks", index, "input", inputIndex];
+    const keys = isRecord(entry) ? Object.keys(entry) : [];
+    const name = keys[0];
+    if (keys.length !== 1 || name === undefined) {
+      report.add("error", path, "ansible inputs must be single-key mappings, e.g. app_token: gh.secret.APP_TOKEN");
+      return;
+    }
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) {
+      report.add("error", [...path, name], "not a valid Ansible variable name");
+    } else if (/^ansible_/i.test(name) || ANSIBLE_RESERVED_VARIABLES.has(name.toLowerCase())) {
+      report.add("error", [...path, name], "reserved for Ansible");
+    } else if (names.has(name)) {
+      report.add("error", [...path, name], "declared twice");
+    }
+    names.add(name);
+  });
+  for (const field of ["source_repo", "source_version"]) {
+    if (stack[field]) report.add("error", ["stacks", index, field], "ansible stacks run the calling repository; external sources are not supported");
+  }
+  for (const field of ["output-var", "output-secret"]) {
+    const value = stack[field];
+    if (Array.isArray(value) && value.length > 0) report.add("error", ["stacks", index, field], "ansible stacks publish no outputs");
+  }
+  if (stack.destroy === true || stack.destroy === "true") {
+    report.add("error", ["stacks", index, "destroy"], "ansible does not support destroy");
+  }
 }
 
 /** Collects stack.<id>.var|secret.<key> references in an input value, like update_deploy_config. */
@@ -265,12 +322,13 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
     if (stack.type === "packer") {
       for (const field of ["packer_directory", "packer_template"] as const) {
         const value = stack[field];
-        const problem = typeof value === "string" ? packerPathProblem(value) : undefined;
+        const problem = typeof value === "string" ? relativePathProblem(value) : undefined;
         if (problem) report.add("error", ["stacks", index, field], problem);
       }
       checkPackerBuildTarget(stack, index, report);
       checkPackerScan(stack, index, report);
     } else {
+      if (stack.type === "ansible") checkAnsibleStack(stack, index, report);
       if (stack.build_target !== undefined) {
         report.add("warning", ["stacks", index, "build_target"], "applies to packer stacks only");
       }
@@ -359,6 +417,20 @@ function checkPipelineRules(data: Record<string, unknown>, report: Reporter): vo
       );
     }
   }
+
+  // Mirrors validateAnsibleLayerOverlap: Ansible stacks of one level run in parallel.
+  const inventoryOwners = new Map<string, string>();
+  stacks.forEach((stack, index) => {
+    if (!isRecord(stack) || stack.type !== "ansible" || typeof stack.id !== "string" || typeof stack.ansible_inventory !== "string") return;
+    const stackLevel = level.get(stack.id);
+    // A dependency on another config can move the stack to a later level than this file shows.
+    const external = Array.isArray(stack.depends_on) && stack.depends_on.some((dependency) => !firstIndexById.has(String(dependency)));
+    if (stackLevel === undefined || external || firstIndexById.get(stack.id) !== index) return;
+    const key = `${stackLevel}|${stack.ansible_inventory.split("/").filter((segment) => segment !== ".").join("/")}`;
+    const owner = inventoryOwners.get(key);
+    if (owner === undefined) inventoryOwners.set(key, stack.id);
+    else report.add("error", ["stacks", index, "ansible_inventory"], `shared with "${owner}" in the same level; add depends_on so they run one after the other`);
+  });
 }
 
 const AWS_OPTION_DEFAULTS: Record<string, string> = {

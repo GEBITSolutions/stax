@@ -357,6 +357,44 @@ stacks:
       expected: { severity: "error", line: 4, message: 'stacks[0].packer_directory: must not contain a ".." segment' },
     },
     {
+      name: "ansible without runner",
+      config: "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: site.yml\n",
+      expected: { severity: "error", line: 2, message: 'stacks[0]: missing required field "runs-on"' },
+    },
+    {
+      name: "ansible playbook that is not YAML",
+      config: "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: site.sh\n    runs-on: ubuntu-latest\n",
+      expected: { severity: "error", line: 5, message: "stacks[0].ansible_playbook: must match" },
+    },
+    {
+      name: "ansible inventory leaving the repository",
+      config: "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: ../inv.yml\n    ansible_playbook: site.yml\n    runs-on: ubuntu-latest\n",
+      expected: { severity: "error", line: 4, message: 'stacks[0].ansible_inventory: must not contain a ".." segment' },
+    },
+    {
+      name: "ansible input that overrides an Ansible variable",
+      config:
+        "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: site.yml\n    runs-on: ubuntu-latest\n    input:\n      - ansible_become_password: gh.secret.X\n",
+      expected: { severity: "error", line: 8, message: "stacks[0].input[0].ansible_become_password: reserved for Ansible" },
+    },
+    {
+      name: "ansible input given as a bare reference",
+      config: "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: site.yml\n    runs-on: ubuntu-latest\n    input:\n      - gh.secret.X\n",
+      expected: { severity: "error", line: 8, message: "stacks[0].input[0]: ansible inputs must be single-key mappings" },
+    },
+    {
+      name: "ansible stack with outputs",
+      config:
+        "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: site.yml\n    runs-on: ubuntu-latest\n    output-var: [host]\n",
+      expected: { severity: "error", line: 7, message: "stacks[0].output-var: ansible stacks publish no outputs" },
+    },
+    {
+      name: "two ansible stacks on one inventory in the same level",
+      config:
+        "stacks:\n  - id: a\n    type: ansible\n    ansible_inventory: inv.yml\n    ansible_playbook: a.yml\n    runs-on: ubuntu-latest\n  - id: b\n    type: ansible\n    ansible_inventory: ./inv.yml\n    ansible_playbook: b.yml\n    runs-on: ubuntu-latest\n",
+      expected: { severity: "error", line: 9, message: 'stacks[1].ansible_inventory: shared with "a" in the same level' },
+    },
+    {
       name: "string where the workflows need a boolean",
       config: 'stacks:\n  - id: a\n    type: opentofu\n    local_backend: "false"\n    folder: a\n',
       expected: { severity: "error", line: 4, message: "stacks[0].local_backend: must be boolean" },
@@ -587,6 +625,11 @@ stacks:
     const aws = brief(validateConfigText(readFileSync(join(directory, "aws-reserved.yaml"), "utf8")));
     expect(aws).toEqual([expect.objectContaining({ severity: "warning", message: expect.stringContaining("not implemented") })]);
     expect(aws.filter((finding) => finding.severity === "error")).toEqual([]);
+  });
+
+  it("validates the Ansible example", () => {
+    const file = join(import.meta.dirname, "../../examples/ansible/k3s-arc.yaml");
+    expect(validateConfigText(readFileSync(file, "utf8"))).toEqual([]);
   });
 });
 

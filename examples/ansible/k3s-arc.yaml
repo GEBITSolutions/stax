@@ -1,0 +1,21 @@
+---
+# Two Ansible stacks on one inventory. Select "linux-arc" to run ARC alone, or
+# ">linux-arc" to run K3s first and ARC in the next level.
+stacks:
+  - id: linux-k3s
+    name: Linux K3s
+    type: ansible
+    ansible_inventory: ansible/inventory.yml
+    ansible_playbook: ansible/k3s.yml
+    runs-on: ubuntu-latest
+    input: []
+  - id: linux-arc
+    name: Linux ARC
+    type: ansible
+    ansible_inventory: ansible/inventory.yml
+    ansible_playbook: ansible/arc.yml
+    runs-on: ubuntu-latest
+    depends_on: [linux-k3s]
+    input:
+      - arc_github_app_id: gh.secret.ARC_GITHUB_APP_ID
+      - arc_github_app_private_key: gh.secret.ARC_GITHUB_APP_PRIVATE_KEY
