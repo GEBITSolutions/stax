@@ -147,7 +147,7 @@ stacks:
 - Two Ansible stacks on the same inventory cannot run in the same level; make one depend on the other.
 - Select one stack with `stack_filter: linux-arc`, or the stack and its dependencies with `stack_filter: ">linux-arc"`.
 
-`a-wf-ansible-source-checks.yml` checks a repository's `configs/ansible/*.yaml` without secrets or host contact: it tests the STAX actions at a full commit SHA (`actions-version`), verifies their committed bundles, selects every Ansible stack alone and with its dependencies, syntax-checks the inventories and playbooks, and lints the caller's workflows.
+`a-wf-ansible-source-checks.yml` checks a repository's `configs/ansible/*.yaml` without secrets or host contact: it tests the STAX actions at `actions-version` (a release tag or commit SHA), verifies their committed bundles, selects every Ansible stack alone and with its dependencies, syntax-checks the inventories and playbooks, and lints the caller's workflows.
 
 ## Helm deployments
 
