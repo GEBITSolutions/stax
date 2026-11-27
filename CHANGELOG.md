@@ -1,3 +1,13 @@
+## Release 1.16.1
+
+Merged PRs: 81
+
+### Merged without release notes
+
+- fix(ansible): accept release tags as source-check actions-version ([#81](https://github.com/GEBITSolutions/stax/pull/81))
+
+_No release notes recorded for 1.16.1._
+
 ## Release 1.16.0
 
 Merged PRs: 79
